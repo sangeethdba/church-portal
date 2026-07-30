@@ -1,0 +1,286 @@
+import { FormEvent, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Church, Mail, LogIn, UserPlus, Sparkles, AlertCircle } from "lucide-react";
+import Logo from "@/components/Logo";
+import { Button, Card, CardBody, Input, Label, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
+import {
+  signInWithEmail,
+  signUpWithEmail,
+  signInWithGoogle,
+} from "@/lib/auth";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+
+export default function Login() {
+  const [, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const configured = isSupabaseConfigured();
+
+  // If already signed in, kick straight to dashboard
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) navigate("/dashboard", { replace: true });
+    });
+  }, [navigate]);
+
+  // Auto-trigger Google flow when ?provider=google
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("provider") === "google" && configured) {
+      signInWithGoogle().catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : "Google sign-in failed");
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, configured]);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleEmailSignIn = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithEmail(email, password);
+      navigate("/dashboard", { replace: true });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not sign in");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailSignUp = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await signUpWithEmail(email, password, name);
+      setError("Check your inbox to confirm your email, then sign in.");
+      setSearchParams({});
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not sign up");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-parchment-50 px-4 py-10">
+      <div className="w-full max-w-md animate-fade-up">
+        <Link to="/" className="mb-6 flex items-center justify-center text-stone-900">
+          <Logo size={36} />
+        </Link>
+        <Card>
+          <CardBody className="space-y-6">
+            <div>
+              <Badge tone="indigo" className="mb-3">
+                <Sparkles className="h-3 w-3" />
+                Welcome back
+              </Badge>
+              <h1 className="font-serif text-2xl font-semibold text-stone-900">
+                Sign in to GraceLedger
+              </h1>
+              <p className="mt-1 text-sm text-stone-600">
+                Manage giving, expenses, and tax statements for your congregation.
+              </p>
+            </div>
+
+            {!configured && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <div>
+                    <strong>Supabase isn't configured yet.</strong> Add{" "}
+                    <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">VITE_SUPABASE_URL</code>{" "}
+                    and{" "}
+                    <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">VITE_SUPABASE_ANON_KEY</code>{" "}
+                    to your Freebuff project's API Keys tab, then come back.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <Button
+              size="lg"
+              variant="outline"
+              className="w-full"
+              onClick={handleGoogle}
+              disabled={!configured || loading}
+              iconLeft={
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 48 48"
+                  width="18"
+                  height="18"
+                >
+                  <path
+                    fill="#FFC107"
+                    d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 3l5.7-5.7C33.6 6.1 29 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"
+                  />
+                  <path
+                    fill="#FF3D00"
+                    d="m6.3 14.7 6.6 4.8C14.7 16 19 13 24 13c3 0 5.7 1.1 7.8 3l5.7-5.7C33.6 7.1 29 5 24 5 16.3 5 9.6 9.3 6.3 14.7z"
+                  />
+                  <path
+                    fill="#4CAF50"
+                    d="M24 44c5 0 9.5-1.8 12.8-4.8l-5.9-5c-2 1.5-4.6 2.3-7 2.3-5.3 0-9.7-3.4-11.3-8L6.3 33.4C9.5 39.7 16.2 44 24 44z"
+                  />
+                  <path
+                    fill="#1976D2"
+                    d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.3 5.8l5.9 5C39 35.6 44 30.4 44 24c0-1.2-.1-2.4-.4-3.5z"
+                  />
+                </svg>
+              }
+            >
+              Continue with Google
+            </Button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-stone-200" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-white px-3 text-xs uppercase tracking-wider text-stone-500">
+                  or
+                </span>
+              </div>
+            </div>
+
+            <Tabs defaultValue="signin">
+              <TabsList className="w-full">
+                <TabsTrigger value="signin" className="flex-1">
+                  <LogIn className="mr-2 h-3.5 w-3.5" /> Sign in
+                </TabsTrigger>
+                <TabsTrigger value="signup" className="flex-1">
+                  <UserPlus className="mr-2 h-3.5 w-3.5" /> Sign up
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="signin">
+                <form className="space-y-4" onSubmit={handleEmailSignIn}>
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="treasurer@yourchurch.org"
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      minLength={8}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  {error && (
+                    <div className="rounded-md bg-rose-50 p-2.5 text-sm text-rose-700">{error}</div>
+                  )}
+                  <Button
+                    type="submit"
+                    disabled={!configured || loading}
+                    className="w-full"
+                    iconLeft={<Mail className="h-4 w-4" />}
+                  >
+                    {loading ? "Signing in…" : "Sign in with email"}
+                  </Button>
+                </form>
+              </TabsContent>
+
+              <TabsContent value="signup">
+                <form className="space-y-4" onSubmit={handleEmailSignUp}>
+                  <div>
+                    <Label htmlFor="name">Your name</Label>
+                    <Input
+                      id="name"
+                      type="text"
+                      autoComplete="name"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="email-su">Email</Label>
+                    <Input
+                      id="email-su"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="password-su">Password (8+ chars)</Label>
+                    <Input
+                      id="password-su"
+                      type="password"
+                      autoComplete="new-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      minLength={8}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  {error && (
+                    <div className="rounded-md bg-amber-50 p-2.5 text-sm text-amber-700">{error}</div>
+                  )}
+                  <Button
+                    type="submit"
+                    disabled={!configured || loading}
+                    className="w-full"
+                    iconLeft={<Church className="h-4 w-4" />}
+                  >
+                    {loading ? "Creating account…" : "Create account"}
+                  </Button>
+                  <p className="text-xs text-stone-500">
+                    New accounts are created with the <strong>member</strong> role. Ask your
+                    admin to promote you to <strong>treasurer</strong>.
+                  </p>
+                </form>
+              </TabsContent>
+            </Tabs>
+          </CardBody>
+        </Card>
+        <p className="mt-6 text-center text-xs text-stone-500">
+          By signing in you agree to keep all giving data confidential.{" "}
+          <Link to="/" className="text-accent hover:underline">
+            Back to home
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}

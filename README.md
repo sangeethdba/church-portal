@@ -1,265 +1,150 @@
-# Church Portal 🙏
+# GraceLedger — Church Portal (v2)
 
-A production-grade full-stack application for managing church finances, donations, expenses, and offerings.
+The free, secure cloud home for your church's giving, expenses, and
+year-end giving statements. Built for treasurers and pastors who want
+clarity without spreadsheets.
 
-## 🌟 Live Application
-
-- **🖥️ Frontend**: https://frontend.blacksea-4befa204.eastus2.azurecontainerapps.io/
-- **🔧 API Backend**: https://backend.blacksea-4befa204.eastus2.azurecontainerapps.io/
-- **☁️ Azure Portal**: [View Resources](https://portal.azure.com/#@/resource/subscriptions/fbd8d5e7-282c-4255-9d2f-18f8bcf7a816/resourceGroups/rg-church-prod/overview)
-
-## ✨ Features
-
-### 🔐 Authentication & Security
-- Secure JWT-based authentication with bcrypt password hashing
-- Role-based access control (Members, Admins, Treasurers)
-- Rate limiting and input validation
-- HTTPS enforced in production
-
-### 💰 Financial Management
-- **Donation Entry**: Track individual and family donations with receipt generation
-- **Expense Tracking**: Submit expenses with file upload support
-- **Offering Management**: Weekly offering entry with cash and check tracking
-- **Reimbursement System**: Upload receipts and track reimbursement status
-
-### 📊 Reporting & Analytics
-- Monthly and yearly financial reports
-- Individual donor statements and tax forms
-- Weekly offering summaries
-- Expense category analysis
-
-### 📧 Communication
-- Automated email notifications to members and treasurers
-- Receipt generation and distribution
-- Status updates and confirmations
-
-### 📁 File Management
-- Azure Blob Storage integration for secure file uploads
-- Support for PDF, JPEG, PNG receipts and documents
-- Organized storage containers (receipts, documents, reports)
-
-## 🛠 Tech Stack
-
-### Backend
-- **Runtime**: Node.js 20 with Express.js
-- **Database**: SQLite (embedded, cost-effective for initial deployment)
-- **Storage**: Azure Blob Storage for file uploads
-- **Security**: JWT, bcrypt, Helmet, express-rate-limit
-- **Email**: Nodemailer for notifications
-- **Testing**: Jest, Supertest
-
-### Frontend
-- **Framework**: React 18 with Material-UI
-- **Routing**: React Router
-- **HTTP Client**: Axios
-- **Build**: Create React App with production optimizations
-
-### Infrastructure
-- **Hosting**: Azure Container Apps (Serverless)
-- **Container Registry**: Azure Container Registry
-- **Secrets**: Azure Key Vault
-- **Monitoring**: Application Insights
-- **DNS**: Custom domain ready
-
-## 🚀 Local Development
-
-### Prerequisites
-- Node.js 20+
-- Docker (optional, for containerized development)
-- Azure account (for cloud features)
-
-### Quick Start
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/sangeethdba/church-portal.git
-   cd church-portal
-   ```
-
-2. **Backend Setup**
-   ```bash
-   cd backend
-   npm install
-   
-   # Create .env file
-   cp .env.example .env
-   # Edit .env with your configuration
-   
-   npm run dev
-   ```
-
-3. **Frontend Setup**
-   ```bash
-   cd frontend
-   npm install
-   npm start
-   ```
-
-4. **Access the application**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:5000
-
-### Environment Variables
-
-Create a `.env` file in the backend directory:
-
-```env
-# Database (local development uses SQLite by default)
-# DATABASE_URL=your_database_connection_string
-
-# JWT Secret
-JWT_SECRET=your-super-secret-jwt-key
-
-# Azure Storage (for file uploads)
-AZURE_STORAGE_ACCOUNT_NAME=your-storage-account
-AZURE_STORAGE_CONTAINER_RECEIPTS=receipts
-AZURE_STORAGE_CONTAINER_DOCUMENTS=documents
-AZURE_STORAGE_CONTAINER_REPORTS=reports
-
-# Email Configuration
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USER=your-email@gmail.com
-EMAIL_PASS=your-app-password
-
-# Application Settings
-NODE_ENV=development
-PORT=5000
-```
-
-## 🐳 Docker Development
-
-Build and run with Docker:
-
-```bash
-# Backend
-cd backend
-docker build -t church-portal-backend .
-docker run -p 5000:80 church-portal-backend
-
-# Frontend
-cd frontend
-docker build -t church-portal-frontend .
-docker run -p 3000:80 church-portal-frontend
-```
-
-## ☁️ Azure Deployment
-
-### Prerequisites
-- Azure CLI installed and configured
-- Azure Developer CLI (azd) installed
-
-### Deployment Steps
-
-1. **Initialize Azure Developer CLI**
-   ```bash
-   azd auth login
-   azd env new church-prod
-   ```
-
-2. **Set environment variables**
-   ```bash
-   azd env set AZURE_LOCATION eastus2
-   azd env set AZURE_SUBSCRIPTION_ID your-subscription-id
-   ```
-
-3. **Deploy infrastructure and application**
-   ```bash
-   azd provision  # Create Azure resources
-   azd deploy     # Deploy applications
-   ```
-
-### Infrastructure Created
-- **Resource Group**: `rg-church-prod`
-- **Container Apps**: Serverless hosting for frontend and backend
-- **Container Registry**: Private registry for Docker images
-- **Storage Account**: Blob storage for file uploads
-- **Key Vault**: Secure storage for secrets
-- **Application Insights**: Monitoring and logging
-
-## 🧪 Testing
-
-### Backend Tests
-```bash
-cd backend
-npm test
-```
-
-### Manual Testing Checklist
-- [ ] User registration and login
-- [ ] Donation entry and receipt generation
-- [ ] Expense submission with file upload
-- [ ] Offering entry and weekly reports
-- [ ] Admin dashboard functionality
-- [ ] Email notifications
-- [ ] File upload to Azure Blob Storage
-
-## 📈 Production Considerations
-
-### Database Migration
-For production scale, consider migrating from SQLite to:
-- **Azure SQL Database**: For full SQL Server features
-- **PostgreSQL**: For open-source compatibility
-- **MySQL**: For cost-effective relational database
-
-Update `backend/src/utils/database.js` to switch database providers.
-
-### Scaling
-- Container Apps automatically scale from 0-10 replicas based on demand
-- Storage scales automatically with usage
-- Consider Azure CDN for static assets at scale
-
-### Security
-- All secrets stored in Azure Key Vault
-- HTTPS enforced across all endpoints
-- Managed Identity authentication between services
-- Regular security updates via automated deployments
-
-## 💰 Cost Optimization
-
-Current setup optimized for minimal costs:
-
-- **Container Apps**: $0-15/month (serverless, pay-per-use)
-- **Storage**: $1-3/month (first 5GB free)
-- **Key Vault**: $3/month (first 10,000 operations free)
-- **Application Insights**: $0-5/month (first 5GB free)
-
-**Total Estimated Cost**: $4-26/month
-
-## 📋 Usage Guide
-
-### For Members
-1. Register account or login
-2. Submit expenses with receipt uploads
-3. View personal donation history
-4. Download tax forms at year-end
-
-### For Admins/Treasurers
-1. Enter weekly offerings (cash, checks)
-2. Process expense reimbursements
-3. Generate monthly/yearly reports
-4. Manage donor information
-5. Export data for accounting
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built with Azure Container Apps for serverless deployment
-- Material-UI for beautiful React components
-- SQLite for cost-effective data storage
-- Azure Blob Storage for reliable file management
+> **What changed?** This repository went from Express+SQLite + CRA/MUI
+> to a **Vite + React + Tailwind/shadcn** front-end backed by
+> **Supabase** (Postgres + Auth + Storage), deployable to **Vercel**'s
+> free tier. The new code lives at the repo root; the legacy
+> `backend/` (Express+Sequelite) and `frontend/` (CRA+Material UI)
+> folders are kept for reference only — they are no longer in the
+> build path. You can delete them after you migrate production data.
 
 ---
 
-**Deployed with ❤️ for church communities using Azure Container Apps**
+## Tech stack (free tier)
+
+| Concern | Provider | Limit |
+| --- | --- | --- |
+| Auth (Google + email) + Postgres + Storage | [Supabase](https://supabase.com) | 500 MB DB · 1 GB storage · 50k MAU |
+| Hosting (static SPA + free edge functions) | [Vercel](https://vercel.com) | 100 GB bandwidth · 10 s serverless |
+| Frontend | Vite 5 · React 18 · TypeScript · Tailwind · shadcn/ui primitives | — |
+| PDF generation | `jspdf` (runs in the user's browser) | zero server cost |
+| Dev preview | Freebuff Cloud preview | `bun run dev` |
+
+---
+
+## Features (v2 — what's actually shipping)
+
+- 🔐 **Google + email sign-in** (Supabase Auth, OAuth + magic-link capable)
+- 🛡️ **Row-level security on every table** — members see only their own giving
+- 💰 **Donations ledger** with annual statement PDF generation in one click
+- 🧾 **Expenses**: members submit receipts; treasurers see a queue and approve / reject / mark **auto-paid**
+- 🏛️ **Church-direct expenses** — track rent, utilities, outreach, and outreach-cash in one ledger
+- 👥 **Donor directory** with family + individual accounts and per-donor history
+- 📄 **IRS-friendly annual statements** generated client-side via jsPDF
+
+### Out-of-scope for v2 (deliberately deferred)
+
+These features exist in the legacy Express backend and can be backfilled on request:
+
+- Weekly offering cash / check bucket grouping with deposit slips
+- Pastor-gift deduction logic
+- Auto-emailed batch distribution of statement PDFs
+- Multi-user draft donation sessions
+
+---
+
+## 5-minute setup (for the church admin)
+
+1. **Create a free Supabase project:** <https://supabase.com/dashboard>
+2. **Run the SQL migration** in the Supabase SQL editor:
+   `supabase/migrations/0001_init.sql` — creates profiles, donors,
+   donations, expenses, reimbursements, tax_receipts, and storage
+   buckets + RLS policies.
+3. **Enable Google OAuth** in Supabase → Authentication → Providers
+   (use the same `Site URL` you'll deploy to).
+4. **Paste these two keys** into Freebuff's API Keys tab
+   (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+5. **Promote yourself** to super admin once you sign in:
+   ```sql
+   update public.profiles
+     set role = 'super_admin'
+     where email = 'you@yourchurch.org';
+   ```
+6. **Press Start** in Freebuff preview (already configured below).
+
+---
+
+## Freebuff preview commands (already configured)
+
+| Field | Value |
+| --- | --- |
+| Install | `bun install` |
+| Preview (port 5173) | `bun run dev` |
+| Build | `bun run build` |
+
+---
+
+## Environment variables
+
+| Variable | Where to set | Purpose |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | Freebuff → API Keys | Your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Freebuff → API Keys | Public anon key (safe for the browser — Supabase RLS protects data) |
+| `VITE_SITE_URL` | Freebuff → API Keys (optional) | Used for OAuth redirect. Defaults to current site origin. |
+
+---
+
+## Folder layout
+
+```
+/
+├── package.json          # Vite + React + Supabase + jsPDF
+├── vite.config.ts        # SPA + Bun-friendly, HMR off per Freebuff
+├── tailwind.config.ts    # Modern Sandstone + Indigo theme tokens
+├── vercel.json           # SPA rewrites + asset headers
+├── supabase/
+│   └── migrations/0001_init.sql   # schema + RLS + storage + auth trigger
+└── src/
+    ├── pages/            # Landing, Login, AuthCallback, Dashboard, Donors,
+    │                     #  Donations, Expenses, TaxReport
+    ├── components/       # Layout, RequireAuth, Logo, ui primitives
+    └── lib/              # supabase, auth, pdf, utils
+```
+
+Legacy folders kept for reference (no longer built):
+
+- `backend/` — original Express+Sequelize+SQLite+JWT API
+- `frontend/` — original CRA + Material UI SPA
+
+---
+
+## Security model
+
+- **Row-Level Security** on every financial table — members can only
+  SELECT their own rows; admins/treasurers have broader policies.
+- **No backend code runs in production.** All read/write happens
+  through Supabase's public REST + RLS, which means a single leaked
+  anon key still cannot exfiltrate data unless policies are wrong.
+- **Storage policies** isolate receipt files per user; only admins
+  cross the boundary.
+- **Single-source-of-truth role flag** (`profiles.role`). The client
+  never trusts role for actual access decisions — only for UI gating.
+
+---
+
+## Deployment
+
+1. Push to GitHub → connect Vercel to your repo.
+2. Build command (Vercel auto-detected from `vercel.json`):
+   `bun run build`
+3. Output directory: `dist`
+4. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as project
+   env vars on Vercel.
+
+You'll be on the free tier (Hobby) which is plenty for any single
+local church's traffic.
+
+---
+
+## Support & license
+
+- Issues & contributions: open a GitHub issue on
+  <https://github.com/sangeethdba/church-portal>.
+- License: MIT.
+
+> Built with care for church communities using free-tier cloud
+> infrastructure.

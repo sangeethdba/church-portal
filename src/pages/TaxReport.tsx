@@ -1,0 +1,238 @@
+import { useEffect, useMemo, useState } from "react";
+import { FileDown, FileText } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Label,
+  Select,
+  Badge,
+  EmptyState,
+  TableWrap,
+  THead,
+  Tr,
+  Th,
+  Td,
+} from "@/components/ui";
+import { PageHeader } from "@/components/Layout";
+import { supabase } from "@/lib/supabase";
+import type { Donor, Donation } from "@/lib/supabase";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { downloadStatement, type AnnualStatement } from "@/lib/pdf";
+
+const sampleDonors: Pick<Donor, "id" | "first_name" | "last_name" | "address" | "city" | "state" | "zip_code" | "email">[] = [
+  {
+    id: "demo-d1",
+    first_name: "Marcus",
+    last_name: "Lin",
+    email: "marcus.lin@example.com",
+    address: "12 Park Lane",
+    city: "Atlanta",
+    state: "GA",
+    zip_code: "30303",
+  },
+  {
+    id: "demo-d2",
+    first_name: "The Reyes",
+    last_name: "Family",
+    email: "reyes@example.com",
+    address: "88 Elm St",
+    city: "Atlanta",
+    state: "GA",
+    zip_code: "30308",
+  },
+];
+
+export default function TaxReport() {
+  const [donors, setDonors] = useState(sampleDonors);
+  const [donations, setDonations] = useState<Donation[]>([]);
+  const [selectedDonor, setSelectedDonor] = useState<string>("");
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+
+  useEffect(() => {
+    if (!supabase) return;
+    Promise.all([
+      supabase.from("donors").select("id, first_name, last_name, address, city, state, zip_code, email"),
+      supabase.from("donations").select("*"),
+    ]).then(([{ data: dData }, { data: donData }]) => {
+      if (dData) setDonors(dData as typeof sampleDonors);
+      if (donData) setDonations(donData as Donation[]);
+    });
+  }, []);
+
+  const yearOptions = useMemo(() => {
+    const ys = new Set<number>();
+    donations.forEach((d) => ys.add(Number(d.donation_date.slice(0, 4))));
+    ys.add(new Date().getFullYear());
+    return Array.from(ys).sort((a, b) => b - a);
+  }, [donations]);
+
+  const filtered = useMemo(
+    () =>
+      donations
+        .filter((d) => (selectedDonor ? d.donor_id === selectedDonor || d.donor_name === nameLookup : true))
+        .filter(
+          (d) => Number(d.donation_date.slice(0, 4)) === year,
+        ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [donations, selectedDonor, year],
+  );
+
+  const totalAmount = filtered.reduce((s, d) => s + Number(d.amount || 0), 0);
+  const donor = donors.find((d) => d.id === selectedDonor);
+  const nameLookup = donor ? `${donor.first_name} ${donor.last_name}` : "";
+
+  const onIssue = () => {
+    if (!donor) return;
+    const stmt: AnnualStatement = {
+      donor: {
+        ...(donor as Donor),
+        is_family: false,
+        family_members: [],
+        notes: null,
+        is_active: true,
+        total_donations: totalAmount,
+        last_donation_date: filtered[0]?.donation_date ?? null,
+        linked_user_id: null,
+        created_by: null,
+        created_at: new Date().toISOString(),
+      },
+      year,
+      donations: filtered,
+      total: totalAmount,
+      churchName:
+        (typeof window !== "undefined" && localStorage.getItem("church_name")) ||
+        "Grace Community Church",
+    };
+    downloadStatement(stmt);
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Annual tax reports"
+        subtitle="Generate IRS-friendly annual statements for any donor in seconds — produced client-side, no server cost."
+        badge="PDF"
+      />
+
+      <Card className="mb-6">
+        <CardHeader>
+          <h2 className="font-serif text-lg font-semibold text-stone-900">Build a statement</h2>
+        </CardHeader>
+        <CardBody>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <Label>Donor</Label>
+              <Select
+                value={selectedDonor}
+                onChange={(e) => setSelectedDonor(e.target.value)}
+                className="mt-1.5"
+              >
+                <option value="">— Select donor —</option>
+                {donors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.first_name} {d.last_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label>Calendar year</Label>
+              <Select
+                value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="mt-1.5"
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button
+                onClick={onIssue}
+                disabled={!donor || filtered.length === 0}
+                iconLeft={<FileDown className="h-4 w-4" />}
+                className="w-full sm:w-auto"
+              >
+                Download PDF
+              </Button>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      {!selectedDonor ? (
+        <EmptyState
+          icon={<FileText className="h-6 w-6" />}
+          title="Pick a donor to preview"
+          description="Choose a donor and year above — the statement will include every gift recorded between January 1 and December 31."
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="h-6 w-6" />}
+          title={`No gifts recorded for ${year}`}
+          description="Once donations are entered for the selected year, the statement will populate automatically."
+        />
+      ) : (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">
+                  {donor?.first_name} {donor?.last_name} · {year}
+                </h2>
+                <p className="mt-1 text-xs text-stone-500">
+                  {filtered.length} gift{filtered.length === 1 ? "" : "s"} ·{" "}
+                  {formatCurrency(totalAmount)} total contributions
+                </p>
+              </div>
+              <Badge tone="emerald">Ready to issue</Badge>
+            </div>
+          </CardHeader>
+          <CardBody className="px-0">
+            <TableWrap className="border-0 shadow-none">
+              <THead>
+                <Tr>
+                  <Th>Date</Th>
+                  <Th>Type</Th>
+                  <Th>Method</Th>
+                  <Th>Memo</Th>
+                  <Th className="text-right">Amount</Th>
+                </Tr>
+              </THead>
+              <tbody>
+                {filtered.map((d) => (
+                  <Tr key={d.id}>
+                    <Td>{formatDate(d.donation_date)}</Td>
+                    <Td>
+                      <Badge tone="indigo">{d.donation_type}</Badge>
+                    </Td>
+                    <Td className="capitalize text-stone-600">{d.payment_method}</Td>
+                    <Td className="text-stone-600">
+                      {d.check_number ? `#${d.check_number}` : d.notes ?? "—"}
+                    </Td>
+                    <Td className="text-right font-serif text-base font-semibold text-stone-900">
+                      {formatCurrency(d.amount)}
+                    </Td>
+                  </Tr>
+                ))}
+                <Tr>
+                  <Td colSpan={4} className="border-t-2 border-stone-200 py-4 text-right font-semibold">
+                    Total contributions
+                  </Td>
+                  <Td className="border-t-2 border-stone-200 py-4 text-right font-serif text-xl font-semibold text-stone-900">
+                    {formatCurrency(totalAmount)}
+                  </Td>
+                </Tr>
+              </tbody>
+            </TableWrap>
+          </CardBody>
+        </Card>
+      )}
+    </div>
+  );
+}
