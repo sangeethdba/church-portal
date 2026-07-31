@@ -1,7 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // ----- Domain types (mirror the SQL enums) ------------------------------
-export type AppRole = "member" | "admin";
+export type AppRole = "member" | "treasurer" | "admin" | "super_admin";
+
+// Admin-level roles — mirrors public.is_admin_or_treasurer() in the database.
+export const isAdminRole = (role: string | null | undefined): boolean =>
+  role === "admin" || role === "treasurer" || role === "super_admin";
 
 export type DonationKind = "tithe" | "offering" | "building" | "missions" | "other";
 export type PaymentMethod = "cash" | "check" | "online" | "card";

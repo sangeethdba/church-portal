@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured, type Profile, type AppRole } from "./supabase";
+import { supabase, isSupabaseConfigured, isAdminRole, type Profile, type AppRole } from "./supabase";
 
 export interface AuthSessionState {
   configured: boolean;
@@ -69,7 +69,7 @@ export async function getCurrentSession(): Promise<AuthSessionState> {
     userId: profile?.id ?? undefined,
     email: profile?.email ?? undefined,
     profile: profile ?? undefined,
-    isAdmin: role === "admin",
+    isAdmin: isAdminRole(role),
     isCounter: profile?.is_counter ?? false,
   };
 }

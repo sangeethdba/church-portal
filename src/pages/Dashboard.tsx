@@ -7,7 +7,7 @@ import {
 import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase } from "@/lib/supabase";
+import { supabase, isAdminRole } from "@/lib/supabase";
 import type { Profile, Donation, Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -39,7 +39,7 @@ export default function Dashboard() {
   const [ytdExpenses, setYtdExpenses] = useState(0);
   const [ytdNet, setYtdNet] = useState(0);
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = isAdminRole(profile?.role);
   const [counterOpen, setCounterOpen] = useState(false);
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [donorOptions, setDonorOptions] = useState<{ id: string; label: string }[]>([]);
@@ -154,10 +154,10 @@ export default function Dashboard() {
                         <div className="flex items-center gap-3">
                           {/* Portal access toggle */}
                           <div className="flex items-center gap-1.5">
-                            <button type="button" onClick={() => togglePortalAccess(p.id, !p.portal_access)} disabled={savingId === p.id || p.role === "admin"}
-                              title={p.role === "admin" ? "Admins always have access" : "Toggle portal access"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || p.role === "admin" ? "bg-indigo-500" : "bg-stone-300"} ${savingId === p.id ? "opacity-50" : ""}`}>
-                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || p.role === "admin" ? "translate-x-6" : "translate-x-1"}`}/>
+                            <button type="button" onClick={() => togglePortalAccess(p.id, !p.portal_access)} disabled={savingId === p.id || isAdminRole(p.role)}
+                              title={isAdminRole(p.role) ? "Admins always have access" : "Toggle portal access"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-indigo-500" : "bg-stone-300"} ${savingId === p.id ? "opacity-50" : ""}`}>
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || isAdminRole(p.role) ? "translate-x-6" : "translate-x-1"}`}/>
                             </button>
                             <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Access</span>
                           </div>
@@ -170,12 +170,12 @@ export default function Dashboard() {
                             <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Counter</span>
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2"><span className="text-sm font-medium text-stone-900">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{p.role === "admin" && <Badge tone="indigo">Admin</Badge>}{p.portal_access && p.role !== "admin" && <Badge tone="indigo">Access</Badge>}</div>
+                            <div className="flex items-center gap-2"><span className="text-sm font-medium text-stone-900">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{isAdminRole(p.role) && <Badge tone="indigo">Admin</Badge>}{p.portal_access && !isAdminRole(p.role) && <Badge tone="indigo">Access</Badge>}</div>
                             <div className="truncate text-xs text-stone-400">{p.email}</div>
                           </div>
                         </div>
                         {/* Link donor + PIN for counters */}
-                        {(p.portal_access || p.role === "admin" || p.is_counter) && (
+                        {(p.portal_access || isAdminRole(p.role) || p.is_counter) && (
                           <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2">
                             <div className="flex-1 min-w-[180px]">
                               <Label className="text-[10px]">Link to donor record</Label>

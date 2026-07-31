@@ -17,7 +17,7 @@ import {
 import Logo from "./Logo";
 import { Button, Badge } from "./ui";
 import { signOut } from "@/lib/auth";
-import type { Profile } from "@/lib/supabase";
+import { isAdminRole, type Profile } from "@/lib/supabase";
 
 const allItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["member", "admin"] as string[] },
@@ -33,7 +33,7 @@ export default function AppShell() {
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
-  const isAdmin = ctx.profile?.role === "admin";
+  const isAdmin = isAdminRole(ctx.profile?.role);
 
   const visibleItems = allItems.filter((item) => {
     if (item.roles.includes("admin") && isAdmin) return true;

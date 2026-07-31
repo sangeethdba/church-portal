@@ -24,7 +24,7 @@ import {
   DialogTrigger,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase } from "@/lib/supabase";
+import { supabase, isAdminRole } from "@/lib/supabase";
 import type { Donation, Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { downloadStatement, type AnnualStatement } from "@/lib/pdf";
@@ -80,7 +80,7 @@ const sampleDonorsForPick: { id: string; label: string }[] = [
 
 export default function Donations() {
   const ctx = useOutletContext<{ profile: { id: string; role: string; is_counter?: boolean } | null; isCounter: boolean }>();
-  const isAdmin = ctx.profile?.role === "admin";
+  const isAdmin = isAdminRole(ctx.profile?.role);
   const canAccess = isAdmin || ctx.isCounter;
 
   const [donations, setDonations] = useState<Donation[]>(sampleDonations);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { Shield, Clock, LogOut } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, isAdminRole } from "@/lib/supabase";
 import { getMyProfile, signOut } from "@/lib/auth";
 import type { Profile } from "@/lib/supabase";
 
@@ -18,16 +18,28 @@ export default function RequireAuth() {
     supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session) {
         setState({ kind: "signed-out" });
-      } else {
-        const profile = await getMyProfile();
-        if (!profile) {
-          setState({ kind: "signed-in", profile: null });
-        } else if (!profile.portal_access && profile.role !== "admin") {
-          // Logged in via Google, but not yet approved by the treasurer
-          setState({ kind: "pending-approval", profile });
-        } else {
-          setState({ kind: "signed-in", profile });
+        return;
+      }
+      let profile = await getMyProfile();
+      if (!profile) {
+        setState({ kind: "signed-in", profile: null });
+        return;
+      }
+
+      // Bootstrap: if this is the very first portal user (no admin exists yet),
+      // promote them automatically so the church isn't locked out on day one.
+      if (!profile.portal_access && !isAdminRole(profile.role)) {
+        const { data: promoted } = await supabase.rpc("bootstrap_first_admin");
+        if (promoted === true) {
+          profile = (await getMyProfile()) ?? profile;
         }
+      }
+
+      if (!profile.portal_access && !isAdminRole(profile.role)) {
+        // Logged in via Google, but not yet approved by the treasurer
+        setState({ kind: "pending-approval", profile });
+      } else {
+        setState({ kind: "signed-in", profile });
       }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
