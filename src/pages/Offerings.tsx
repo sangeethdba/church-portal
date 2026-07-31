@@ -323,6 +323,7 @@ export default function Offerings() {
             check_number: ch.checkNumber || null,
             donation_date: svcDate,
             entered_by: recordedBy,
+            offering_id: offeringId,
           })
           .select("id")
           .maybeSingle();

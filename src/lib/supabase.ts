@@ -79,6 +79,7 @@ export interface Donation {
   check_number?: string | null;
   donation_date: string;
   entered_by: string;
+  offering_id?: string | null;
   notes?: string | null;
   created_at: string;
 }

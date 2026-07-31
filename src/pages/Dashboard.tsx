@@ -28,11 +28,20 @@ const FALLBACK_EXPENSES: Expense[] = [
   { id: "demo-e2", source: "member_submitted", title: "Sunday school supplies", amount: 47.5, category: "supplies", description: "Markers, construction paper, glue", receipt_paths: [], transfer_receipt_path: null, user_id: null, status: "pending", submitted_at: new Date().toISOString(), approved_by: null, approved_at: null, paid_at: null, paid_by: null, notes: null, created_at: new Date().toISOString() },
 ];
 
+interface RecentItem { id: string; date: string; name: string; meta: string; amount: number; }
+const FALLBACK_RECENT: RecentItem[] = FALLBACK_DONATIONS.map((d) => ({
+  id: d.id,
+  date: d.donation_date,
+  name: d.donor_name,
+  meta: `${d.donation_type} · ${d.payment_method}`,
+  amount: Number(d.amount ?? 0),
+}));
+
 export default function Dashboard() {
   const { profile } = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
   const navigate = useNavigate();
   const [kpis, setKpis] = useState<DashboardKpis>(zeroKpis);
-  const [recentDonations, setRecentDonations] = useState<Donation[]>(FALLBACK_DONATIONS);
+  const [recentItems, setRecentItems] = useState<RecentItem[]>(FALLBACK_RECENT);
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>(FALLBACK_EXPENSES);
   const [loading, setLoading] = useState(true);
   const [pendingDeposits, setPendingDeposits] = useState(0);
@@ -40,6 +49,7 @@ export default function Dashboard() {
   const [ytdExpenses, setYtdExpenses] = useState(0);
   const [ytdNet, setYtdNet] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [myGiving, setMyGiving] = useState(0);
 
   const isAdmin = isAdminRole(profile?.role);
   const [counterOpen, setCounterOpen] = useState(false);
@@ -129,21 +139,33 @@ export default function Dashboard() {
       try {
         const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-        const [{ data: ytdRows }, { count: donorCount }, { count: pending }, { data: monthDon }, { data: monthExp }, { data: donations }, { data: expenses }, { data: pendingOff }, { data: ytdExpData }, { data: profilesAll }] = await Promise.all([
-          supabase.from("donations").select("amount").gte("donation_date", yearStart.slice(0, 10)),
+        const [{ data: ytdRows }, { count: donorCount }, { count: pending }, { data: monthDon }, { data: monthExp }, { data: donations }, { data: expenses }, { data: pendingOff }, { data: ytdExpData }, { data: profilesAll }, { data: ytdOfferings }, { data: monthOfferings }, { data: recentOfferings }] = await Promise.all([
+          supabase.from("donations").select("amount, offering_id").gte("donation_date", yearStart.slice(0, 10)),
           supabase.from("donors").select("id", { count: "exact", head: true }).eq("is_active", true),
           supabase.from("expenses").select("id", { count: "exact", head: true }).eq("status", "pending"),
-          supabase.from("donations").select("amount").gte("donation_date", monthStart.slice(0, 10)),
+          supabase.from("donations").select("amount, offering_id").gte("donation_date", monthStart.slice(0, 10)),
           supabase.from("expenses").select("amount,status").gte("submitted_at", monthStart),
           supabase.from("donations").select("*").order("donation_date", { ascending: false }).limit(5),
           supabase.from("expenses").select("*").order("submitted_at", { ascending: false }).limit(5),
           supabase.from("offerings").select("total_amount").eq("deposit_status", "pending_deposit"),
           supabase.from("expenses").select("amount").gte("submitted_at", yearStart),
           supabase.from("profiles").select("role, portal_access"),
+          supabase.from("offerings").select("total_amount").gte("service_date", yearStart.slice(0, 10)),
+          supabase.from("offerings").select("total_amount").gte("service_date", monthStart.slice(0, 10)),
+          supabase.from("offerings").select("service_name, service_date, total_amount").order("service_date", { ascending: false }).limit(5),
         ]);
-        const ytdGiving = (ytdRows ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
-        const monthDonSum = (monthDon ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
+        // YTD giving = weekly offerings (cash + checks) + standalone gifts, no double counting
+        const standaloneGiving = (ytdRows ?? []).filter((r: { offering_id?: string | null }) => !r.offering_id).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
+        const offeringGiving = (ytdOfferings ?? []).reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0);
+        const ytdGiving = standaloneGiving + offeringGiving;
+        const monthDonSum = (monthDon ?? []).filter((r: { offering_id?: string | null }) => !r.offering_id).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0)
+          + (monthOfferings ?? []).reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0);
         const monthExpPaid = (monthExp ?? []).filter((r: { status: string }) => r.status !== "rejected" && r.status !== "pending").reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
+        const myDonorId = profile?.linked_donor_id;
+        if (myDonorId) {
+          const { data: myRows } = await supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart.slice(0, 10));
+          setMyGiving((myRows ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0));
+        }
         if (!cancelled) {
           setKpis({ ytdGiving, donors: donorCount ?? 0, pendingExpenses: pending ?? 0, monthNet: monthDonSum - monthExpPaid });
           if (profilesAll) {
@@ -156,7 +178,11 @@ export default function Dashboard() {
             setYtdExpenses(expTotal);
             setYtdNet(ytdGiving - expTotal);
           }
-          if (donations) setRecentDonations(donations as Donation[]);
+          const combined = [
+            ...(recentOfferings ?? []).map((o: { service_name: string; service_date: string; total_amount: number }) => ({ id: `off-${o.service_date}-${o.service_name}`, date: o.service_date, name: `${o.service_name} collection`, meta: "cash + checks", amount: Number(o.total_amount ?? 0) })),
+            ...(donations ?? []).map((d) => ({ id: d.id, date: d.donation_date, name: d.donor_name, meta: `${d.donation_type} · ${d.payment_method}`, amount: Number(d.amount ?? 0) })),
+          ].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 6);
+          setRecentItems(combined);
           if (expenses) setRecentExpenses(expenses as Expense[]);
         }
       } catch (err) { console.warn("Dashboard query failed; using mock data.", err); }
@@ -282,12 +308,17 @@ export default function Dashboard() {
         <Tile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}/>
       </div>
 
+      <p className="mt-3 text-xs text-stone-400">
+        Church-wide YTD totals — weekly offerings (cash + checks) and all individual gifts.
+        {myGiving > 0 && <> Your giving this year: <span className="font-semibold text-stone-600">{formatCurrency(myGiving)}</span>.</>}
+      </p>
+
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-stone-900">Recent donations</h2><Badge tone="indigo">{recentDonations.length}</Badge></div></CardHeader>
+          <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-stone-900">Recent giving</h2><Badge tone="indigo">{recentItems.length}</Badge></div></CardHeader>
           <CardBody className="space-y-3">
-            {recentDonations.length === 0 ? <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No donations yet" description="Once your first gift is recorded, it will show here."/>
-            : recentDonations.map((d) => (<div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60"><div><div className="font-medium text-stone-900">{d.donor_name}</div><div className="text-xs text-stone-500">{formatDate(d.donation_date)} · {d.donation_type} · {d.payment_method}</div></div><div className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(d.amount)}</div></div>))}
+            {recentItems.length === 0 ? <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No giving yet" description="Once offerings and gifts are recorded, they'll show here."/>
+            : recentItems.map((d) => (<div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60"><div><div className="font-medium text-stone-900">{d.name}</div><div className="text-xs text-stone-500">{formatDate(d.date)} · {d.meta}</div></div><div className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(d.amount)}</div></div>))}
           </CardBody>
         </Card>
         <Card>
