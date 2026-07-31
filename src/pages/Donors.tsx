@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
+  Pencil,
   Search,
   Users as UsersIcon,
   Mail,
   Phone,
+  MapPin,
 } from "lucide-react";
 import {
   Button,
@@ -75,8 +77,18 @@ const sampleDonors: Donor[] = [
   },
 ];
 
+type DonationStatRow = {
+  donor_id: string | null;
+  donor_name: string;
+  amount: number;
+  donation_date: string;
+};
+
+const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
 export default function Donors() {
   const [donors, setDonors] = useState<Donor[]>(sampleDonors);
+  const [donations, setDonations] = useState<DonationStatRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -97,20 +109,79 @@ export default function Donors() {
   });
   const [saving, setSaving] = useState(false);
 
+  // edit-donor dialog state
+  const [editing, setEditing] = useState<Donor | null>(null);
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    address: "",
+    city: "",
+    state: "",
+    zip_code: "",
+    is_family: false,
+    family_members: "",
+    notes: "",
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
   useEffect(() => {
     if (!supabase) {
       setLoading(false);
       return;
     }
-    supabase
-      .from("donors")
-      .select("*")
-      .order("last_name")
-      .then(({ data, error }) => {
-        if (!error && data) setDonors(data as Donor[]);
-        setLoading(false);
-      });
+    Promise.all([
+      supabase.from("donors").select("*").order("last_name"),
+      supabase
+        .from("donations")
+        .select("donor_id, donor_name, amount, donation_date")
+        .not("amount", "is", null),
+    ]).then(([donorsRes, donationsRes]) => {
+      if (!donorsRes.error && donorsRes.data) setDonors(donorsRes.data as Donor[]);
+      if (!donationsRes.error && donationsRes.data)
+        setDonations(donationsRes.data as DonationStatRow[]);
+      setLoading(false);
+    });
   }, []);
+
+  // Live giving stats computed from the donations table — the donors columns
+  // (total_donations / last_donation_date) are never updated when a gift lands,
+  // so we aggregate here by donor_id (with a name fallback for unlinked rows).
+  const donorStats = useMemo(() => {
+    const byId = new Map<string, { total: number; last: string | null }>();
+    const byName = new Map<string, { total: number; last: string | null }>();
+    for (const d of donations) {
+      const amount = Number(d.amount ?? 0);
+      if (d.donor_id) {
+        const cur = byId.get(d.donor_id);
+        if (cur) {
+          cur.total += amount;
+          if (d.donation_date > (cur.last ?? "")) cur.last = d.donation_date;
+        } else {
+          byId.set(d.donor_id, { total: amount, last: d.donation_date || null });
+        }
+      } else if (d.donor_name && d.donor_name.trim() && d.donor_name.trim().toLowerCase() !== "anonymous") {
+        const key = normName(d.donor_name);
+        const cur = byName.get(key);
+        if (cur) {
+          cur.total += amount;
+          if (d.donation_date > (cur.last ?? "")) cur.last = d.donation_date;
+        } else {
+          byName.set(key, { total: amount, last: d.donation_date || null });
+        }
+      }
+    }
+    return { byId, byName };
+  }, [donations]);
+
+  const statsFor = (d: Donor): { total: number; last: string | null } => {
+    const full = normName(`${d.first_name} ${d.last_name}`);
+    const st =
+      donorStats.byId.get(d.id) ??
+      (full ? donorStats.byName.get(full) : undefined);
+    return st ?? { total: Number(d.total_donations ?? 0), last: d.last_donation_date ?? null };
+  };
 
   const filtered = useMemo(() => {
     if (!search.trim()) return donors;
@@ -191,11 +262,183 @@ export default function Donors() {
     });
   };
 
+  const openEdit = (d: Donor) => {
+    setEditing(d);
+    setEditForm({
+      first_name: d.first_name,
+      last_name: d.last_name,
+      email: d.email ?? "",
+      phone: d.phone ?? "",
+      address: d.address ?? "",
+      city: d.city ?? "",
+      state: d.state ?? "",
+      zip_code: d.zip_code ?? "",
+      is_family: d.is_family,
+      family_members: (d.family_members ?? []).join(", "),
+      notes: d.notes ?? "",
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing) return;
+    setSavingEdit(true);
+    const fam = editForm.family_members
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const patch = {
+      first_name: editForm.first_name,
+      last_name: editForm.last_name,
+      email: editForm.email || null,
+      phone: editForm.phone || null,
+      address: editForm.address || null,
+      city: editForm.city || null,
+      state: editForm.state || null,
+      zip_code: editForm.zip_code || null,
+      is_family: editForm.is_family,
+      family_members: fam,
+      notes: editForm.notes || null,
+    };
+    if (supabase) {
+      const { data, error } = await supabase
+        .from("donors")
+        .update(patch)
+        .eq("id", editing.id)
+        .select()
+        .maybeSingle();
+      if (data) {
+        setDonors((ds) => ds.map((d) => (d.id === editing.id ? (data as Donor) : d)));
+        setEditing(null);
+      } else if (error) {
+        console.warn("Update donor failed:", error);
+      }
+    } else {
+      setDonors((ds) => ds.map((d) => (d.id === editing.id ? { ...d, ...patch } as Donor : d)));
+      setEditing(null);
+    }
+    setSavingEdit(false);
+  };
+
+  const donorFields = (v: typeof editForm, set: (f: typeof editForm) => void, prefix: string) => (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <Label htmlFor={`${prefix}-first_name`}>First name</Label>
+        <Input
+          id={`${prefix}-first_name`}
+          value={v.first_name}
+          onChange={(e) => set({ ...v, first_name: e.target.value })}
+          className="mt-1.5"
+          required
+        />
+      </div>
+      <div>
+        <Label htmlFor={`${prefix}-last_name`}>Last name</Label>
+        <Input
+          id={`${prefix}-last_name`}
+          value={v.last_name}
+          onChange={(e) => set({ ...v, last_name: e.target.value })}
+          className="mt-1.5"
+          required
+        />
+      </div>
+      <div className="col-span-2">
+        <Label htmlFor={`${prefix}-email`}>Email</Label>
+        <Input
+          id={`${prefix}-email`}
+          type="email"
+          value={v.email}
+          onChange={(e) => set({ ...v, email: e.target.value })}
+          className="mt-1.5"
+        />
+      </div>
+      <div className="col-span-2">
+        <Label htmlFor={`${prefix}-phone`}>Phone</Label>
+        <Input
+          id={`${prefix}-phone`}
+          value={v.phone}
+          onChange={(e) => set({ ...v, phone: e.target.value })}
+          className="mt-1.5"
+        />
+      </div>
+      <div className="col-span-2">
+        <Label htmlFor={`${prefix}-address`}>Address</Label>
+        <Input
+          id={`${prefix}-address`}
+          value={v.address}
+          onChange={(e) => set({ ...v, address: e.target.value })}
+          className="mt-1.5"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`${prefix}-city`}>City</Label>
+        <Input
+          id={`${prefix}-city`}
+          value={v.city}
+          onChange={(e) => set({ ...v, city: e.target.value })}
+          className="mt-1.5"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`${prefix}-state`}>State</Label>
+        <Input
+          id={`${prefix}-state`}
+          value={v.state}
+          onChange={(e) => set({ ...v, state: e.target.value })}
+          className="mt-1.5"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`${prefix}-zip`}>ZIP</Label>
+        <Input
+          id={`${prefix}-zip`}
+          value={v.zip_code}
+          onChange={(e) => set({ ...v, zip_code: e.target.value })}
+          className="mt-1.5"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`${prefix}-fam`}>Family?</Label>
+        <div className="mt-1.5">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={v.is_family}
+              onChange={(e) => set({ ...v, is_family: e.target.checked })}
+              className="h-4 w-4 rounded border-stone-300"
+            />
+            This is a family account
+          </label>
+        </div>
+      </div>
+      {v.is_family && (
+        <div className="col-span-2">
+          <Label htmlFor={`${prefix}-members`}>Family members (comma-separated)</Label>
+          <Input
+            id={`${prefix}-members`}
+            placeholder="Marcus, Eliana, Sofia"
+            value={v.family_members}
+            onChange={(e) => set({ ...v, family_members: e.target.value })}
+            className="mt-1.5"
+          />
+        </div>
+      )}
+      <div className="col-span-2">
+        <Label htmlFor={`${prefix}-notes`}>Notes</Label>
+        <Input
+          id={`${prefix}-notes`}
+          value={v.notes}
+          onChange={(e) => set({ ...v, notes: e.target.value })}
+          className="mt-1.5"
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
         title="Donor directory"
-        subtitle="The people who faithfully support your ministry. Click any donor to see their annual giving."
+        subtitle="The people who faithfully support your ministry. Totals are live from recorded giving."
         badge={`${donors.length} on file`}
         actions={
           <Dialog open={open} onOpenChange={setOpen}>
@@ -209,118 +452,7 @@ export default function Donors() {
                   Add an individual or a family account. Family members are tracked as a comma-separated list.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="first_name">First name</Label>
-                  <Input
-                    id="first_name"
-                    value={form.first_name}
-                    onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                    className="mt-1.5"
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="last_name">Last name</Label>
-                  <Input
-                    id="last_name"
-                    value={form.last_name}
-                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                    className="mt-1.5"
-                    required
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <Label htmlFor="address">Address</Label>
-                  <Input
-                    id="address"
-                    value={form.address}
-                    onChange={(e) => setForm({ ...form, address: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="city">City</Label>
-                  <Input
-                    id="city"
-                    value={form.city}
-                    onChange={(e) => setForm({ ...form, city: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="state">State</Label>
-                  <Input
-                    id="state"
-                    value={form.state}
-                    onChange={(e) => setForm({ ...form, state: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="zip">ZIP</Label>
-                  <Input
-                    id="zip"
-                    value={form.zip_code}
-                    onChange={(e) => setForm({ ...form, zip_code: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="fam">Family?</Label>
-                  <div className="mt-1.5">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={form.is_family}
-                        onChange={(e) => setForm({ ...form, is_family: e.target.checked })}
-                        className="h-4 w-4 rounded border-stone-300"
-                      />
-                      This is a family account
-                    </label>
-                  </div>
-                </div>
-                {form.is_family && (
-                  <div className="col-span-2">
-                    <Label htmlFor="members">Family members (comma-separated)</Label>
-                    <Input
-                      id="members"
-                      placeholder="Marcus, Eliana, Sofia"
-                      value={form.family_members}
-                      onChange={(e) => setForm({ ...form, family_members: e.target.value })}
-                      className="mt-1.5"
-                    />
-                  </div>
-                )}
-                <div className="col-span-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <Input
-                    id="notes"
-                    value={form.notes}
-                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-              </div>
+              {donorFields(form, setForm, "new")}
               <div className="mt-6 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setOpen(false)}>
                   Cancel
@@ -365,51 +497,95 @@ export default function Donors() {
               <Th>Type</Th>
               <Th>Last gift</Th>
               <Th className="text-right">Total</Th>
+              <Th className="text-right">Actions</Th>
             </Tr>
           </THead>
           <tbody>
-            {filtered.map((d) => (
-              <Tr key={d.id}>
-                <Td>
-                  <div className="font-medium text-stone-900">
-                    {d.first_name} {d.last_name}
-                  </div>
-                  {d.is_family && d.family_members.length > 0 && (
-                    <div className="text-xs text-stone-500">
-                      + {d.family_members.join(", ")}
+            {filtered.map((d) => {
+              const st = statsFor(d);
+              return (
+                <Tr key={d.id}>
+                  <Td>
+                    <div className="font-medium text-stone-900">
+                      {d.first_name} {d.last_name}
                     </div>
-                  )}
-                </Td>
-                <Td>
-                  <div className="flex flex-col text-xs text-stone-600">
-                    {d.email && (
-                      <span className="flex items-center gap-1.5">
-                        <Mail className="h-3 w-3" /> {d.email}
-                      </span>
+                    {d.is_family && d.family_members.length > 0 && (
+                      <div className="text-xs text-stone-500">
+                        + {d.family_members.join(", ")}
+                      </div>
                     )}
-                    {d.phone && (
-                      <span className="flex items-center gap-1.5">
-                        <Phone className="h-3 w-3" /> {d.phone}
-                      </span>
-                    )}
-                  </div>
-                </Td>
-                <Td>
-                  <Badge tone={d.is_family ? "indigo" : "neutral"}>
-                    {d.is_family ? "Family" : "Individual"}
-                  </Badge>
-                </Td>
-                <Td className="text-xs text-stone-600">
-                  {d.last_donation_date ? formatDate(d.last_donation_date) : "—"}
-                </Td>
-                <Td className="text-right font-serif text-base font-semibold text-stone-900">
-                  {formatCurrency(d.total_donations)}
-                </Td>
-              </Tr>
-            ))}
+                  </Td>
+                  <Td>
+                    <div className="flex flex-col text-xs text-stone-600">
+                      {d.email && (
+                        <span className="flex items-center gap-1.5">
+                          <Mail className="h-3 w-3" /> {d.email}
+                        </span>
+                      )}
+                      {d.phone && (
+                        <span className="flex items-center gap-1.5">
+                          <Phone className="h-3 w-3" /> {d.phone}
+                        </span>
+                      )}
+                      {(d.address || d.city) && (
+                        <span className="flex items-center gap-1.5">
+                          <MapPin className="h-3 w-3" />
+                          {[d.address, [d.city, d.state, d.zip_code].filter(Boolean).join(" ")]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </Td>
+                  <Td>
+                    <Badge tone={d.is_family ? "indigo" : "neutral"}>
+                      {d.is_family ? "Family" : "Individual"}
+                    </Badge>
+                  </Td>
+                  <Td className="text-xs text-stone-600">
+                    {st.last ? formatDate(st.last) : "—"}
+                  </Td>
+                  <Td className="text-right font-serif text-base font-semibold text-stone-900">
+                    {formatCurrency(st.total)}
+                  </Td>
+                  <Td className="text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      iconLeft={<Pencil className="h-3.5 w-3.5" />}
+                      onClick={() => openEdit(d)}
+                    >
+                      Edit
+                    </Button>
+                  </Td>
+                </Tr>
+              );
+            })}
           </tbody>
         </TableWrap>
       )}
+
+      {/* Edit donor dialog */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit donor</DialogTitle>
+            <DialogDescription>
+              Update contact and personal details for{" "}
+              {editing ? `${editing.first_name} ${editing.last_name}` : "this donor"}.
+            </DialogDescription>
+          </DialogHeader>
+          {donorFields(editForm, setEditForm, "edit")}
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={savingEdit}>
+              {savingEdit ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
