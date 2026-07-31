@@ -1,31 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Church, Banknote, ScrollText, Filter } from "lucide-react";
 import {
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Input,
-  Label,
-  Textarea,
-  Select,
-  Badge,
-  EmptyState,
-  TableWrap,
-  THead,
-  Tr,
-  Th,
-  Td,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
+} from "lucide-react";
+import {
+  Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
+  Badge, EmptyState, TableWrap, THead, Tr, Th, Td,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { supabase } from "@/lib/supabase";
+import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+
+// ── Denomination preset ───────────────────────────────────────────────────
+const DENOMS = [100, 50, 20, 10, 5, 2, 1] as const;
+type DenomCounts = Record<number, string>; // e.g. { 100: "5", 50: "2", ... }
+
+interface Deduction {
+  reason: string;
+  amount: string;
+}
+
+interface CheckEntry {
+  key: string; // for React keys
+  donorName: string;
+  donorId: string; // uuid or ""
+  checkNumber: string;
+  amount: string;
+}
 
 interface Offering {
   id: string;
@@ -35,50 +37,51 @@ interface Offering {
   check_amount: number;
   total_amount: number;
   check_count: number;
+  cash_breakdown: DenomCounts | null;
+  cash_deductions: Deduction[] | null;
+  cash_net: number;
   recorded_by: string;
   notes: string | null;
   created_at: string;
 }
 
-const SAMPLE_OFFERINGS: Offering[] = [
-  {
-    id: "demo-o1",
-    service_date: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10),
-    service_name: "Sunday Service",
-    cash_amount: 342.5,
-    check_amount: 1280,
-    total_amount: 1622.5,
-    check_count: 4,
-    recorded_by: "demo",
-    notes: "4 checks deposited",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-o2",
-    service_date: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10),
-    service_name: "Sunday Service",
-    cash_amount: 275,
-    check_amount: 950,
-    total_amount: 1225,
-    check_count: 3,
+// ── Sample data ────────────────────────────────────────────────────────────
+function makeOffering(date: string, name: string, cash: number, checks: number, cnt: number): Offering {
+  return {
+    id: `demo-${date}`,
+    service_date: date,
+    service_name: name,
+    cash_amount: cash,
+    check_amount: checks,
+    total_amount: cash + checks,
+    check_count: cnt,
+    cash_breakdown: {},
+    cash_deductions: [],
+    cash_net: cash,
     recorded_by: "demo",
     notes: null,
     created_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-o3",
-    service_date: new Date(Date.now() - 17 * 86400000).toISOString().slice(0, 10),
-    service_name: "Christmas Eve",
-    cash_amount: 610,
-    check_amount: 2100,
-    total_amount: 2710,
-    check_count: 7,
-    recorded_by: "demo",
-    notes: "Special Christmas offering",
-    created_at: new Date().toISOString(),
-  },
+  };
+}
+
+const SAMPLE_OFFERINGS: Offering[] = [
+  makeOffering(new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10), "Sunday Service", 342.5, 1280, 4),
+  makeOffering(new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10), "Sunday Service", 275, 950, 3),
+  makeOffering(new Date(Date.now() - 17 * 86400000).toISOString().slice(0, 10), "Christmas Eve", 610, 2100, 7),
 ];
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+function emptyDenoms(): DenomCounts {
+  const c: DenomCounts = {};
+  for (const d of DENOMS) c[d] = "";
+  return c;
+}
+
+function computeCashFromDenoms(dc: DenomCounts): number {
+  return Object.entries(dc).reduce((s, [denom, cnt]) => s + Number(denom) * (Number(cnt) || 0), 0);
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
 export default function Offerings() {
   const [offerings, setOfferings] = useState<Offering[]>(SAMPLE_OFFERINGS);
   const [loading, setLoading] = useState(true);
@@ -86,29 +89,37 @@ export default function Offerings() {
   const [saving, setSaving] = useState(false);
   const [filterYear, setFilterYear] = useState<string>("all");
 
-  const [form, setForm] = useState({
-    service_date: new Date().toISOString().slice(0, 10),
-    service_name: "Sunday Service",
-    cash_amount: "",
-    check_amount: "",
-    check_count: "",
-    notes: "",
-  });
+  // donors list for autocomplete
+  const [donorList, setDonorList] = useState<Donor[]>([]);
 
-  useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    supabase
-      .from("offerings")
-      .select("*")
-      .order("service_date", { ascending: false })
-      .then(({ data }) => {
-        if (data) setOfferings(data as Offering[]);
-        setLoading(false);
-      });
-  }, []);
+  // ── Form state ─────────────────────────────────────────────────────────
+  const [svcDate, setSvcDate] = useState(new Date().toISOString().slice(0, 10));
+  const [svcName, setSvcName] = useState("Sunday Service");
+  const [denoms, setDenoms] = useState<DenomCounts>(emptyDenoms());
+  const [deductions, setDeductions] = useState<Deduction[]>([]);
+  const [checks, setChecks] = useState<CheckEntry[]>([]);
+  const [notes, setNotes] = useState("");
+
+  // ── Computed values ────────────────────────────────────────────────────
+  const grossCash = computeCashFromDenoms(denoms);
+  const totalDeductions = deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const netCash = grossCash - totalDeductions;
+  const totalChecks = checks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const depositTotal = netCash + totalChecks;
+
+  const filtered = useMemo(() => {
+    if (filterYear === "all") return offerings;
+    return offerings.filter((o) => o.service_date.startsWith(filterYear));
+  }, [offerings, filterYear]);
+
+  const totals = filtered.reduce(
+    (acc, o) => ({
+      cash: acc.cash + Number(o.cash_net || o.cash_amount),
+      checks: acc.checks + Number(o.check_amount),
+      grand: acc.grand + Number(o.total_amount),
+    }),
+    { cash: 0, checks: 0, grand: 0 },
+  );
 
   const years = useMemo(() => {
     const s = new Set<string>();
@@ -116,200 +127,350 @@ export default function Offerings() {
     return Array.from(s).sort().reverse();
   }, [offerings]);
 
-  const filtered = useMemo(
-    () =>
-      filterYear === "all"
-        ? offerings
-        : offerings.filter((o) => o.service_date.startsWith(filterYear)),
-    [offerings, filterYear],
-  );
+  // ── Load data ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+    Promise.all([
+      supabase.from("offerings").select("*").order("service_date", { ascending: false }),
+      supabase.from("donors").select("id, first_name, last_name").order("last_name"),
+    ]).then(([{ data: oData }, { data: dData }]) => {
+      if (oData) setOfferings(oData as Offering[]);
+      if (dData) setDonorList(dData as Donor[]);
+      setLoading(false);
+    });
+  }, []);
 
-  const totals = filtered.reduce(
-    (acc, o) => ({
-      cash: acc.cash + Number(o.cash_amount),
-      checks: acc.checks + Number(o.check_amount),
-      grand: acc.grand + Number(o.total_amount),
-    }),
-    { cash: 0, checks: 0, grand: 0 },
-  );
+  // ── Actions ────────────────────────────────────────────────────────────
+  const resetForm = () => {
+    setSvcDate(new Date().toISOString().slice(0, 10));
+    setSvcName("Sunday Service");
+    setDenoms(emptyDenoms());
+    setDeductions([]);
+    setChecks([]);
+    setNotes("");
+  };
 
-  const handleCreate = async () => {
+  const addCheck = () => {
+    setChecks((prev) => [...prev, { key: `c${Date.now()}`, donorName: "", donorId: "", checkNumber: "", amount: "" }]);
+  };
+
+  const removeCheck = (key: string) => setChecks((prev) => prev.filter((c) => c.key !== key));
+
+  const updateCheck = (key: string, patch: Partial<CheckEntry>) => {
+    setChecks((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  };
+
+  const selectDonorForCheck = (key: string, donorId: string, donorName: string) => {
+    updateCheck(key, { donorId, donorName });
+  };
+
+  const addDeduction = () => {
+    setDeductions((prev) => [...prev, { reason: "", amount: "" }]);
+  };
+
+  const removeDeduction = (idx: number) => {
+    setDeductions((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateDeduction = (idx: number, patch: Partial<Deduction>) => {
+    setDeductions((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)));
+  };
+
+  const handleSave = async () => {
+    if (depositTotal <= 0) return;
     setSaving(true);
-    const cash = Number(form.cash_amount) || 0;
-    const checks = Number(form.check_amount) || 0;
-    const count = Number(form.check_count) || 0;
 
-    if (cash + checks <= 0) {
-      setSaving(false);
-      return;
-    }
-
-    const baseRow: Offering = {
-      id: `local-${Date.now()}`,
-      service_date: form.service_date,
-      service_name: form.service_name,
-      cash_amount: cash,
-      check_amount: checks,
-      total_amount: cash + checks,
-      check_count: count,
-      recorded_by: "demo",
-      notes: form.notes || null,
-      created_at: new Date().toISOString(),
+    const payload = {
+      service_date: svcDate,
+      service_name: svcName,
+      cash_amount: netCash,
+      cash_breakdown: denoms,
+      cash_deductions: deductions,
+      cash_net: netCash,
+      check_amount: totalChecks,
+      check_count: checks.length,
+      total_amount: depositTotal,
+      notes: notes || null,
     };
 
     if (supabase) {
-      const { data, error } = await supabase
+      // 1. Insert the offering record
+      const { data: offData, error: offErr } = await supabase
         .from("offerings")
-        .insert({
-          service_date: form.service_date,
-          service_name: form.service_name,
-          cash_amount: cash,
-          check_amount: checks,
-          check_count: count,
-          notes: form.notes || null,
-        })
+        .insert(payload)
         .select()
         .maybeSingle();
 
-      if (data) setOfferings((rows) => [data as Offering, ...rows]);
-      if (error) console.warn("Insert offering failed:", error);
+      if (offErr) { console.warn("Insert offering failed:", offErr); setSaving(false); return; }
+
+      const offeringId = (offData as Offering).id;
+
+      // 2. For each check, find/create donor and create a donation row
+      for (const ch of checks) {
+        const amt = Number(ch.amount);
+        if (!amt || amt <= 0) continue;
+
+        let donorId = ch.donorId;
+
+        // Create donor if not linked to an existing one
+        if (!donorId && ch.donorName.trim()) {
+          const [firstName, ...lastParts] = ch.donorName.trim().split(" ");
+          const lastName = lastParts.join(" ") || firstName;
+          const { data: newDonor } = await supabase
+            .from("donors")
+            .insert({ first_name: firstName, last_name: lastName })
+            .select("id")
+            .maybeSingle();
+          if (newDonor) donorId = newDonor.id;
+        }
+
+        // Create the donation row
+        const { data: donData } = await supabase
+          .from("donations")
+          .insert({
+            donor_id: donorId || null,
+            donor_name: ch.donorName.trim() || "Anonymous",
+            amount: amt,
+            donation_type: "offering",
+            payment_method: "check",
+            check_number: ch.checkNumber || null,
+            donation_date: svcDate,
+          })
+          .select("id")
+          .maybeSingle();
+
+        // Create the offering check link
+        await supabase.from("offering_checks").insert({
+          offering_id: offeringId,
+          donor_id: donorId || null,
+          donor_name: ch.donorName.trim() || "Anonymous",
+          check_number: ch.checkNumber || null,
+          amount: amt,
+          donation_id: donData?.id || null,
+        });
+      }
+
+      // 3. Refresh the list
+      const { data: fresh } = await supabase
+        .from("offerings")
+        .select("*")
+        .order("service_date", { ascending: false });
+      if (fresh) setOfferings(fresh as Offering[]);
     } else {
-      setOfferings((rows) => [baseRow, ...rows]);
+      // Demo mode
+      const row: Offering = {
+        ...payload,
+        id: `local-${Date.now()}`,
+        recorded_by: "demo",
+        created_at: new Date().toISOString(),
+        cash_breakdown: payload.cash_breakdown as DenomCounts,
+        cash_deductions: payload.cash_deductions as Deduction[],
+      } as Offering;
+      setOfferings((prev) => [row, ...prev]);
     }
 
     setSaving(false);
     setOpen(false);
-    setForm({
-      service_date: new Date().toISOString().slice(0, 10),
-      service_name: "Sunday Service",
-      cash_amount: "",
-      check_amount: "",
-      check_count: "",
-      notes: "",
-    });
+    resetForm();
   };
 
   return (
     <div>
       <PageHeader
         title="Offerings"
-        subtitle="Record weekly service collections — cash and checks from the offering plate."
+        subtitle="Record Sunday collections — cash by denomination, individual checks per donor."
         badge={`${filtered.length} services`}
         actions={
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>Record offering</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Record a service offering</DialogTitle>
                 <DialogDescription>
-                  Enter the total cash and checks collected during this service.
+                  Enter cash by denomination, any deductions (pastor gift, etc.), and individual checks with donor names for tax receipts.
                 </DialogDescription>
               </DialogHeader>
 
+              {/* Date & Service */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="svc-date">Service date</Label>
-                  <Input
-                    id="svc-date"
-                    type="date"
-                    value={form.service_date}
-                    onChange={(e) => setForm({ ...form, service_date: e.target.value })}
-                    className="mt-1.5"
-                    required
-                  />
+                  <Input id="svc-date" type="date" value={svcDate}
+                    onChange={(e) => setSvcDate(e.target.value)} className="mt-1.5" required />
                 </div>
                 <div>
                   <Label htmlFor="svc-name">Service name</Label>
-                  <Select
-                    id="svc-name"
-                    value={form.service_name}
-                    onChange={(e) => setForm({ ...form, service_name: e.target.value })}
-                    className="mt-1.5"
-                  >
-                    <option value="Sunday Service">Sunday Service</option>
-                    <option value="Wednesday Bible Study">Wednesday Bible Study</option>
-                    <option value="Christmas Eve">Christmas Eve</option>
-                    <option value="Easter">Easter</option>
-                    <option value="Special Event">Special Event</option>
+                  <Select id="svc-name" value={svcName}
+                    onChange={(e) => setSvcName(e.target.value)} className="mt-1.5">
+                    <option>Sunday Service</option>
+                    <option>Wednesday Bible Study</option>
+                    <option>Christmas Eve</option>
+                    <option>Easter</option>
+                    <option>Special Event</option>
                   </Select>
-                </div>
-
-                <div className="col-span-2 rounded-lg border border-stone-200 bg-parchment-50/60 p-3">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-stone-700">
-                    <Banknote className="h-4 w-4 text-emerald-600" />
-                    Cash collected
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="cash">Cash amount (USD)</Label>
-                      <Input
-                        id="cash"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={form.cash_amount}
-                        onChange={(e) => setForm({ ...form, cash_amount: e.target.value })}
-                        className="mt-1.5"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-span-2 rounded-lg border border-stone-200 bg-amber-50/40 p-3">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-stone-700">
-                    <ScrollText className="h-4 w-4 text-amber-600" />
-                    Checks collected
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="checks">Check amount (USD)</Label>
-                      <Input
-                        id="checks"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={form.check_amount}
-                        onChange={(e) => setForm({ ...form, check_amount: e.target.value })}
-                        className="mt-1.5"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="check-count">Number of checks</Label>
-                      <Input
-                        id="check-count"
-                        type="number"
-                        min="0"
-                        step="1"
-                        placeholder="0"
-                        value={form.check_count}
-                        onChange={(e) => setForm({ ...form, check_count: e.target.value })}
-                        className="mt-1.5"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-span-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea
-                    id="notes"
-                    value={form.notes}
-                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    className="mt-1.5"
-                    placeholder="e.g. 3 checks held for deposit"
-                  />
                 </div>
               </div>
 
+              {/* ── Cash by denomination ────────────────────────────────── */}
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/30 p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-stone-700">
+                  <Banknote className="h-4 w-4 text-emerald-600" /> Cash by denomination
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {DENOMS.map((d) => (
+                    <div key={d}>
+                      <Label className="text-xs">${d}</Label>
+                      <Input
+                        type="number" min="0" step="1" placeholder="0"
+                        value={denoms[d]}
+                        onChange={(e) => setDenoms((prev) => ({ ...prev, [d]: e.target.value }))}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 text-right text-sm font-medium text-stone-600">
+                  Gross cash: <span className="font-serif text-lg text-stone-900">{formatCurrency(grossCash)}</span>
+                </div>
+              </div>
+
+              {/* ── Cash deductions ─────────────────────────────────────── */}
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50/30 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
+                    <MinusCircle className="h-4 w-4 text-rose-500" /> Cash deductions (pastor gift, etc.)
+                  </span>
+                  <Button size="sm" variant="outline" onClick={addDeduction}>+ Add</Button>
+                </div>
+                {deductions.length === 0 && (
+                  <p className="text-xs text-stone-400">No deductions. Add one if cash was taken before deposit.</p>
+                )}
+                {deductions.map((ded, i) => (
+                  <div key={i} className="mt-2 flex items-center gap-2">
+                    <Input
+                      placeholder="Reason (e.g. Pastor gift)"
+                      value={ded.reason}
+                      onChange={(e) => updateDeduction(i, { reason: e.target.value })}
+                      className="flex-1 h-9 text-sm"
+                    />
+                    <Input
+                      type="number" min="0" step="0.01" placeholder="0.00"
+                      value={ded.amount}
+                      onChange={(e) => updateDeduction(i, { amount: e.target.value })}
+                      className="w-28 h-9 text-sm"
+                    />
+                    <button onClick={() => removeDeduction(i)}
+                      className="rounded p-1 text-stone-400 hover:bg-rose-100 hover:text-rose-600">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {deductions.length > 0 && (
+                  <div className="mt-2 text-right text-sm text-stone-600">
+                    Deductions: <span className="font-medium text-rose-700">{formatCurrency(totalDeductions)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Net cash display ────────────────────────────────────── */}
+              <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-center">
+                <span className="text-sm text-stone-500">Net cash deposit</span>
+                <div className="font-serif text-2xl font-semibold text-stone-900">
+                  {formatCurrency(netCash)}
+                </div>
+              </div>
+
+              {/* ── Checks per donor ────────────────────────────────────── */}
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
+                    <ScrollText className="h-4 w-4 text-amber-600" /> Individual checks
+                  </span>
+                  <Button size="sm" variant="outline" onClick={addCheck}>+ Add check</Button>
+                </div>
+                {checks.length === 0 && (
+                  <p className="text-xs text-stone-400">No checks yet. Add checks with donor names for tax receipts.</p>
+                )}
+                {checks.map((ch) => (
+                  <div key={ch.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-100 bg-white p-2">
+                    <div className="flex-1 min-w-[160px]">
+                      <Label className="text-xs">Donor</Label>
+                      <input
+                        list={`donors-${ch.key}`}
+                        value={ch.donorName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateCheck(ch.key, { donorName: val });
+                          // Auto-fill donor ID if exact match found
+                          const match = donorList.find(
+                            (d) => `${d.first_name} ${d.last_name}`.toLowerCase() === val.toLowerCase()
+                          );
+                          if (match) updateCheck(ch.key, { donorId: match.id, donorName: `${match.first_name} ${match.last_name}` });
+                          else updateCheck(ch.key, { donorId: "" });
+                        }}
+                        placeholder="Type donor name..."
+                        className="mt-1 w-full rounded-md border border-stone-200 px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                      />
+                      <datalist id={`donors-${ch.key}`}>
+                        {donorList.map((d) => (
+                          <option key={d.id} value={`${d.first_name} ${d.last_name}`} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div className="w-24">
+                      <Label className="text-xs">Check #</Label>
+                      <Input
+                        placeholder="#"
+                        value={ch.checkNumber}
+                        onChange={(e) => updateCheck(ch.key, { checkNumber: e.target.value })}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div className="w-28">
+                      <Label className="text-xs">Amount</Label>
+                      <Input
+                        type="number" min="0" step="0.01" placeholder="0.00"
+                        value={ch.amount}
+                        onChange={(e) => updateCheck(ch.key, { amount: e.target.value })}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <button onClick={() => removeCheck(ch.key)}
+                      className="mt-4 rounded p-1 text-stone-400 hover:bg-rose-100 hover:text-rose-600">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {checks.length > 0 && (
+                  <div className="mt-2 text-right text-sm text-stone-600">
+                    Checks total: <span className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(totalChecks)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Deposit total ───────────────────────────────────────── */}
+              <div className="mt-3 rounded-lg border-2 border-accent bg-accent-soft p-3 text-center">
+                <span className="text-sm font-medium text-accent">Total deposit</span>
+                <div className="font-serif text-3xl font-bold text-stone-900">
+                  {formatCurrency(depositTotal)}
+                </div>
+                <p className="mt-1 text-xs text-stone-500">
+                  Net cash {formatCurrency(netCash)} + Checks {formatCurrency(totalChecks)}
+                </p>
+              </div>
+
+              {/* Notes */}
+              <div className="mt-3">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)}
+                  className="mt-1.5" placeholder="Any additional notes..." />
+              </div>
+
               <div className="mt-6 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleCreate} disabled={saving}>
+                <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancel</Button>
+                <Button onClick={handleSave} disabled={saving || depositTotal <= 0}>
                   {saving ? "Saving…" : "Save offering"}
                 </Button>
               </div>
@@ -318,7 +479,7 @@ export default function Offerings() {
         }
       />
 
-      {/* Summary cards */}
+      {/* ── Summary cards ────────────────────────────────────────────────── */}
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Card>
           <CardBody className="flex items-center gap-4 py-5">
@@ -326,12 +487,8 @@ export default function Offerings() {
               <Banknote className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">
-                Total cash
-              </div>
-              <div className="font-serif text-xl font-semibold text-stone-900">
-                {formatCurrency(totals.cash)}
-              </div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Net cash</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totals.cash)}</div>
             </div>
           </CardBody>
         </Card>
@@ -341,12 +498,8 @@ export default function Offerings() {
               <ScrollText className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">
-                Total checks
-              </div>
-              <div className="font-serif text-xl font-semibold text-stone-900">
-                {formatCurrency(totals.checks)}
-              </div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Checks</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totals.checks)}</div>
             </div>
           </CardBody>
         </Card>
@@ -356,18 +509,14 @@ export default function Offerings() {
               <Church className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">
-                Grand total
-              </div>
-              <div className="font-serif text-xl font-semibold text-stone-900">
-                {formatCurrency(totals.grand)}
-              </div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Total deposited</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totals.grand)}</div>
             </div>
           </CardBody>
         </Card>
       </div>
 
-      {/* Year filter */}
+      {/* ── Filter ───────────────────────────────────────────────────────── */}
       <Card className="mb-4">
         <CardHeader className="border-b border-stone-100">
           <div className="flex items-center gap-2 text-sm">
@@ -376,34 +525,25 @@ export default function Offerings() {
           </div>
         </CardHeader>
         <CardBody>
-          <Select
-            value={filterYear}
-            onChange={(e) => setFilterYear(e.target.value)}
-            className="w-36"
-          >
+          <Select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="w-36">
             <option value="all">All years</option>
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </Select>
         </CardBody>
       </Card>
 
+      {/* ── Table ────────────────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
-        <EmptyState
-          icon={<Church className="h-6 w-6" />}
+        <EmptyState icon={<Church className="h-6 w-6" />}
           title="No offerings recorded"
-          description="Record your first service collection to start tracking weekly offerings."
-        />
+          description="Record your first service collection to start tracking weekly offerings." />
       ) : (
         <TableWrap>
           <THead>
             <Tr>
               <Th>Date</Th>
               <Th>Service</Th>
-              <Th className="text-right">Cash</Th>
+              <Th className="text-right">Cash (net)</Th>
               <Th className="text-right">Checks</Th>
               <Th className="text-right">Total</Th>
               <Th>Notes</Th>
@@ -412,29 +552,21 @@ export default function Offerings() {
           <tbody>
             {filtered.map((o) => (
               <Tr key={o.id}>
-                <Td className="whitespace-nowrap font-medium">
-                  {formatDate(o.service_date)}
-                </Td>
-                <Td>
-                  <Badge tone="indigo">{o.service_name}</Badge>
-                </Td>
+                <Td className="whitespace-nowrap font-medium">{formatDate(o.service_date)}</Td>
+                <Td><Badge tone="indigo">{o.service_name}</Badge></Td>
                 <Td className="text-right font-mono text-sm text-stone-700">
-                  {formatCurrency(o.cash_amount)}
+                  {formatCurrency(o.cash_net || o.cash_amount)}
                 </Td>
                 <Td className="text-right font-mono text-sm text-stone-700">
                   <span>{formatCurrency(o.check_amount)}</span>
                   {o.check_count > 0 && (
-                    <span className="ml-1 text-xs text-stone-400">
-                      ({o.check_count} check{o.check_count === 1 ? "" : "s"})
-                    </span>
+                    <span className="ml-1 text-xs text-stone-400">({o.check_count})</span>
                   )}
                 </Td>
                 <Td className="text-right font-serif text-base font-semibold text-stone-900">
                   {formatCurrency(o.total_amount)}
                 </Td>
-                <Td className="max-w-[200px] truncate text-sm text-stone-500">
-                  {o.notes ?? "—"}
-                </Td>
+                <Td className="max-w-[200px] truncate text-sm text-stone-500">{o.notes ?? "—"}</Td>
               </Tr>
             ))}
             <Tr>
@@ -454,12 +586,6 @@ export default function Offerings() {
             </Tr>
           </tbody>
         </TableWrap>
-      )}
-
-      {!supabase && (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Demo mode with sample data. Connect Supabase to persist offering records.
-        </div>
       )}
     </div>
   );
