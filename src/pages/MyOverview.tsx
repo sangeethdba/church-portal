@@ -217,13 +217,12 @@ export function MemberOverview() {
                   <option value="all">All time</option>
                 </Select>
                 <Button size="sm" variant="ghost" onClick={handleDownloadReport} iconLeft={<FileDown className="h-3.5 w-3.5" />} disabled={!profile?.linked_donor_id}>Report PDF</Button>
-                <Button size="sm" variant="ghost" onClick={() => navigate("/tax-report")} iconLeft={<FileText className="h-3.5 w-3.5" />}>Tax statement</Button>
               </div>
             </div>
           </CardHeader>
           <CardBody className="space-y-3">
             {!profile?.linked_donor_id ? (
-              <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="Not linked to a donor record yet" description="Ask your treasurer to link your account to your donor record so your giving history and tax statements appear here." />
+              <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="Not linked to a donor record yet" description="Ask your treasurer to link your account to your donor record so your giving history appears here." />
             ) : donations.length === 0 ? (
               <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No donations yet" description="Gifts recorded under your donor record will appear here." />
             ) : donations.map((d) => (
