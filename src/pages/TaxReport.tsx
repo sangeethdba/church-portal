@@ -68,6 +68,9 @@ export default function TaxReport() {
     return Array.from(ys).sort((a, b) => b - a);
   }, [donations]);
 
+  const donor = donors.find((d) => d.id === selectedDonor);
+  const nameLookup = donor ? `${donor.first_name} ${donor.last_name}` : "";
+
   const filtered = useMemo(
     () =>
       donations
@@ -75,13 +78,10 @@ export default function TaxReport() {
         .filter(
           (d) => Number(d.donation_date.slice(0, 4)) === year,
         ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [donations, selectedDonor, year],
+    [donations, selectedDonor, year, nameLookup],
   );
 
   const totalAmount = filtered.reduce((s, d) => s + Number(d.amount || 0), 0);
-  const donor = donors.find((d) => d.id === selectedDonor);
-  const nameLookup = donor ? `${donor.first_name} ${donor.last_name}` : "";
 
   const onIssue = () => {
     if (!donor) return;
