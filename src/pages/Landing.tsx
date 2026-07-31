@@ -247,9 +247,6 @@ export default function Landing() {
             <a href="https://atlantalittleflock.org" target="_blank" rel="noreferrer" className="hover:text-stone-700">
               atlantalittleflock.org
             </a>
-            <a href="https://github.com/sangeethdba/church-portal" target="_blank" rel="noreferrer" className="hover:text-stone-700">
-              GitHub
-            </a>
           </div>
         </div>
       </footer>
