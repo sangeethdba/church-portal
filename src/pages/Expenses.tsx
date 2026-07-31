@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus } from "lucide-react";
 import {
   Button,
   Card,
@@ -133,6 +133,16 @@ export default function Expenses() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const checkImageRef = useRef<HTMLInputElement>(null);
 
+  // ── Line items (batch bills for member_submitted) ─────────────────────
+  interface LineItemDraft { key: string; description: string; amount: string; file: File | null; }
+  const [lineItems, setLineItems] = useState<LineItemDraft[]>([]);
+
+  const addLineItem = () => setLineItems((prev) => [...prev, { key: `li${Date.now()}`, description: "", amount: "", file: null }]);
+  const removeLineItem = (key: string) => setLineItems((prev) => prev.filter((li) => li.key !== key));
+  const updateLineItem = (key: string, patch: Partial<LineItemDraft>) =>
+    setLineItems((prev) => prev.map((li) => (li.key === key ? { ...li, ...patch } : li)));
+  const lineItemTotal = lineItems.reduce((s, li) => s + (Number(li.amount) || 0), 0);
+
   // "Mark Paid" dialog state
   const [payOpen, setPayOpen] = useState(false);
   const [payExpenseId, setPayExpenseId] = useState<string | null>(null);
@@ -233,7 +243,8 @@ export default function Expenses() {
 
   const handleCreate = async () => {
     setSaving(true);
-    const value = Number(form.amount);
+    // Use line item total if present, otherwise form amount
+    const value = lineItems.length > 0 ? lineItemTotal : Number(form.amount);
     if (!value || value <= 0) { setSaving(false); return; }
 
     // Upload check image if present
@@ -243,6 +254,21 @@ export default function Expenses() {
       const path = `check-images/${Date.now()}-${safeName}`;
       const { error } = await supabase.storage.from("receipts").upload(path, checkImage, { cacheControl: "3600", upsert: false });
       if (!error) checkImagePath = path;
+    }
+
+    // Upload line item receipts
+    const lineItemsData: { description: string; amount: number; receipt_path: string | null }[] = [];
+    if (supabase) {
+      for (const li of lineItems) {
+        let receiptPath: string | null = null;
+        if (li.file) {
+          const safeName = li.file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+          const path = `line-items/${Date.now()}-${safeName}`;
+          const { error } = await supabase.storage.from("receipts").upload(path, li.file, { cacheControl: "3600", upsert: false });
+          if (!error) receiptPath = path;
+        }
+        lineItemsData.push({ description: li.description || "Bill", amount: Number(li.amount) || 0, receipt_path: receiptPath });
+      }
     }
 
     const baseRow: Expense = {
@@ -264,13 +290,16 @@ export default function Expenses() {
       created_at: new Date().toISOString(),
       payment_method: paymentMethod,
       check_number: checkNumber || null,
+      line_items: lineItemsData.length > 0 ? lineItemsData : null,
     };
     if (supabase) {
-      const { data, error } = await supabase.from("expenses").insert({
+      const insertPayload: Record<string, unknown> = {
         source: baseRow.source, title: baseRow.title, amount: baseRow.amount, category: baseRow.category,
         description: baseRow.description, notes: baseRow.notes, status: baseRow.status,
         payment_method: paymentMethod, check_number: checkNumber || null,
-      }).select().maybeSingle();
+      };
+      if (lineItemsData.length > 0) { insertPayload.line_items = JSON.stringify(lineItemsData); }
+      const { data, error } = await supabase.from("expenses").insert(insertPayload).select().maybeSingle();
       if (data) {
         const expense = data as Expense;
         // Attach check image to receipt_paths if uploaded
@@ -304,6 +333,7 @@ export default function Expenses() {
     setCheckImage(null);
     setCheckNumber("");
     setPaymentMethod("online");
+    setLineItems([]);
   };
 
   const statusTone = (s: ExpenseStatus) =>
@@ -409,6 +439,55 @@ export default function Expenses() {
                     <option value="other">Other</option>
                   </Select>
                 </div>
+                {/* ── Line items (member_submitted batch bills) ────────── */}
+                {form.source === "member_submitted" && (
+                  <div className="col-span-2 rounded-lg border border-stone-200 bg-stone-50/50 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-stone-600">
+                        <ListPlus className="h-3.5 w-3.5" /> Bills (add each bill separately)
+                      </span>
+                      <Button size="sm" variant="outline" onClick={addLineItem}>+ Add bill</Button>
+                    </div>
+                    {lineItems.length === 0 && (
+                      <p className="text-xs text-stone-400">No bills added yet. Click "Add bill" to enter each receipt.</p>
+                    )}
+                    {lineItems.map((li) => (
+                      <div key={li.key} className="mt-2 flex flex-wrap items-start gap-2 rounded border border-stone-200 bg-white p-2">
+                        <div className="flex-1 min-w-[140px]">
+                          <Label className="text-xs">Description</Label>
+                          <Input placeholder="e.g. Groceries for event" value={li.description}
+                            onChange={(e) => updateLineItem(li.key, { description: e.target.value })}
+                            className="mt-1 h-8 text-sm" />
+                        </div>
+                        <div className="w-24">
+                          <Label className="text-xs">Amount</Label>
+                          <Input type="number" min="0" step="0.01" placeholder="0.00" value={li.amount}
+                            onChange={(e) => updateLineItem(li.key, { amount: e.target.value })}
+                            className="mt-1 h-8 text-sm" />
+                        </div>
+                        <div className="w-32">
+                          <Label className="text-xs">Receipt</Label>
+                          <label className="mt-1 flex h-8 cursor-pointer items-center rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-500 hover:bg-stone-50">
+                            <Upload className="mr-1 h-3 w-3" />
+                            {li.file ? "✓ Uploaded" : "Attach"}
+                            <input type="file" accept="image/*,.pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                              onChange={(e) => { if (e.target.files?.[0]) updateLineItem(li.key, { file: e.target.files[0] }); }} />
+                          </label>
+                        </div>
+                        <button onClick={() => removeLineItem(li.key)}
+                          className="mt-5 rounded p-1 text-stone-400 hover:bg-rose-100 hover:text-rose-600">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                    {lineItems.length > 0 && (
+                      <div className="mt-2 text-right text-sm text-stone-600">
+                        Total: <span className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(lineItemTotal)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="col-span-2">
                   <Label htmlFor="ttl">Title</Label>
                   <Input
@@ -679,6 +758,11 @@ function ExpenseList({
                   <div className="text-xs text-stone-500">Logged {formatDate(e.submitted_at)}</div>
                   {e.transfer_receipt_path && (
                     <div className="mt-1 text-xs text-emerald-700">✓ Transfer receipt attached</div>
+                  )}
+                  {e.line_items && (e.line_items as unknown[]).length > 0 && (
+                    <div className="mt-1 text-xs text-stone-500">
+                      {(e.line_items as unknown[]).length} bill{(e.line_items as unknown[]).length === 1 ? "" : "s"} attached
+                    </div>
                   )}
                 </Td>
                 <Td>

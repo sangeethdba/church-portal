@@ -14,6 +14,12 @@ export type ExpenseStatus =
   | "paid"
   | "auto_paid";
 export type DepositStatus = "pending_deposit" | "deposited";
+
+export interface LineItem {
+  description: string;
+  amount: number;
+  receipt_path?: string | null;
+}
 export type ExpenseCategory =
   | "utilities"
   | "maintenance"
@@ -82,6 +88,7 @@ export interface Expense {
   transfer_receipt_path?: string | null;
   payment_method?: string | null;
   check_number?: string | null;
+  line_items?: LineItem[] | null;
   user_id?: string | null;
   status: ExpenseStatus;
   submitted_at: string;
