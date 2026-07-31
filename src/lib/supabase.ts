@@ -123,8 +123,13 @@ export interface AuditEntry {
 const url = import.meta.env.VITE_SUPABASE_URL ?? "";
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
 
-export const isSupabaseConfigured = (): boolean =>
-  url.startsWith("https://") && anon.length > 20;
+export const isSupabaseConfigured = (): boolean => {
+  const ok = url.startsWith("https://") && anon.length > 20;
+  if (!ok && url) {
+    console.warn("Supabase: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY appears invalid");
+  }
+  return ok;
+};
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured()
   ? createClient(url, anon, {
