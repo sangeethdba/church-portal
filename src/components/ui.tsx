@@ -178,6 +178,8 @@ export interface TileProps {
   deltaPositive?: boolean;
   icon?: React.ReactNode;
   accent?: "indigo" | "amber" | "emerald" | "rose";
+  /** Makes the whole tile clickable (adds button semantics + hover affordance). */
+  onClick?: () => void;
 }
 const accentMap = {
   indigo: "bg-indigo-50 text-indigo-700",
@@ -185,9 +187,9 @@ const accentMap = {
   emerald: "bg-emerald-50 text-emerald-700",
   rose: "bg-rose-50 text-rose-700",
 };
-export function Tile({ label, value, delta, deltaPositive, icon, accent = "indigo" }: TileProps) {
-  return (
-    <Card className="overflow-hidden">
+export function Tile({ label, value, delta, deltaPositive, icon, accent = "indigo", onClick }: TileProps) {
+  const inner = (
+    <>
       <div className="flex items-start justify-between p-5">
         <div>
           <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{label}</div>
@@ -211,8 +213,20 @@ export function Tile({ label, value, delta, deltaPositive, icon, accent = "indig
         )}
       </div>
       <div className="h-1 w-full bg-gradient-to-r from-transparent via-stone-200 to-transparent" />
-    </Card>
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="group w-full cursor-pointer overflow-hidden rounded-2xl border border-stone-200 bg-white text-left shadow-soft transition hover:border-amber-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <Card className="overflow-hidden">{inner}</Card>;
 }
 
 // ---------- Tabs ---------------------------------------------------------
