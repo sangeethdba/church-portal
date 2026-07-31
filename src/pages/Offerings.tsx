@@ -101,6 +101,11 @@ function computeCashFromDenoms(dc: DenomCounts): number {
   return Object.entries(dc).reduce((s, [denom, cnt]) => s + Number(denom) * (Number(cnt) || 0), 0);
 }
 
+// Normalize a typed name so the same new member on multiple check rows is one person
+function normName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 export default function Offerings() {
   const [offerings, setOfferings] = useState<Offering[]>(SAMPLE_OFFERINGS);
@@ -390,20 +395,32 @@ export default function Offerings() {
       const offeringId = (offData as Offering).id;
 
       // 2. Create check donations
+      // A new member can give two or more checks (one per family member) — the
+      // same typed name on multiple rows must resolve to ONE donor record.
+      const createdNewDonors = new Map<string, string>(); // normalized name -> donor id
       for (const ch of checks) {
         const amt = Number(ch.amount);
         if (!amt || amt <= 0) continue;
 
         let donorId = ch.donorId;
         if (!donorId && ch.donorName.trim()) {
-          const [firstName, ...lastParts] = ch.donorName.trim().split(" ");
-          const lastName = lastParts.join(" ") || firstName;
-          const { data: newDonor } = await supabase
-            .from("donors")
-            .insert({ first_name: firstName, last_name: lastName })
-            .select("id")
-            .maybeSingle();
-          if (newDonor) donorId = newDonor.id;
+          const key = normName(ch.donorName);
+          const existing = createdNewDonors.get(key);
+          if (existing) {
+            donorId = existing;
+          } else {
+            const [firstName, ...lastParts] = ch.donorName.trim().split(" ");
+            const lastName = lastParts.join(" ") || firstName;
+            const { data: newDonor } = await supabase
+              .from("donors")
+              .insert({ first_name: firstName, last_name: lastName })
+              .select("id")
+              .maybeSingle();
+            if (newDonor) {
+              donorId = newDonor.id;
+              createdNewDonors.set(key, newDonor.id);
+            }
+          }
         }
 
         const { data: donData, error: donErr } = await supabase
@@ -693,9 +710,22 @@ export default function Offerings() {
                         )}
                       </div>
                       {ch.donorName.trim() !== "" && !ch.donorId && (
-                        <p className="mt-1 text-[11px] font-medium text-amber-600">
-                          New member — auto-created on save. Add details later in Donors.
-                        </p>
+                        (() => {
+                          // Same name typed on another check row? Then this is the same new member — one record on save.
+                          const sameNameOnOtherRow = checks.some(
+                            (c) => c.key !== ch.key && !c.donorId && normName(c.donorName) === normName(ch.donorName) && normName(ch.donorName) !== "",
+                          );
+                          return (
+                            <p className="mt-1 text-[11px] font-medium text-amber-600">
+                              New member — auto-created on save. Add details later in Donors.
+                              {sameNameOnOtherRow && (
+                                <span className="block text-emerald-700">
+                                  ✓ {checks.filter((c) => !c.donorId && normName(c.donorName) === normName(ch.donorName)).length} checks — one member record will be created for {ch.donorName.trim()}.
+                                </span>
+                              )}
+                            </p>
+                          );
+                        })()
                       )}
                     </div>
                     <div className="w-24">
