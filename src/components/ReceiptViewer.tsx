@@ -86,12 +86,14 @@ export default function ReceiptViewer({
     return () => { cancelled = true; };
   }, [open, data?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isOwner = data ? data.user_id === ctx.profile?.id : false;
-  const awaitingReply =
-    !!data?.admin_note && !data?.member_reply && data?.status === "pending" && isOwner;
+  const isAdminView = isAdminRole(ctx.profile?.role);
+  // Members can only ever see their own expenses (RLS + page filters), so a
+  // non-admin viewer is always the owner — no fragile id-equality check needed.
+  const canReply =
+    !!data?.admin_note && !data?.member_reply && data?.status === "pending" && !isAdminView;
   // Owner can attach missing bills while pending; admins can attach anytime.
   const canAttach = data
-    ? isAdminRole(ctx.profile?.role) || (isOwner && data.status === "pending")
+    ? isAdminView || data.status === "pending"
     : false;
 
   const handleReply = async () => {
@@ -241,12 +243,16 @@ export default function ReceiptViewer({
           ) : data.status === "pending" && data.admin_note ? (
             <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-700">
               <MessageSquare className="h-3.5 w-3.5" />
-              Waiting on your reply to the treasurer's clarification request.
+              {isAdminView
+                ? "Clarification requested — awaiting the member's reply."
+                : "Waiting on your reply to the treasurer's clarification request."}
             </div>
           ) : data.status === "pending" ? (
             <div className="mt-3 flex items-center gap-1.5 text-xs text-stone-500">
               <Clock className="h-3.5 w-3.5" />
-              Waiting for the treasurer to review your bills.
+              {isAdminView
+                ? "Awaiting your review."
+                : "Waiting for the treasurer to review your bills."}
             </div>
           ) : null}
         </div>
@@ -276,7 +282,7 @@ export default function ReceiptViewer({
         )}
 
         {/* ── Member reply box ────────────────────────────────────────── */}
-        {awaitingReply && (
+        {canReply && (
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
             <Label htmlFor="reply-note" className="text-xs font-medium text-amber-800">
               Reply to the treasurer
@@ -289,7 +295,16 @@ export default function ReceiptViewer({
               className="mt-1.5"
               placeholder="Answer the question or provide the missing details…"
             />
-            <div className="mt-2 flex justify-end">
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              {billPaths.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setReplyText("Bills attached — please review.")}
+                >
+                  Bills attached — please review
+                </Button>
+              )}
               <Button size="sm" onClick={handleReply} disabled={replying || !replyText.trim()} iconLeft={<Send className="h-3.5 w-3.5" />}>
                 {replying ? "Sending…" : "Send reply"}
               </Button>
