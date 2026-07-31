@@ -71,8 +71,9 @@ export default function Dashboard() {
   const linkDonor = async (userId: string, donorId: string) => {
     if (!supabase) return;
     setSavingId(userId);
-    // Clear any previous link for this donor, then link the profile
+    // Clear any previous link for this donor, then link the profile (both sides so it survives reopen)
     await supabase.from("donors").update({ linked_user_id: userId }).eq("id", donorId);
+    await supabase.from("profiles").update({ linked_donor_id: donorId }).eq("id", userId);
     setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: donorId } : p)));
     setSavingId(null);
   };
