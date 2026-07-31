@@ -126,7 +126,7 @@ export default function AppShell() {
 
         {/* Main */}
         <main className="px-4 py-8 sm:px-8 lg:px-10">
-          <Outlet />
+          <Outlet context={ctx} />
         </main>
       </div>
 
