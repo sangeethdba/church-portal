@@ -92,6 +92,15 @@ export default function Reports() {
   const totalDonations = filteredDon.reduce((s, d) => s + Number(d.amount), 0);
 
   // Expense aggregations
+  const expBySource = useMemo(() => {
+    const m: Record<string, number> = {};
+    filteredExp.forEach((e) => {
+      const label = e.source === "member_submitted" ? "Reimbursed to members" : "Paid from account";
+      m[label] = (m[label] ?? 0) + Number(e.amount);
+    });
+    return Object.entries(m).sort(([, a], [, b]) => b - a);
+  }, [filteredExp]);
+
   const expByCategory = useMemo(() => {
     const m: Record<string, number> = {};
     filteredExp.forEach((e) => {
@@ -109,6 +118,8 @@ export default function Reports() {
   }, [filteredExp]);
 
   const totalExpenses = filteredExp.reduce((s, e) => s + Number(e.amount), 0);
+  const reimbursedExp = filteredExp.filter((e) => e.source === "member_submitted").reduce((s, e) => s + Number(e.amount), 0);
+  const accountExp = filteredExp.filter((e) => e.source === "church_direct").reduce((s, e) => s + Number(e.amount), 0);
   const net = totalDonations - totalExpenses;
 
   // Weekly breakdown for donations
@@ -203,6 +214,7 @@ export default function Reports() {
           <TabsTrigger value="donations">Donations</TabsTrigger>
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
           <TabsTrigger value="weekly">Weekly detail</TabsTrigger>
+          <TabsTrigger value="summary">Summary</TabsTrigger>
         </TabsList>
 
         {/* ── Donations tab ─────────────────────────────────────────────── */}
@@ -346,6 +358,40 @@ export default function Reports() {
                 )}
               </CardBody>
             </Card>
+
+            {/* By source */}
+            <Card>
+              <CardHeader>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">By source</h2>
+                <p className="text-xs text-stone-500">Reimbursed to members vs. paid directly from church account</p>
+              </CardHeader>
+              <CardBody className="px-0 pb-0">
+                {expBySource.length === 0 ? (
+                  <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No expenses in this period" /></div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-t border-stone-100 text-xs uppercase text-stone-500">
+                        <th className="px-6 py-2 text-left font-medium">Source</th>
+                        <th className="px-6 py-2 text-right font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expBySource.map(([source, amt]) => (
+                        <tr key={source} className="border-t border-stone-50 hover:bg-stone-50/50">
+                          <td className="px-6 py-2 text-stone-800">{source}</td>
+                          <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
+                        <td className="px-6 py-3">Total</td>
+                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalExpenses)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
+              </CardBody>
+            </Card>
           </div>
         </TabsContent>
 
@@ -394,6 +440,81 @@ export default function Reports() {
               )}
             </CardBody>
           </Card>
+        </TabsContent>
+
+        {/* ── Summary tab ──────────────────────────────────────────────── */}
+        <TabsContent value="summary">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Income */}
+            <Card>
+              <CardHeader>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">Total offerings received</h2>
+                <p className="text-xs text-stone-500">All donations and offering entries in this period</p>
+              </CardHeader>
+              <CardBody>
+                <div className="font-serif text-4xl font-bold text-emerald-700">{formatCurrency(totalDonations)}</div>
+                <div className="mt-2 text-sm text-stone-500">{filteredDon.length} gifts recorded</div>
+              </CardBody>
+            </Card>
+
+            {/* Expenses summary */}
+            <Card>
+              <CardHeader>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">Total expenses</h2>
+                <p className="text-xs text-stone-500">Split by payment type</p>
+              </CardHeader>
+              <CardBody>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge tone="amber">Reimbursed</Badge>
+                      <span className="text-sm text-stone-600">Paid to members</span>
+                    </div>
+                    <span className="font-mono text-lg font-semibold text-stone-800">{formatCurrency(reimbursedExp)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge tone="indigo">Account-paid</Badge>
+                      <span className="text-sm text-stone-600">Auto-debits, rent, supplies</span>
+                    </div>
+                    <span className="font-mono text-lg font-semibold text-stone-800">{formatCurrency(accountExp)}</span>
+                  </div>
+                  <div className="border-t border-stone-200 pt-3 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-stone-800">Total expenses</span>
+                    <span className="font-serif text-xl font-bold text-rose-700">{formatCurrency(totalExpenses)}</span>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+
+            {/* Net */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">Net position</h2>
+                <p className="text-xs text-stone-500">Offerings minus all expenses for {range.label}</p>
+              </CardHeader>
+              <CardBody>
+                <div className="flex items-end justify-between">
+                  <div className="space-y-1">
+                    <div className="text-sm text-stone-500">
+                      {formatCurrency(totalDonations)} received − {formatCurrency(totalExpenses)} spent
+                    </div>
+                    <div className={`font-serif text-4xl font-bold ${net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                      {net >= 0 ? "+" : ""}{formatCurrency(net)}
+                    </div>
+                    <Badge tone={net >= 0 ? "emerald" : "rose"}>
+                      {net >= 0 ? "Surplus" : "Deficit"}
+                    </Badge>
+                  </div>
+                  <div className="text-right text-sm text-stone-500">
+                    {net >= 0
+                      ? "The church is operating within its means this period."
+                      : "Expenses exceeded income this period."}
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 
