@@ -20,7 +20,6 @@ import { useEffect, useState } from "react";
 
 function useAuthedRedirect() {
   useEffect(() => {
-    if (!supabase) return;
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) window.location.replace("/dashboard");
     });

@@ -120,24 +120,21 @@ export interface AuditEntry {
 }
 
 // ----- Client singleton -------------------------------------------------
-const url = import.meta.env.VITE_SUPABASE_URL ?? "";
-const anon = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
+const url = (import.meta.env.VITE_SUPABASE_URL as string) || "";
+const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "";
 
-export const isSupabaseConfigured = (): boolean => {
-  const ok = url.startsWith("https://") && anon.length > 20;
-  if (!ok && url) {
-    console.warn("Supabase: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY appears invalid");
-  }
-  return ok;
-};
+export const isSupabaseConfigured = (): boolean =>
+  url.length > 0 && anon.length > 0;
 
-export const supabase: SupabaseClient | null = isSupabaseConfigured()
-  ? createClient(url, anon, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        flowType: "pkce",
-      },
-    })
-  : null;
+export const supabase: SupabaseClient = createClient(
+  url || "http://placeholder.local",
+  anon || "placeholder",
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: "pkce",
+    },
+  },
+);
