@@ -7,8 +7,12 @@ import {
   TrendingUp,
   CircleDollarSign,
   Plus,
+  Shield,
+  UserCheck,
+  Lock,
 } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState } from "@/components/ui";
+import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label } from "@/components/ui";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { supabase } from "@/lib/supabase";
 import type { Profile, Donation, Expense } from "@/lib/supabase";
@@ -100,6 +104,51 @@ export default function Dashboard() {
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>(FALLBACK_EXPENSES);
   const [loading, setLoading] = useState(true);
 
+  // ── Counter management ────────────────────────────────────────────────
+  const isAdmin = profile?.role === "admin";
+  const [counterOpen, setCounterOpen] = useState(false);
+  const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+  const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const loadProfiles = async () => {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, role, is_counter")
+      .order("full_name");
+    if (data) {
+      setAllProfiles(data as Profile[]);
+      // Reset PIN inputs when loading
+      setPinInputs({});
+    }
+  };
+
+  const toggleCounter = async (userId: string, newVal: boolean) => {
+    if (!supabase) return;
+    setSavingId(userId);
+    await supabase.from("profiles").update({ is_counter: newVal }).eq("id", userId);
+    setAllProfiles((prev) =>
+      prev.map((p) => (p.id === userId ? { ...p, is_counter: newVal } : p)),
+    );
+    setSavingId(null);
+  };
+
+  const setPin = async (userId: string) => {
+    if (!supabase) return;
+    const pin = pinInputs[userId];
+    if (!pin || pin.length < 3) return;
+    setSavingId(userId);
+    // Hash the PIN server-side using the RPC
+    const { data: hash } = await supabase.rpc("hash_pin", { pin });
+    if (hash) {
+      await supabase.from("profiles").update({ pin_hash: hash }).eq("id", userId);
+    }
+    setPinInputs((prev) => ({ ...prev, [userId]: "" }));
+    setSavingId(null);
+  };
+
+  // ── Dashboard KPIs ──────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -175,9 +224,110 @@ export default function Dashboard() {
         subtitle="A snapshot of how your church is stewarding its resources this year."
         badge="Live"
         actions={
-          <Button iconLeft={<Plus className="h-4 w-4" />} variant="solid">
-            New donation
-          </Button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Dialog open={counterOpen} onOpenChange={(v) => { setCounterOpen(v); if (v) loadProfiles(); }}>
+                <DialogTrigger asChild>
+                  <Button iconLeft={<Shield className="h-4 w-4" />} variant="outline">
+                    Manage counters
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Manage counter pool</DialogTitle>
+                    <DialogDescription>
+                      Designate members who can count and sign off on weekly offerings. Toggle the switch to add/remove someone from the counter pool, and set their sign-off PIN.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
+                    <Shield className="mb-1 inline h-4 w-4 text-amber-500" />{" "}
+                    When recording an offering, only members in the counter pool appear in the sign-off dropdown. If a regular counter is absent, toggle a substitute on here first.
+                  </div>
+
+                  <div className="mt-3 space-y-1">
+                    {allProfiles.length === 0 && (
+                      <p className="py-4 text-center text-sm text-stone-400">Loading members…</p>
+                    )}
+                    {allProfiles.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-3 rounded-lg border border-stone-100 px-3 py-2.5 hover:bg-stone-50/50"
+                      >
+                        {/* Counter toggle */}
+                        <button
+                          type="button"
+                          onClick={() => toggleCounter(p.id, !p.is_counter)}
+                          disabled={savingId === p.id}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${
+                            p.is_counter ? "bg-emerald-500" : "bg-stone-300"
+                          } ${savingId === p.id ? "opacity-50" : ""}`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${
+                              p.is_counter ? "translate-x-6" : "translate-x-1"
+                            }`}
+                          />
+                        </button>
+
+                        {/* Name + email */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-stone-900">
+                              {p.full_name || p.email}
+                            </span>
+                            {p.is_counter && (
+                              <Badge tone="emerald">Counter</Badge>
+                            )}
+                            {p.role === "admin" && (
+                              <Badge tone="indigo">Admin</Badge>
+                            )}
+                          </div>
+                          <div className="truncate text-xs text-stone-400">{p.email}</div>
+                        </div>
+
+                        {/* PIN field (only for counters) */}
+                        {p.is_counter && (
+                          <div className="flex items-center gap-2">
+                            <div className="relative">
+                              <Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400" />
+                              <Input
+                                type="password"
+                                maxLength={6}
+                                placeholder="New PIN"
+                                value={pinInputs[p.id] ?? ""}
+                                onChange={(e) =>
+                                  setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))
+                                }
+                                className="h-8 w-24 pl-7 text-xs"
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={savingId === p.id || !pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3}
+                              onClick={() => setPin(p.id)}
+                            >
+                              {savingId === p.id ? "…" : "Set"}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {!supabase && (
+                    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                      Connect Supabase to manage counters persistently.
+                    </div>
+                  )}
+                </DialogContent>
+              </Dialog>
+            )}
+            <Button iconLeft={<Plus className="h-4 w-4" />} variant="solid">
+              New donation
+            </Button>
+          </div>
         }
       />
 
