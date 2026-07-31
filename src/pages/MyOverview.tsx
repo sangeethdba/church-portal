@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState } from "@/components/ui";
+import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote, CalendarRange } from "lucide-react";
+import { Button, Card, CardBody, CardHeader, Tile, Badge, Label, EmptyState } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
 import { supabase } from "@/lib/supabase";
@@ -20,6 +20,8 @@ export function MemberOverview() {
   const [myYtd, setMyYtd] = useState(0);
   const [loading, setLoading] = useState(true);
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
+  const [billFrom, setBillFrom] = useState("");
+  const [billTo, setBillTo] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +36,12 @@ export function MemberOverview() {
         myDonorId
           ? supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart)
           : Promise.resolve({ data: null as { amount: number }[] | null }),
-        supabase.from("expenses").select("*").eq("user_id", profile?.id).order("submitted_at", { ascending: false }).limit(20),
+        (() => {
+          let q = supabase.from("expenses").select("*").eq("user_id", profile?.id).order("submitted_at", { ascending: false }).limit(200);
+          if (billFrom) q = q.gte("submitted_at", billFrom);
+          if (billTo) q = q.lte("submitted_at", `${billTo}T23:59:59.999Z`);
+          return q;
+        })(),
       ]);
       if (!cancelled) {
         if (donRes.data) setDonations(donRes.data as Donation[]);
@@ -45,7 +52,7 @@ export function MemberOverview() {
     }
     load();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.linked_donor_id]);
+  }, [profile?.id, profile?.linked_donor_id, billFrom, billTo]);
 
   const outstanding = expenses.filter((e) => e.status === "pending" || e.status === "approved").reduce((s, e) => s + Number(e.amount ?? 0), 0);
   const reimbursed = expenses.filter((e) => e.status === "paid" || e.status === "auto_paid").reduce((s, e) => s + Number(e.amount ?? 0), 0);
@@ -69,6 +76,24 @@ export function MemberOverview() {
             </div>
           </CardHeader>
           <CardBody className="space-y-3">
+            <div className="flex flex-wrap items-end gap-2 rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2">
+              <CalendarRange className="mb-2 h-4 w-4 text-stone-400" />
+              <div>
+                <Label className="text-[11px] text-stone-500">From</Label>
+                <input type="date" value={billFrom}
+                  onChange={(e) => setBillFrom(e.target.value)}
+                  className="ml-1 h-8 rounded-md border border-stone-200 bg-white px-2 text-sm focus:border-accent focus:outline-none" />
+              </div>
+              <div>
+                <Label className="text-[11px] text-stone-500">To</Label>
+                <input type="date" value={billTo}
+                  onChange={(e) => setBillTo(e.target.value)}
+                  className="ml-1 h-8 rounded-md border border-stone-200 bg-white px-2 text-sm focus:border-accent focus:outline-none" />
+              </div>
+              {(billFrom || billTo) && (
+                <Button size="sm" variant="ghost" onClick={() => { setBillFrom(""); setBillTo(""); }}>Clear</Button>
+              )}
+            </div>
             {!loading && expenses.length === 0 ? (
               <EmptyState icon={<Receipt className="h-6 w-6" />} title="No submissions yet" description="Bills you submit for reimbursement will appear here with their status." />
             ) : expenses.map((e) => {

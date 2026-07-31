@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
   Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
-  Download, Printer, Receipt,
+  Download, Printer, Receipt, CalendarRange,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -108,6 +108,8 @@ export default function Offerings() {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [filterYear, setFilterYear] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [donorList, setDonorList] = useState<Donor[]>([]);
 
@@ -224,9 +226,13 @@ export default function Offerings() {
   const depositTotal = netCash + totalChecks;
 
   const filtered = useMemo(() => {
-    if (filterYear === "all") return offerings;
-    return offerings.filter((o) => o.service_date.startsWith(filterYear));
-  }, [offerings, filterYear]);
+    return offerings.filter((o) => {
+      if (filterYear !== "all" && !o.service_date.startsWith(filterYear)) return false;
+      if (dateFrom && o.service_date < dateFrom) return false;
+      if (dateTo && o.service_date > dateTo) return false;
+      return true;
+    });
+  }, [offerings, filterYear, dateFrom, dateTo]);
 
   const totals = filtered.reduce(
     (acc, o) => ({
@@ -860,14 +866,34 @@ export default function Offerings() {
         <CardHeader className="border-b border-stone-100">
           <div className="flex items-center gap-2 text-sm">
             <Filter className="h-4 w-4 text-stone-400" />
-            <span className="text-stone-500">Filter by year</span>
+            <span className="text-stone-500">Filter by year & date range</span>
           </div>
         </CardHeader>
         <CardBody>
-          <Select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="w-36">
-            <option value="all">All years</option>
-            {years.map((y) => <option key={y} value={y}>{y}</option>)}
-          </Select>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label className="text-xs text-stone-500">Year</Label>
+              <Select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="mt-1 w-36">
+                <option value="all">All years</option>
+                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-stone-500">From</Label>
+              <Input type="date" value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)} className="mt-1 w-44" />
+            </div>
+            <div>
+              <Label className="text-xs text-stone-500">To</Label>
+              <Input type="date" value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)} className="mt-1 w-44" />
+            </div>
+            {(dateFrom || dateTo) && (
+              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+                Clear
+              </Button>
+            )}
+          </div>
         </CardBody>
       </Card>
 

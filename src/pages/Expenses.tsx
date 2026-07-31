@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange } from "lucide-react";
 import {
   Button,
   Card,
@@ -170,10 +170,18 @@ export default function Expenses() {
   }, []);
 
   const [showOnlyDirection, setShowOnlyDirection] = useState<"all" | ExpenseSource>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const filtered = useMemo(
-    () => expenses.filter((e) => showOnlyDirection === "all" || e.source === showOnlyDirection),
-    [expenses, showOnlyDirection],
+    () => expenses.filter((e) => {
+      if (showOnlyDirection !== "all" && e.source !== showOnlyDirection) return false;
+      const d = (e.submitted_at ?? "").slice(0, 10);
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+      return true;
+    }),
+    [expenses, showOnlyDirection, dateFrom, dateTo],
   );
   const total = filtered.reduce((s, e) => s + Number(e.amount || 0), 0);
   const pending = expenses.filter((e) => e.status === "pending").length;
@@ -678,6 +686,35 @@ export default function Expenses() {
         open={viewExpense !== null}
         onOpenChange={(v) => { if (!v) setViewExpense(null); }}
       />
+
+      {/* ── Date range filter ──────────────────────────────────────────── */}
+      <Card className="mb-4">
+        <CardHeader className="border-b border-stone-100">
+          <div className="flex items-center gap-2 text-sm">
+            <CalendarRange className="h-4 w-4 text-stone-400" />
+            <span className="text-stone-500">Filter by date range</span>
+          </div>
+        </CardHeader>
+        <CardBody>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label htmlFor="exp-from">From</Label>
+              <Input id="exp-from" type="date" value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)} className="mt-1.5 w-44" />
+            </div>
+            <div>
+              <Label htmlFor="exp-to">To</Label>
+              <Input id="exp-to" type="date" value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)} className="mt-1.5 w-44" />
+            </div>
+            {(dateFrom || dateTo) && (
+              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+                Clear
+              </Button>
+            )}
+          </div>
+        </CardBody>
+      </Card>
 
       <Tabs defaultValue="all">
         <TabsList>
