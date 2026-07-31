@@ -864,10 +864,19 @@ export default function Offerings() {
                       const net = Number(o.cash_net ?? o.cash_amount) || 0;
                       const dedSum = Number((o.cash_deductions as Deduction[])?.reduce((s, d) => s + (Number(d.amount) || 0), 0) ?? 0) || 0;
                       const checksTotal = checksData.reduce((s, c) => s + (Number(c.amount) || 0), 0) || Number(o.check_amount) || 0;
+                      // Rebuild the denomination breakdown from the stored cash_breakdown so the slip shows each bill count.
+                      const breakdown = (o.cash_breakdown as DenomCounts | null) ?? {};
+                      const denomEntries: OfferingDenomEntry[] = DENOMS
+                        .map((d) => ({
+                          denomination: d,
+                          count: Number(breakdown[d]) || 0,
+                          subtotal: (Number(breakdown[d]) || 0) * d,
+                        }))
+                        .filter((e) => e.count > 0);
                       openSlipPreview({
                         serviceDate: o.service_date,
                         serviceName: o.service_name,
-                        cashDenoms: [],
+                        cashDenoms: denomEntries,
                         grossCash: net + dedSum,
                         deductions: (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [],
                         netCash: net,
