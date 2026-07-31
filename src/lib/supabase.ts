@@ -126,10 +126,14 @@ const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "";
 export const isSupabaseConfigured = (): boolean =>
   url.length > 0 && anon.length > 0;
 
-export const supabase: SupabaseClient = createClient(
-  url || "http://placeholder.local",
-  anon || "placeholder",
-  {
+if (!isSupabaseConfigured()) {
+  console.error(
+    "GraceLedger: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set. " +
+    "Add them in your Vercel project Settings → Environment Variables.",
+  );
+}
+
+export const supabase: SupabaseClient = createClient(url, anon, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
