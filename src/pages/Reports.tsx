@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, TrendingUp, CircleDollarSign, Receipt, FileDown } from "lucide-react";
+import { BarChart3, TrendingUp, CircleDollarSign, Receipt, PieChart, CalendarDays } from "lucide-react";
 import {
-  Button, Card, CardBody, CardHeader, Label, Select,
+  Card, CardBody, CardHeader, Select,
   Badge, EmptyState, TableWrap, THead, Tr, Th, Td, Tabs, TabsList, TabsTrigger, TabsContent,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase, type Donation, type Expense } from "@/lib/supabase";
+import { supabase, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { generateAnnualStatement, type AnnualStatement } from "@/lib/pdf";
-import type { Donor } from "@/lib/supabase";
 import { buildWeeklyBuckets } from "@/lib/accounting";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
@@ -54,6 +52,65 @@ function periodRange(p: Period): { start: string; label: string } {
   return { start: "2000-01-01", label: "All time" };
 }
 
+const CATEGORY_COLORS = [
+  "#4f46e5", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4",
+  "#f97316", "#84cc16", "#ec4899", "#14b8a6", "#6366f1", "#eab308",
+  "#a855f7", "#22c55e", "#f43f5e", "#0ea5e9", "#d946ef", "#facc15",
+  "#2dd4bf", "#fb923c", "#a3e635", "#60a5fa", "#f472b6", "#94a3b8",
+];
+
+const catLabel = (c: string) => EXPENSE_CATEGORIES.find((x) => x.value === c)?.label ?? c.replace(/_/g, " ");
+
+/* ── Minimal SVG donut (no chart dependency) ─────────────────────────── */
+function polar(cx: number, cy: number, r: number, angle: number) {
+  const a = ((angle - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+}
+function arcPath(cx: number, cy: number, r: number, start: number, end: number) {
+  const s = polar(cx, cy, r, end);
+  const e = polar(cx, cy, r, start);
+  const large = end - start <= 180 ? 0 : 1;
+  return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 0 ${e.x} ${e.y}`;
+}
+
+function DonutChart({
+  slices,
+  total,
+  size = 230,
+  thickness = 30,
+}: {
+  slices: { label: string; value: number; color: string }[];
+  total: number;
+  size?: number;
+  thickness?: number;
+}) {
+  const c = size / 2;
+  const r = (size - thickness) / 2;
+  const active = slices.filter((s) => s.value > 0);
+  let angle = 0;
+  const arcs = active.map((s) => {
+    const start = angle;
+    const sweep = total > 0 ? (s.value / total) * 360 : 0;
+    const end = angle + sweep - (active.length > 1 ? 1.4 : 0);
+    angle += sweep;
+    return { ...s, start, end };
+  });
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Expenses by category" className="mx-auto">
+      <circle cx={c} cy={c} r={r} fill="none" stroke="#e7e5e4" strokeWidth={thickness} />
+      {arcs.map((a) => (
+        <path key={a.label} d={arcPath(c, c, r, a.start, a.end)} fill="none" stroke={a.color} strokeWidth={thickness} />
+      ))}
+      <text x={c} y={c - 2} textAnchor="middle" style={{ fontSize: 17, fontWeight: 700, fontFamily: "Georgia, serif" }} fill="#1c1917">
+        {formatCurrency(total)}
+      </text>
+      <text x={c} y={c + 14} textAnchor="middle" style={{ fontSize: 10 }} fill="#78716c">
+        total spend
+      </text>
+    </svg>
+  );
+}
+
 export default function Reports() {
   const [donations, setDonations] = useState<Donation[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -81,38 +138,35 @@ export default function Reports() {
     () => donations.filter((d) => d.donation_date >= range.start),
     [donations, range.start],
   );
-
   const filteredExp = useMemo(
     () => expenses.filter((e) => e.submitted_at?.slice(0, 10) >= range.start),
     [expenses, range.start],
   );
-
   const filteredOff = useMemo(
     () => offerings.filter((o) => o.service_date >= range.start),
     [offerings, range.start],
   );
 
-  // Standalone gifts (not part of a weekly offering). Offering checks also land
-  // in the donations table (with offering_id), so we fold offering totals in
-  // separately — this avoids double counting the checks.
+  // Standalone gifts (not part of a weekly offering). Weekly offering checks
+  // also land in donations (with offering_id), so offering totals are folded
+  // in separately to avoid double counting.
   const filteredStandalone = useMemo(
     () => filteredDon.filter((d) => !d.offering_id),
     [filteredDon],
   );
 
-  // Donation aggregations
-  const donByType = useMemo(() => {
+  // Income aggregations (framed as offerings, since weekly collections are the bulk)
+  const incomeByType = useMemo(() => {
     const m: Record<string, number> = {};
     filteredStandalone.forEach((d) => {
       m[d.donation_type] = (m[d.donation_type] ?? 0) + Number(d.amount);
     });
-    // Weekly collections (cash + checks) count as "offering" type income
     const offeringTotal = filteredOff.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-    if (offeringTotal > 0) m.offering = (m.offering ?? 0) + offeringTotal;
+    if (offeringTotal > 0) m["Sunday offering"] = (m["Sunday offering"] ?? 0) + offeringTotal;
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredStandalone, filteredOff]);
 
-  const donByMethod = useMemo(() => {
+  const incomeByMethod = useMemo(() => {
     const m: Record<string, number> = {};
     filteredStandalone.forEach((d) => {
       m[d.payment_method] = (m[d.payment_method] ?? 0) + Number(d.amount);
@@ -124,24 +178,24 @@ export default function Reports() {
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredStandalone, filteredOff]);
 
-  const totalDonations =
+  const totalIncome =
     filteredStandalone.reduce((s, d) => s + Number(d.amount), 0) +
     filteredOff.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
 
   // Expense aggregations
-  const expBySource = useMemo(() => {
-    const m: Record<string, number> = {};
-    filteredExp.forEach((e) => {
-      const label = e.source === "member_submitted" ? "Reimbursed to members" : "Paid from account";
-      m[label] = (m[label] ?? 0) + Number(e.amount);
-    });
-    return Object.entries(m).sort(([, a], [, b]) => b - a);
-  }, [filteredExp]);
-
   const expByCategory = useMemo(() => {
     const m: Record<string, number> = {};
     filteredExp.forEach((e) => {
       m[e.category] = (m[e.category] ?? 0) + Number(e.amount);
+    });
+    return Object.entries(m).sort(([, a], [, b]) => b - a);
+  }, [filteredExp]);
+
+  const expByEvent = useMemo(() => {
+    const m: Record<string, number> = {};
+    filteredExp.forEach((e) => {
+      const k = e.event_name?.trim() || "No event tagged";
+      m[k] = (m[k] ?? 0) + Number(e.amount);
     });
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredExp]);
@@ -154,27 +208,31 @@ export default function Reports() {
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredExp]);
 
+  const expBySource = useMemo(() => {
+    const m: Record<string, number> = {};
+    filteredExp.forEach((e) => {
+      const label = e.source === "member_submitted" ? "Reimbursed to members" : "Paid from account";
+      m[label] = (m[label] ?? 0) + Number(e.amount);
+    });
+    return Object.entries(m).sort(([, a], [, b]) => b - a);
+  }, [filteredExp]);
+
   const totalExpenses = filteredExp.reduce((s, e) => s + Number(e.amount), 0);
   const reimbursedExp = filteredExp.filter((e) => e.source === "member_submitted").reduce((s, e) => s + Number(e.amount), 0);
   const accountExp = filteredExp.filter((e) => e.source === "church_direct").reduce((s, e) => s + Number(e.amount), 0);
-  const net = totalDonations - totalExpenses;
+  const net = totalIncome - totalExpenses;
 
-  // Weekly breakdown: offering collections (cash + checks) plus standalone gifts
-  const weeklyDon = useMemo(
+  const donutSlices = expByCategory.map(([cat, amt], i) => ({
+    label: catLabel(cat),
+    value: Number(amt),
+    color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+  }));
+
+  const weeklyOff = useMemo(
     () =>
       buildWeeklyBuckets(filteredOff, filteredStandalone).map(([week, v]) => [week, { cash: v.cash, check: v.check, other: v.other }] as const),
     [filteredOff, filteredStandalone],
   );
-
-  const exportDonationsPDF = () => {
-    const jsPDF = (window as unknown as Record<string, unknown>).jspdf;
-    if (!jsPDF) return;
-    // Simple CSV-like text export — we use the existing jsPDF module
-    import("@/lib/pdf").then(({ generateAnnualStatement }) => {
-      // We don't have a donor here, so skip for now. 
-      // Instead we'll generate a summary report.
-    });
-  };
 
   const statusTone = (s: string) =>
     s === "paid" || s === "auto_paid" ? "emerald" : s === "rejected" ? "rose" : s === "approved" ? "indigo" : "amber";
@@ -183,8 +241,8 @@ export default function Reports() {
     <div>
       <PageHeader
         title="Reports"
-        subtitle="Weekly, monthly, and yearly summaries of donations, expenses, and net position."
-        badge={`${filteredDon.length + filteredOff.length} gifts · ${filteredExp.length} expenses`}
+        subtitle="Weekly, monthly, and yearly summaries of offerings, expenses, and net position."
+        badge={`${filteredOff.length} offerings · ${filteredExp.length} expenses`}
         actions={
           <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-36">
             <option value="this_week">This week</option>
@@ -207,8 +265,8 @@ export default function Reports() {
               <CircleDollarSign className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Total donations</div>
-              <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totalDonations)}</div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Offerings received</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totalIncome)}</div>
             </div>
           </CardBody>
         </Card>
@@ -236,25 +294,24 @@ export default function Reports() {
         </Card>
       </div>
 
-      <Tabs defaultValue="donations">
+      <Tabs defaultValue="expenses">
         <TabsList>
-          <TabsTrigger value="donations">Donations</TabsTrigger>
+          <TabsTrigger value="offerings">Offerings</TabsTrigger>
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
           <TabsTrigger value="weekly">Weekly detail</TabsTrigger>
           <TabsTrigger value="summary">Summary</TabsTrigger>
         </TabsList>
 
-        {/* ── Donations tab ─────────────────────────────────────────────── */}
-        <TabsContent value="donations">
+        {/* ── Offerings tab ────────────────────────────────────────────── */}
+        <TabsContent value="offerings">
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* By type */}
             <Card>
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">By type</h2>
               </CardHeader>
               <CardBody className="px-0 pb-0">
-                {donByType.length === 0 ? (
-                  <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No donations in this period" /></div>
+                {incomeByType.length === 0 ? (
+                  <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No offerings in this period" /></div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
@@ -264,7 +321,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {donByType.map(([type, amt]) => (
+                      {incomeByType.map(([type, amt]) => (
                         <tr key={type} className="border-t border-stone-50 hover:bg-stone-50/50">
                           <td className="px-6 py-2 capitalize text-stone-800">{type}</td>
                           <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
@@ -272,7 +329,7 @@ export default function Reports() {
                       ))}
                       <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
                         <td className="px-6 py-3">Total</td>
-                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalDonations)}</td>
+                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalIncome)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -280,14 +337,13 @@ export default function Reports() {
               </CardBody>
             </Card>
 
-            {/* By payment method */}
             <Card>
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">By method</h2>
               </CardHeader>
               <CardBody className="px-0 pb-0">
-                {donByMethod.length === 0 ? (
-                  <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No donations in this period" /></div>
+                {incomeByMethod.length === 0 ? (
+                  <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No offerings in this period" /></div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
@@ -297,7 +353,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {donByMethod.map(([method, amt]) => (
+                      {incomeByMethod.map(([method, amt]) => (
                         <tr key={method} className="border-t border-stone-50 hover:bg-stone-50/50">
                           <td className="px-6 py-2 capitalize text-stone-800">{method}</td>
                           <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
@@ -305,7 +361,7 @@ export default function Reports() {
                       ))}
                       <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
                         <td className="px-6 py-3">Total</td>
-                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalDonations)}</td>
+                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalIncome)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -315,36 +371,85 @@ export default function Reports() {
           </div>
         </TabsContent>
 
-        {/* ── Expenses tab ──────────────────────────────────────────────── */}
+        {/* ── Expenses tab ─────────────────────────────────────────────── */}
         <TabsContent value="expenses">
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* By category */}
+            {/* Spend by category — donut + legend */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">Spend by category</h2>
+                <p className="text-xs text-stone-500">
+                  Where the money went this period — use this for the yearly cost review.
+                </p>
+              </CardHeader>
+              <CardBody>
+                {expByCategory.length === 0 ? (
+                  <EmptyState icon={<PieChart className="h-6 w-6" />} title="No expenses in this period" />
+                ) : (
+                  <div className="grid items-center gap-8 md:grid-cols-[auto_1fr]">
+                    <DonutChart slices={donutSlices} total={totalExpenses} />
+                    <div className="overflow-hidden rounded-lg border border-stone-200">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-stone-100 bg-stone-50 text-xs uppercase text-stone-500">
+                            <th className="px-4 py-2 text-left font-medium">Category</th>
+                            <th className="px-4 py-2 text-right font-medium">Amount</th>
+                            <th className="px-4 py-2 text-right font-medium">Share</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expByCategory.map(([cat, amt], i) => {
+                            const pct = totalExpenses > 0 ? (Number(amt) / totalExpenses) * 100 : 0;
+                            return (
+                              <tr key={cat} className="border-t border-stone-50 hover:bg-stone-50/50">
+                                <td className="px-4 py-2">
+                                  <span className="inline-flex items-center gap-2 text-stone-800">
+                                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
+                                    {catLabel(cat)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
+                                <td className="px-4 py-2 text-right text-stone-500">{pct.toFixed(1)}%</td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
+                            <td className="px-4 py-3">Total</td>
+                            <td className="px-4 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalExpenses)}</td>
+                            <td className="px-4 py-3 text-right text-stone-500">100%</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+
+            {/* By event */}
             <Card>
               <CardHeader>
-                <h2 className="font-serif text-lg font-semibold text-stone-900">By category</h2>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">By event</h2>
+                <p className="text-xs text-stone-500">VBS, conferences, Sunday snacks, youth meetings…</p>
               </CardHeader>
               <CardBody className="px-0 pb-0">
-                {expByCategory.length === 0 ? (
-                  <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No expenses in this period" /></div>
+                {expByEvent.length === 0 ? (
+                  <div className="px-6 pb-5"><EmptyState icon={<CalendarDays className="h-6 w-6" />} title="No expenses in this period" /></div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-t border-stone-100 text-xs uppercase text-stone-500">
-                        <th className="px-6 py-2 text-left font-medium">Category</th>
+                        <th className="px-6 py-2 text-left font-medium">Event</th>
                         <th className="px-6 py-2 text-right font-medium">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {expByCategory.map(([cat, amt]) => (
-                        <tr key={cat} className="border-t border-stone-50 hover:bg-stone-50/50">
-                          <td className="px-6 py-2 capitalize text-stone-800">{cat}</td>
+                      {expByEvent.map(([ev, amt]) => (
+                        <tr key={ev} className="border-t border-stone-50 hover:bg-stone-50/50">
+                          <td className="px-6 py-2 text-stone-800">{ev}</td>
                           <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
                         </tr>
                       ))}
-                      <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
-                        <td className="px-6 py-3">Total</td>
-                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalExpenses)}</td>
-                      </tr>
                     </tbody>
                   </table>
                 )}
@@ -376,10 +481,6 @@ export default function Reports() {
                           <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
                         </tr>
                       ))}
-                      <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
-                        <td className="px-6 py-3">Total</td>
-                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalExpenses)}</td>
-                      </tr>
                     </tbody>
                   </table>
                 )}
@@ -387,10 +488,10 @@ export default function Reports() {
             </Card>
 
             {/* By source */}
-            <Card>
+            <Card className="lg:col-span-2">
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">By source</h2>
-                <p className="text-xs text-stone-500">Reimbursed to members vs. paid directly from church account</p>
+                <p className="text-xs text-stone-500">Reimbursed to members vs. paid directly from the church account</p>
               </CardHeader>
               <CardBody className="px-0 pb-0">
                 {expBySource.length === 0 ? (
@@ -426,12 +527,12 @@ export default function Reports() {
         <TabsContent value="weekly">
           <Card>
             <CardHeader>
-              <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly giving breakdown</h2>
-              <p className="text-xs text-stone-500">Weekly offering collections (cash + checks) plus any standalone gifts</p>
+              <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly offering collections</h2>
+              <p className="text-xs text-stone-500">Cash + checks per service week, plus any standalone gifts</p>
             </CardHeader>
             <CardBody className="px-0 pb-0">
-              {weeklyDon.length === 0 ? (
-                <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No donations in this period" /></div>
+              {weeklyOff.length === 0 ? (
+                <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No offerings in this period" /></div>
               ) : (
                 <TableWrap className="border-0 shadow-none">
                   <THead>
@@ -444,7 +545,7 @@ export default function Reports() {
                     </Tr>
                   </THead>
                   <tbody>
-                    {weeklyDon.map(([week, v]) => {
+                    {weeklyOff.map(([week, v]) => {
                       const total = v.cash + v.check + v.other;
                       return (
                         <Tr key={week}>
@@ -459,7 +560,7 @@ export default function Reports() {
                     <Tr>
                       <Td colSpan={4} className="border-t-2 border-stone-200 py-4 text-right font-semibold">Total</Td>
                       <Td className="border-t-2 border-stone-200 py-4 text-right font-serif text-lg font-semibold text-stone-900">
-                        {formatCurrency(totalDonations)}
+                        {formatCurrency(totalIncome)}
                       </Td>
                     </Tr>
                   </tbody>
@@ -472,19 +573,17 @@ export default function Reports() {
         {/* ── Summary tab ──────────────────────────────────────────────── */}
         <TabsContent value="summary">
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Income */}
             <Card>
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">Total offerings received</h2>
-                <p className="text-xs text-stone-500">All donations and offering entries in this period</p>
+                <p className="text-xs text-stone-500">All offering collections and gifts in this period</p>
               </CardHeader>
               <CardBody>
-                <div className="font-serif text-4xl font-bold text-emerald-700">{formatCurrency(totalDonations)}</div>
-                <div className="mt-2 text-sm text-stone-500">{filteredDon.length + filteredOff.length} gifts recorded</div>
+                <div className="font-serif text-4xl font-bold text-emerald-700">{formatCurrency(totalIncome)}</div>
+                <div className="mt-2 text-sm text-stone-500">{filteredOff.length} offering collections recorded</div>
               </CardBody>
             </Card>
 
-            {/* Expenses summary */}
             <Card>
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">Total expenses</h2>
@@ -502,11 +601,11 @@ export default function Reports() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Badge tone="indigo">Account-paid</Badge>
-                      <span className="text-sm text-stone-600">Auto-debits, rent, supplies</span>
+                      <span className="text-sm text-stone-600">Rent, salaries, auto-debits</span>
                     </div>
                     <span className="font-mono text-lg font-semibold text-stone-800">{formatCurrency(accountExp)}</span>
                   </div>
-                  <div className="border-t border-stone-200 pt-3 flex items-center justify-between">
+                  <div className="flex items-center justify-between border-t border-stone-200 pt-3">
                     <span className="text-sm font-semibold text-stone-800">Total expenses</span>
                     <span className="font-serif text-xl font-bold text-rose-700">{formatCurrency(totalExpenses)}</span>
                   </div>
@@ -514,7 +613,6 @@ export default function Reports() {
               </CardBody>
             </Card>
 
-            {/* Net */}
             <Card className="lg:col-span-2">
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">Net position</h2>
@@ -524,7 +622,7 @@ export default function Reports() {
                 <div className="flex items-end justify-between">
                   <div className="space-y-1">
                     <div className="text-sm text-stone-500">
-                      {formatCurrency(totalDonations)} received − {formatCurrency(totalExpenses)} spent
+                      {formatCurrency(totalIncome)} received − {formatCurrency(totalExpenses)} spent
                     </div>
                     <div className={`font-serif text-4xl font-bold ${net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
                       {net >= 0 ? "+" : ""}{formatCurrency(net)}
