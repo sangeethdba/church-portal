@@ -71,14 +71,67 @@ export function buildReceiptPath(
   return `${folder}/${kind}/${stamp}-${safe}`;
 }
 export type ExpenseCategory =
+  | "rent"
   | "utilities"
+  | "internet_phone"
   | "maintenance"
   | "supplies"
+  | "books"
+  | "packaging"
+  | "shipping"
+  | "travel"
+  | "hotel"
+  | "tickets"
+  | "salaries"
+  | "benevolence"
+  | "church_support"
   | "missions"
   | "events"
-  | "staff"
-  | "benevolence"
+  | "vbs"
+  | "conference"
+  | "youth"
+  | "sunday_snacks"
+  | "sunday_school"
+  | "reimbursements"
+  | "bank_fees"
   | "other";
+
+/** Human-friendly labels + grouping for the expense category enum. */
+export const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string; group: string }[] = [
+  { value: "rent", label: "Church rent", group: "Facility" },
+  { value: "utilities", label: "Utilities (power, water)", group: "Facility" },
+  { value: "internet_phone", label: "Internet & phone", group: "Facility" },
+  { value: "maintenance", label: "Maintenance & repairs", group: "Facility" },
+  { value: "salaries", label: "Pastor & staff salaries", group: "People" },
+  { value: "benevolence", label: "Benevolence / helping families", group: "People" },
+  { value: "church_support", label: "Supporting other pastors & churches", group: "People" },
+  { value: "missions", label: "Missions & outreach", group: "Ministry" },
+  { value: "books", label: "Book room & media", group: "Ministry" },
+  { value: "packaging", label: "India packaging & goods", group: "Ministry" },
+  { value: "shipping", label: "Shipping & courier", group: "Ministry" },
+  { value: "vbs", label: "VBS (Vacation Bible School)", group: "Events" },
+  { value: "conference", label: "Annual conference", group: "Events" },
+  { value: "youth", label: "Youth ministry", group: "Events" },
+  { value: "sunday_snacks", label: "Sunday snacks & fellowship meals", group: "Events" },
+  { value: "sunday_school", label: "Sunday school ministry", group: "Events" },
+  { value: "events", label: "Other events", group: "Events" },
+  { value: "travel", label: "Travel (fuel, local)", group: "Travel & booking" },
+  { value: "hotel", label: "Hotel booking (conferences / youth)", group: "Travel & booking" },
+  { value: "tickets", label: "Tickets (flights, events)", group: "Travel & booking" },
+  { value: "reimbursements", label: "Member reimbursements", group: "People" },
+  { value: "bank_fees", label: "Bank & service fees", group: "Facility" },
+  { value: "supplies", label: "General supplies", group: "Ministry" },
+  { value: "other", label: "Other", group: "Other" },
+];
+
+/** Suggested event tags shown in the expense form. */
+export const EVENT_SUGGESTIONS = [
+  "VBS",
+  "Annual Conference",
+  "Sunday Snacks",
+  "Youth Meeting",
+  "Sunday School",
+];
 
 export interface Profile {
   id: string;
@@ -141,6 +194,7 @@ export interface Expense {
   transfer_receipt_path?: string | null;
   payment_method?: string | null;
   check_number?: string | null;
+  event_name?: string | null;
   line_items?: LineItem[] | null;
   user_id?: string | null;
   status: ExpenseStatus;

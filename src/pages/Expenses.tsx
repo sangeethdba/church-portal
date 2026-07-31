@@ -31,7 +31,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
 import ReceiptThumbs from "@/components/ReceiptThumbs";
-import { supabase, isAdminRole, buildReceiptPath, normalizeLineItems, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
+import { supabase, isAdminRole, buildReceiptPath, normalizeLineItems, EXPENSE_CATEGORIES, EVENT_SUGGESTIONS, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const sampleExpenses: Expense[] = [
@@ -129,6 +129,7 @@ export default function Expenses() {
     title: "",
     amount: "",
     category: "other" as Expense["category"],
+    event_name: "",
     description: "",
     notes: "",
   });
@@ -327,6 +328,7 @@ export default function Expenses() {
       title: form.title || (form.source === "church_direct" ? null : form.description?.slice(0, 60)),
       amount: value,
       category: form.category,
+      event_name: form.event_name.trim() || null,
       description: form.description || null,
       receipt_paths: [],
       user_id: null,
@@ -345,7 +347,7 @@ export default function Expenses() {
     if (supabase) {
       const insertPayload: Record<string, unknown> = {
         source: baseRow.source, title: baseRow.title, amount: baseRow.amount, category: baseRow.category,
-        description: baseRow.description, notes: baseRow.notes, status: baseRow.status,
+        event_name: baseRow.event_name, description: baseRow.description, notes: baseRow.notes, status: baseRow.status,
         payment_method: paymentMethod, check_number: checkNumber || null,
       };
       // RLS requires member-submitted expenses to carry the submitter's profile id
@@ -382,7 +384,7 @@ export default function Expenses() {
     setSaving(false);
     setOpen(false);
     setReceiptFiles([]);
-    setForm({ source: "member_submitted", title: "", amount: "", category: "other", description: "", notes: "" });
+    setForm({ source: "member_submitted", title: "", amount: "", category: "other", event_name: "", description: "", notes: "" });
     setReceiptFiles([]);
     setCheckImage(null);
     setCheckNumber("");
@@ -501,15 +503,28 @@ export default function Expenses() {
                     }
                     className="mt-1.5"
                   >
-                    <option value="utilities">Utilities</option>
-                    <option value="maintenance">Maintenance</option>
-                    <option value="supplies">Supplies</option>
-                    <option value="missions">Missions</option>
-                    <option value="events">Events</option>
-                    <option value="staff">Staff</option>
-                    <option value="benevolence">Benevolence</option>
-                    <option value="other">Other</option>
+                    {["Facility", "People", "Ministry", "Events", "Travel & booking", "Other"].map((group) => (
+                      <optgroup key={group} label={group}>
+                        {EXPENSE_CATEGORIES.filter((c) => c.group === group).map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </Select>
+                </div>
+                <div>
+                  <Label htmlFor="event-name">Event (optional)</Label>
+                  <Input
+                    id="event-name"
+                    list="event-suggestions"
+                    value={form.event_name}
+                    onChange={(e) => setForm({ ...form, event_name: e.target.value })}
+                    className="mt-1.5"
+                    placeholder="e.g. VBS, Annual Conference, Youth Meeting"
+                  />
+                  <datalist id="event-suggestions">
+                    {EVENT_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
+                  </datalist>
                 </div>
                 {/* ── Line items (member_submitted batch bills) ────────── */}
                 {form.source === "member_submitted" && (
