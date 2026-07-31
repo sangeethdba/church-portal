@@ -256,6 +256,12 @@ export default function Offerings() {
       return;
     }
 
+    const recordedBy = ctx.profile?.id;
+    if (!recordedBy) {
+      setSignOffError("Your account isn't linked to a portal profile — sign out and sign back in.");
+      return;
+    }
+
     setSaving(true);
     setSignOffError("");
 
@@ -269,6 +275,7 @@ export default function Offerings() {
       check_amount: totalChecks,
       check_count: checks.length,
       total_amount: depositTotal,
+      recorded_by: recordedBy,
       notes: notes || null,
     };
 
@@ -280,7 +287,12 @@ export default function Offerings() {
         .select()
         .maybeSingle();
 
-      if (offErr) { console.warn("Insert offering failed:", offErr); setSaving(false); return; }
+      if (offErr) {
+        console.warn("Insert offering failed:", offErr);
+        setSignOffError(offErr.message || "Could not save the offering. Please try again.");
+        setSaving(false);
+        return;
+      }
       const offeringId = (offData as Offering).id;
 
       // 2. Create check donations
@@ -300,7 +312,7 @@ export default function Offerings() {
           if (newDonor) donorId = newDonor.id;
         }
 
-        const { data: donData } = await supabase
+        const { data: donData, error: donErr } = await supabase
           .from("donations")
           .insert({
             donor_id: donorId || null,
@@ -310,9 +322,11 @@ export default function Offerings() {
             payment_method: "check",
             check_number: ch.checkNumber || null,
             donation_date: svcDate,
+            entered_by: recordedBy,
           })
           .select("id")
           .maybeSingle();
+        if (donErr) console.warn("Donation insert failed:", donErr);
 
         await supabase.from("offering_checks").insert({
           offering_id: offeringId,
