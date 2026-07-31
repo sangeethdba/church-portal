@@ -128,6 +128,14 @@ export default function Offerings() {
   const [counter2Pin, setCounter2Pin] = useState("");
   const [signOffError, setSignOffError] = useState("");
 
+  // ── Deposit state ───────────────────────────────────────────────────────
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [depositOfferingId, setDepositOfferingId] = useState<string | null>(null);
+  const [depositFile, setDepositFile] = useState<File | null>(null);
+  const [depositSaving, setDepositSaving] = useState(false);
+  const [depositError, setDepositError] = useState("");
+  const depositOffering = offerings.find((o) => o.id === depositOfferingId) ?? null;
+
   // ── Computed values ────────────────────────────────────────────────────
   const grossCash = computeCashFromDenoms(denoms);
   const totalDeductions = deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0);
@@ -387,6 +395,48 @@ export default function Offerings() {
     setSaving(false);
     setOpen(false);
     resetForm();
+  };
+
+  const handleMarkDeposited = async () => {
+    if (!depositOfferingId) return;
+
+    if (!supabase) {
+      setOfferings((rows) => rows.map((r) => (r.id === depositOfferingId ? { ...r, deposit_status: "deposited", deposited_at: new Date().toISOString() } : r)));
+      setDepositOpen(false);
+      setDepositFile(null);
+      setDepositOfferingId(null);
+      return;
+    }
+
+    setDepositSaving(true);
+    setDepositError("");
+    let receiptPath: string | null = null;
+
+    if (depositFile) {
+      const safeName = depositFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${ctx.profile?.id ?? "user"}/deposits/${Date.now()}-${safeName}`;
+      const { error } = await supabase.storage.from("receipts").upload(path, depositFile, { cacheControl: "3600", upsert: false });
+      if (error) {
+        setDepositError(error.message || "Deposit slip upload failed.");
+        setDepositSaving(false);
+        return;
+      }
+      receiptPath = path;
+    }
+
+    const { error } = await supabase.rpc("mark_deposited", { p_offering_id: depositOfferingId, p_receipt_path: receiptPath });
+    if (error) {
+      setDepositError(error.message || "Could not mark this offering as deposited.");
+      setDepositSaving(false);
+      return;
+    }
+
+    const { data: fresh } = await supabase.from("offerings").select("*").order("service_date", { ascending: false });
+    if (fresh) setOfferings(fresh as Offering[]);
+    setDepositSaving(false);
+    setDepositOpen(false);
+    setDepositFile(null);
+    setDepositOfferingId(null);
   };
 
   return (
@@ -780,7 +830,14 @@ export default function Offerings() {
                   {o.deposit_status === "deposited" ? (
                     <Badge tone="emerald">Deposited</Badge>
                   ) : (
-                    <Badge tone="amber">Pending</Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge tone="amber">Pending</Badge>
+                      <Button size="sm" variant="ghost"
+                        onClick={() => { setDepositOfferingId(o.id); setDepositFile(null); setDepositError(""); setDepositOpen(true); }}
+                        iconLeft={<Upload className="h-3.5 w-3.5" />}>
+                        Deposit
+                      </Button>
+                    </div>
                   )}
                 </Td>
                 <Td>
@@ -849,6 +906,43 @@ export default function Offerings() {
           </tbody>
         </TableWrap>
       )}
+
+      {/* ── Mark deposited dialog ──────────────────────────────────────── */}
+      <Dialog open={depositOpen} onOpenChange={(v) => { setDepositOpen(v); if (!v) { setDepositFile(null); setDepositOfferingId(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark offering as deposited</DialogTitle>
+            <DialogDescription>
+              After the cash and checks are deposited at the bank, attach the bank deposit slip and mark this offering complete.
+              {depositOffering && <> <strong>{depositOffering.service_name}</strong> · {formatDate(depositOffering.service_date)} · {formatCurrency(depositOffering.total_amount)}</>}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {depositError && (
+              <div className="flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                <AlertTriangle className="h-4 w-4" /> {depositError}
+              </div>
+            )}
+            <div>
+              <Label htmlFor="deposit-receipt">Bank deposit slip / receipt (photo or PDF)</Label>
+              <input
+                id="deposit-receipt"
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setDepositFile(e.target.files?.[0] ?? null)}
+                className="mt-1.5 block w-full text-sm text-stone-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+              />
+            </div>
+            <p className="text-xs text-stone-500">The offering stays in the ledger with a "Deposited" badge and the receipt is stored for auditing.</p>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDepositOpen(false)}>Cancel</Button>
+            <Button onClick={handleMarkDeposited} disabled={depositSaving}>
+              {depositSaving ? "Marking…" : "Mark as deposited"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
