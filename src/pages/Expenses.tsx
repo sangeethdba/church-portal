@@ -617,57 +617,61 @@ export default function Expenses() {
                   </div>
                 )}
 
-                <div className="col-span-2">
-                  <Label>Receipts (optional)</Label>
-                  <div className="mt-1.5">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept="image/*,.pdf,.jpg,.jpeg,.png,.webp"
-                      onChange={(e) => {
-                        if (e.target.files) {
-                          setReceiptFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
-                        }
-                      }}
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      iconLeft={<Upload className="h-4 w-4" />}
-                    >
-                      Attach receipts
-                    </Button>
-                    {receiptFiles.length > 0 && (
-                      <div className="mt-2 space-y-1.5">
-                        {receiptFiles.map((f, i) => (
-                          <div
-                            key={`${f.name}-${i}`}
-                            className="flex items-center gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-1.5 text-sm"
-                          >
-                            <Paperclip className="h-3.5 w-3.5 text-stone-400" />
-                            <span className="flex-1 truncate text-stone-700">{f.name}</span>
-                            <span className="text-xs text-stone-400">
-                              {(f.size / 1024).toFixed(0)} KB
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setReceiptFiles((prev) => prev.filter((_, j) => j !== i))
-                              }
-                              className="ml-1 rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-stone-600"
+                {/* Generic receipts — admin church-direct entries only. Members
+                    already attach receipts per bill in the Bills section above. */}
+                {form.source === "church_direct" && (
+                  <div className="col-span-2">
+                    <Label>Receipts (optional)</Label>
+                    <div className="mt-1.5">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,.pdf,.jpg,.jpeg,.png,.webp"
+                        onChange={(e) => {
+                          if (e.target.files) {
+                            setReceiptFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        iconLeft={<Upload className="h-4 w-4" />}
+                      >
+                        Attach receipts
+                      </Button>
+                      {receiptFiles.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {receiptFiles.map((f, i) => (
+                            <div
+                              key={`${f.name}-${i}`}
+                              className="flex items-center gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-1.5 text-sm"
                             >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                              <Paperclip className="h-3.5 w-3.5 text-stone-400" />
+                              <span className="flex-1 truncate text-stone-700">{f.name}</span>
+                              <span className="text-xs text-stone-400">
+                                {(f.size / 1024).toFixed(0)} KB
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setReceiptFiles((prev) => prev.filter((_, j) => j !== i))
+                                }
+                                className="ml-1 rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-stone-600"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               <div className="mt-6 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => { setOpen(false); setReceiptFiles([]); }}>
