@@ -9,6 +9,7 @@ import { supabase, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { generateAnnualStatement, type AnnualStatement } from "@/lib/pdf";
 import type { Donor } from "@/lib/supabase";
+import { buildWeeklyBuckets } from "@/lib/accounting";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
 
@@ -159,29 +160,11 @@ export default function Reports() {
   const net = totalDonations - totalExpenses;
 
   // Weekly breakdown: offering collections (cash + checks) plus standalone gifts
-  const weeklyDon = useMemo(() => {
-    const weeks: Record<string, { cash: number; check: number; other: number }> = {};
-    const bump = (dateStr: string, cash: number, check: number, other: number) => {
-      const date = new Date(dateStr);
-      const weekStart = new Date(date);
-      weekStart.setDate(date.getDate() - date.getDay());
-      const key = weekStart.toISOString().slice(0, 10);
-      if (!weeks[key]) weeks[key] = { cash: 0, check: 0, other: 0 };
-      weeks[key].cash += cash;
-      weeks[key].check += check;
-      weeks[key].other += other;
-    };
-    filteredOff.forEach((o) => {
-      bump(o.service_date, Number(o.cash_amount ?? 0), Number(o.check_amount ?? 0), 0);
-    });
-    filteredStandalone.forEach((d) => {
-      const amt = Number(d.amount);
-      if (d.payment_method === "cash") bump(d.donation_date, amt, 0, 0);
-      else if (d.payment_method === "check") bump(d.donation_date, 0, amt, 0);
-      else bump(d.donation_date, 0, 0, amt);
-    });
-    return Object.entries(weeks).sort(([a], [b]) => a.localeCompare(b));
-  }, [filteredOff, filteredStandalone]);
+  const weeklyDon = useMemo(
+    () =>
+      buildWeeklyBuckets(filteredOff, filteredStandalone).map(([week, v]) => [week, { cash: v.cash, check: v.check, other: v.other }] as const),
+    [filteredOff, filteredStandalone],
+  );
 
   const exportDonationsPDF = () => {
     const jsPDF = (window as unknown as Record<string, unknown>).jspdf;

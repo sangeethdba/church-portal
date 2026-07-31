@@ -36,6 +36,7 @@ import { PageHeader } from "@/components/Layout";
 import { supabase, isAdminRole } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { aggregateDonorStats, normName } from "@/lib/accounting";
 
 const sampleDonors: Donor[] = [
   {
@@ -87,7 +88,7 @@ type DonationStatRow = {
   donation_date: string;
 };
 
-const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
 
 export default function Donors() {
   const ctx = useOutletContext<{ profile: { id?: string; role?: string } | null }>();
@@ -166,32 +167,7 @@ export default function Donors() {
   // Live giving stats computed from the donations table — the donors columns
   // (total_donations / last_donation_date) are never updated when a gift lands,
   // so we aggregate here by donor_id (with a name fallback for unlinked rows).
-  const donorStats = useMemo(() => {
-    const byId = new Map<string, { total: number; last: string | null }>();
-    const byName = new Map<string, { total: number; last: string | null }>();
-    for (const d of donations) {
-      const amount = Number(d.amount ?? 0);
-      if (d.donor_id) {
-        const cur = byId.get(d.donor_id);
-        if (cur) {
-          cur.total += amount;
-          if (d.donation_date > (cur.last ?? "")) cur.last = d.donation_date;
-        } else {
-          byId.set(d.donor_id, { total: amount, last: d.donation_date || null });
-        }
-      } else if (d.donor_name && d.donor_name.trim() && d.donor_name.trim().toLowerCase() !== "anonymous") {
-        const key = normName(d.donor_name);
-        const cur = byName.get(key);
-        if (cur) {
-          cur.total += amount;
-          if (d.donation_date > (cur.last ?? "")) cur.last = d.donation_date;
-        } else {
-          byName.set(key, { total: amount, last: d.donation_date || null });
-        }
-      }
-    }
-    return { byId, byName };
-  }, [donations]);
+  const donorStats = useMemo(() => aggregateDonorStats(donations), [donations]);
 
   const statsFor = (d: Donor): { total: number; last: string | null } => {
     const full = normName(`${d.first_name} ${d.last_name}`);

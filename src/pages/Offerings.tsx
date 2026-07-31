@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/Layout";
 import { supabase, getReceiptUrl, isAdminRole } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { computeCashFromDenoms, normName } from "@/lib/accounting";
 import { downloadOfferingSummary, offeringSummaryDataUrl, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
 
 // ── Denomination preset ───────────────────────────────────────────────────
@@ -96,15 +97,6 @@ function emptyDenoms(): DenomCounts {
   const c: DenomCounts = {};
   for (const d of DENOMS) c[d] = "";
   return c;
-}
-
-function computeCashFromDenoms(dc: DenomCounts): number {
-  return Object.entries(dc).reduce((s, [denom, cnt]) => s + Number(denom) * (Number(cnt) || 0), 0);
-}
-
-// Normalize a typed name so the same new member on multiple check rows is one person
-function normName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
