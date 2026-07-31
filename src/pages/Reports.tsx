@@ -12,6 +12,17 @@ import type { Donor } from "@/lib/supabase";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
 
+type OfferingRow = {
+  id: string;
+  service_date: string;
+  service_name: string;
+  cash_amount: number;
+  check_amount: number;
+  total_amount: number;
+  check_count?: number;
+  deposit_status?: string;
+};
+
 const periodLabel: Record<Period, string> = {
   this_week: "This week",
   this_month: "This month",
@@ -45,6 +56,7 @@ function periodRange(p: Period): { start: string; label: string } {
 export default function Reports() {
   const [donations, setDonations] = useState<Donation[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [offerings, setOfferings] = useState<OfferingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("this_month");
 
@@ -53,9 +65,11 @@ export default function Reports() {
     Promise.all([
       supabase.from("donations").select("*").order("donation_date", { ascending: false }),
       supabase.from("expenses").select("*").order("submitted_at", { ascending: false }),
-    ]).then(([{ data: dData }, { data: eData }]) => {
+      supabase.from("offerings").select("*").order("service_date", { ascending: false }),
+    ]).then(([{ data: dData }, { data: eData }, { data: oData }]) => {
       if (dData) setDonations(dData as Donation[]);
       if (eData) setExpenses(eData as Expense[]);
+      if (oData) setOfferings(oData as OfferingRow[]);
       setLoading(false);
     });
   }, []);
@@ -72,24 +86,46 @@ export default function Reports() {
     [expenses, range.start],
   );
 
+  const filteredOff = useMemo(
+    () => offerings.filter((o) => o.service_date >= range.start),
+    [offerings, range.start],
+  );
+
+  // Standalone gifts (not part of a weekly offering). Offering checks also land
+  // in the donations table (with offering_id), so we fold offering totals in
+  // separately — this avoids double counting the checks.
+  const filteredStandalone = useMemo(
+    () => filteredDon.filter((d) => !d.offering_id),
+    [filteredDon],
+  );
+
   // Donation aggregations
   const donByType = useMemo(() => {
     const m: Record<string, number> = {};
-    filteredDon.forEach((d) => {
+    filteredStandalone.forEach((d) => {
       m[d.donation_type] = (m[d.donation_type] ?? 0) + Number(d.amount);
     });
+    // Weekly collections (cash + checks) count as "offering" type income
+    const offeringTotal = filteredOff.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+    if (offeringTotal > 0) m.offering = (m.offering ?? 0) + offeringTotal;
     return Object.entries(m).sort(([, a], [, b]) => b - a);
-  }, [filteredDon]);
+  }, [filteredStandalone, filteredOff]);
 
   const donByMethod = useMemo(() => {
     const m: Record<string, number> = {};
-    filteredDon.forEach((d) => {
+    filteredStandalone.forEach((d) => {
       m[d.payment_method] = (m[d.payment_method] ?? 0) + Number(d.amount);
     });
+    filteredOff.forEach((o) => {
+      m.cash = (m.cash ?? 0) + Number(o.cash_amount ?? 0);
+      m.check = (m.check ?? 0) + Number(o.check_amount ?? 0);
+    });
     return Object.entries(m).sort(([, a], [, b]) => b - a);
-  }, [filteredDon]);
+  }, [filteredStandalone, filteredOff]);
 
-  const totalDonations = filteredDon.reduce((s, d) => s + Number(d.amount), 0);
+  const totalDonations =
+    filteredStandalone.reduce((s, d) => s + Number(d.amount), 0) +
+    filteredOff.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
 
   // Expense aggregations
   const expBySource = useMemo(() => {
@@ -122,22 +158,30 @@ export default function Reports() {
   const accountExp = filteredExp.filter((e) => e.source === "church_direct").reduce((s, e) => s + Number(e.amount), 0);
   const net = totalDonations - totalExpenses;
 
-  // Weekly breakdown for donations
+  // Weekly breakdown: offering collections (cash + checks) plus standalone gifts
   const weeklyDon = useMemo(() => {
     const weeks: Record<string, { cash: number; check: number; other: number }> = {};
-    filteredDon.forEach((d) => {
-      const date = new Date(d.donation_date);
+    const bump = (dateStr: string, cash: number, check: number, other: number) => {
+      const date = new Date(dateStr);
       const weekStart = new Date(date);
       weekStart.setDate(date.getDate() - date.getDay());
       const key = weekStart.toISOString().slice(0, 10);
       if (!weeks[key]) weeks[key] = { cash: 0, check: 0, other: 0 };
+      weeks[key].cash += cash;
+      weeks[key].check += check;
+      weeks[key].other += other;
+    };
+    filteredOff.forEach((o) => {
+      bump(o.service_date, Number(o.cash_amount ?? 0), Number(o.check_amount ?? 0), 0);
+    });
+    filteredStandalone.forEach((d) => {
       const amt = Number(d.amount);
-      if (d.payment_method === "cash") weeks[key].cash += amt;
-      else if (d.payment_method === "check") weeks[key].check += amt;
-      else weeks[key].other += amt;
+      if (d.payment_method === "cash") bump(d.donation_date, amt, 0, 0);
+      else if (d.payment_method === "check") bump(d.donation_date, 0, amt, 0);
+      else bump(d.donation_date, 0, 0, amt);
     });
     return Object.entries(weeks).sort(([a], [b]) => a.localeCompare(b));
-  }, [filteredDon]);
+  }, [filteredOff, filteredStandalone]);
 
   const exportDonationsPDF = () => {
     const jsPDF = (window as unknown as Record<string, unknown>).jspdf;
@@ -157,7 +201,7 @@ export default function Reports() {
       <PageHeader
         title="Reports"
         subtitle="Weekly, monthly, and yearly summaries of donations, expenses, and net position."
-        badge={`${filteredDon.length} gifts · ${filteredExp.length} expenses`}
+        badge={`${filteredDon.length + filteredOff.length} gifts · ${filteredExp.length} expenses`}
         actions={
           <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-36">
             <option value="this_week">This week</option>
@@ -400,7 +444,7 @@ export default function Reports() {
           <Card>
             <CardHeader>
               <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly giving breakdown</h2>
-              <p className="text-xs text-stone-500">Cash vs check per week</p>
+              <p className="text-xs text-stone-500">Weekly offering collections (cash + checks) plus any standalone gifts</p>
             </CardHeader>
             <CardBody className="px-0 pb-0">
               {weeklyDon.length === 0 ? (
@@ -453,7 +497,7 @@ export default function Reports() {
               </CardHeader>
               <CardBody>
                 <div className="font-serif text-4xl font-bold text-emerald-700">{formatCurrency(totalDonations)}</div>
-                <div className="mt-2 text-sm text-stone-500">{filteredDon.length} gifts recorded</div>
+                <div className="mt-2 text-sm text-stone-500">{filteredDon.length + filteredOff.length} gifts recorded</div>
               </CardBody>
             </Card>
 
