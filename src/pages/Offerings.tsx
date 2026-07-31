@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
-  Shield, UserCheck, Key, AlertTriangle, Clock, FileDown,
+  Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -55,6 +55,9 @@ interface Offering {
   counter_1_signed_at: string | null;
   counter_2_id: string | null;
   counter_2_signed_at: string | null;
+  deposit_status?: "pending_deposit" | "deposited";
+  deposited_at?: string | null;
+  deposit_receipt_path?: string | null;
 }
 
 // ── Sample data ────────────────────────────────────────────────────────────
@@ -691,6 +694,7 @@ export default function Offerings() {
               <Th>Date</Th>
               <Th>Service</Th>
               <Th>Counters</Th>
+              <Th>Deposit</Th>
               <Th>Slip</Th>
               <Th className="text-right">Cash (net)</Th>
               <Th className="text-right">Checks</Th>
@@ -711,6 +715,13 @@ export default function Offerings() {
                     </div>
                   ) : (
                     <span className="text-xs text-stone-400 italic">Unsigned</span>
+                  )}
+                </Td>
+                <Td>
+                  {o.deposit_status === "deposited" ? (
+                    <Badge tone="emerald">Deposited</Badge>
+                  ) : (
+                    <Badge tone="amber">Pending</Badge>
                   )}
                 </Td>
                 <Td>
@@ -753,7 +764,7 @@ export default function Offerings() {
               </Tr>
             ))}
             <Tr>
-              <Td colSpan={4} className="border-t-2 border-stone-200 py-4 text-right font-semibold">
+              <Td colSpan={5} className="border-t-2 border-stone-200 py-4 text-right font-semibold">
                 Totals ({filtered.length} services)
               </Td>
               <Td className="border-t-2 border-stone-200 py-4 text-right font-mono font-semibold text-stone-900">
