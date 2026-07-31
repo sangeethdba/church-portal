@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
-  Shield, UserCheck, Key, AlertTriangle, Clock,
+  Shield, UserCheck, Key, AlertTriangle, Clock, FileDown,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/Layout";
 import { supabase } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { downloadOfferingSummary, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
 
 // ── Denomination preset ───────────────────────────────────────────────────
 const DENOMS = [100, 50, 20, 10, 5, 2, 1] as const;
@@ -208,6 +209,23 @@ export default function Offerings() {
     setDeductions((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)));
   };
 
+  // Build offering summary for PDF download
+  const buildSummary = (): OfferingSummary => ({
+    serviceDate: svcDate,
+    serviceName: svcName,
+    cashDenoms: DENOMS.map((d) => ({ denomination: d, count: Number(denoms[d]) || 0, subtotal: (Number(denoms[d]) || 0) * d })),
+    grossCash,
+    deductions: deductions.map((d) => ({ reason: d.reason, amount: Number(d.amount) || 0 })),
+    netCash,
+    checks: checks.map((c) => ({ donorName: c.donorName || "—", checkNumber: c.checkNumber, amount: Number(c.amount) || 0 })),
+    totalChecks,
+    totalDeposit: depositTotal,
+    churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
+    recordedBy: ctx.profile?.full_name ?? "Admin",
+    counter1Name: ctx.profile?.full_name ?? "Counter 1",
+    counter2Name: counterList.find((c) => c.id === counter2Id)?.full_name ?? "Counter 2",
+  });
+
   const handleSave = async () => {
     if (depositTotal <= 0) return;
 
@@ -310,6 +328,9 @@ export default function Offerings() {
         .select("*")
         .order("service_date", { ascending: false });
       if (fresh) setOfferings(fresh as Offering[]);
+
+      // Auto-download deposit slip
+      downloadOfferingSummary(buildSummary());
     } else {
       // Demo mode
       const row: Offering = {
@@ -325,6 +346,9 @@ export default function Offerings() {
         counter_2_signed_at: null,
       } as Offering;
       setOfferings((prev) => [row, ...prev]);
+
+      // Auto-download deposit slip
+      downloadOfferingSummary(buildSummary());
     }
 
     setSaving(false);
@@ -667,6 +691,7 @@ export default function Offerings() {
               <Th>Date</Th>
               <Th>Service</Th>
               <Th>Counters</Th>
+              <Th>Slip</Th>
               <Th className="text-right">Cash (net)</Th>
               <Th className="text-right">Checks</Th>
               <Th className="text-right">Total</Th>
@@ -688,6 +713,30 @@ export default function Offerings() {
                     <span className="text-xs text-stone-400 italic">Unsigned</span>
                   )}
                 </Td>
+                <Td>
+                  <Button size="sm" variant="ghost"
+                    onClick={() => {
+                      downloadOfferingSummary({
+                        serviceDate: o.service_date,
+                        serviceName: o.service_name,
+                        cashDenoms: [],
+                        grossCash: (o.cash_net ?? o.cash_amount) + (o.cash_deductions ? (o.cash_deductions as Deduction[]).reduce((s, d) => s + (Number(d.amount) || 0), 0) : 0),
+                        deductions: (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [],
+                        netCash: o.cash_net ?? o.cash_amount,
+                        checks: [],
+                        totalChecks: o.check_amount,
+                        totalDeposit: o.total_amount,
+                        churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
+                        recordedBy: "Admin",
+                        counter1Name: counterName(o.counter_1_id),
+                        counter2Name: counterName(o.counter_2_id),
+                      });
+                    }}
+                    iconLeft={<FileDown className="h-3.5 w-3.5" />}
+                  >
+                    Slip
+                  </Button>
+                </Td>
                 <Td className="text-right font-mono text-sm text-stone-700">
                   {formatCurrency(o.cash_net || o.cash_amount)}
                 </Td>
@@ -704,7 +753,7 @@ export default function Offerings() {
               </Tr>
             ))}
             <Tr>
-              <Td colSpan={3} className="border-t-2 border-stone-200 py-4 text-right font-semibold">
+              <Td colSpan={4} className="border-t-2 border-stone-200 py-4 text-right font-semibold">
                 Totals ({filtered.length} services)
               </Td>
               <Td className="border-t-2 border-stone-200 py-4 text-right font-mono font-semibold text-stone-900">

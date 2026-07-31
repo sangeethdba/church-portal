@@ -10,6 +10,227 @@ export interface AnnualStatement {
   churchName: string;
 }
 
+// ── Offering deposit slip ────────────────────────────────────────────────
+
+export interface OfferingDenomEntry {
+  denomination: number;
+  count: number;
+  subtotal: number;
+}
+
+export interface OfferingDeductionEntry {
+  reason: string;
+  amount: number;
+}
+
+export interface OfferingCheckEntry {
+  donorName: string;
+  checkNumber: string;
+  amount: number;
+}
+
+export interface OfferingSummary {
+  serviceDate: string;
+  serviceName: string;
+  cashDenoms: OfferingDenomEntry[];
+  grossCash: number;
+  deductions: OfferingDeductionEntry[];
+  netCash: number;
+  checks: OfferingCheckEntry[];
+  totalChecks: number;
+  totalDeposit: number;
+  churchName: string;
+  recordedBy: string;
+  counter1Name: string;
+  counter2Name: string;
+}
+
+const DENOM_ORDER = [100, 50, 20, 10, 5, 2, 1];
+
+export function generateOfferingSummary(s: OfferingSummary): jsPDF {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 50;
+  let y = margin;
+
+  // ── Header ────────────────────────────────────────────────────────────
+  doc.setFillColor(247, 241, 231);
+  doc.rect(0, 0, pageWidth, 90, "F");
+  doc.setTextColor(28, 25, 23);
+  doc.setFont("times", "bold");
+  doc.setFontSize(20);
+  doc.text(s.churchName, margin, 46);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(87, 83, 78);
+  doc.text(`Deposit Slip · ${s.serviceName}`, margin, 68);
+  doc.setFontSize(9);
+  doc.text(`Date: ${formatDateLong(s.serviceDate)}`, pageWidth - margin, 68, { align: "right" });
+
+  y = 110;
+
+  // ── Cash breakdown ────────────────────────────────────────────────────
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(28, 25, 23);
+  doc.text("Cash", margin, y);
+  y += 20;
+
+  // Denomination table
+  doc.setFillColor(250, 250, 249);
+  doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(120, 113, 108);
+  doc.text("Denomination", margin + 8, y);
+  doc.text("Count", margin + 200, y);
+  doc.text("Subtotal", pageWidth - margin - 8, y, { align: "right" });
+  y += 14;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(28, 25, 23);
+  for (const d of s.cashDenoms) {
+    if (d.count === 0) continue;
+    doc.text(`$${d.denomination.toLocaleString()}`, margin + 8, y);
+    doc.text(`× ${d.count}`, margin + 200, y);
+    doc.text(formatCurrency(d.subtotal), pageWidth - margin - 8, y, { align: "right" });
+    y += 16;
+  }
+
+  // Gross cash
+  doc.setDrawColor(231, 229, 228);
+  doc.line(margin + 100, y, pageWidth - margin, y);
+  y += 4;
+  doc.setFont("helvetica", "bold");
+  doc.text("Gross cash", margin + 8, y);
+  doc.text(formatCurrency(s.grossCash), pageWidth - margin - 8, y, { align: "right" });
+  y += 20;
+
+  // ── Deductions ────────────────────────────────────────────────────────
+  if (s.deductions.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Deductions", margin, y);
+    y += 20;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    for (const ded of s.deductions) {
+      doc.text(ded.reason || "—", margin + 8, y);
+      doc.text(`${formatCurrency(ded.amount)}`, pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+    y += 5;
+  }
+
+  // Net cash
+  doc.setDrawColor(231, 229, 228);
+  doc.line(margin + 100, y, pageWidth - margin, y);
+  y += 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("Net cash deposit", margin + 8, y);
+  doc.text(formatCurrency(s.netCash), pageWidth - margin - 8, y, { align: "right" });
+  y += 24;
+
+  // ── Checks ────────────────────────────────────────────────────────────
+  if (s.checks.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Checks", margin, y);
+    y += 20;
+
+    doc.setFillColor(250, 250, 249);
+    doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text("Donor", margin + 8, y);
+    doc.text("Check #", margin + 260, y);
+    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    y += 14;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(28, 25, 23);
+    for (const ch of s.checks) {
+      doc.text(ch.donorName, margin + 8, y);
+      doc.text(ch.checkNumber || "—", margin + 260, y);
+      doc.text(formatCurrency(ch.amount), pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+
+    doc.line(margin + 100, y, pageWidth - margin, y);
+    y += 4;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Total checks", margin + 8, y);
+    doc.text(formatCurrency(s.totalChecks), pageWidth - margin - 8, y, { align: "right" });
+    y += 24;
+  }
+
+  // ── Grand total ───────────────────────────────────────────────────────
+  doc.setFillColor(28, 25, 23);
+  doc.rect(margin, y - 10, pageWidth - margin * 2, 32, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("times", "bold");
+  doc.setFontSize(14);
+  doc.text("Total deposit", margin + 12, y + 12);
+  doc.setFontSize(16);
+  doc.text(formatCurrency(s.totalDeposit), pageWidth - margin - 12, y + 12, { align: "right" });
+  y += 38;
+
+  // ── Sign-off ──────────────────────────────────────────────────────────
+  y += 12;
+  doc.setTextColor(28, 25, 23);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("Verified & signed by", margin, y);
+  y += 22;
+
+  // Two signature lines side by side
+  const sigWidth = (pageWidth - margin * 2 - 30) / 2;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setDrawColor(120, 113, 108);
+
+  // Counter 1
+  doc.line(margin, y + 24, margin + sigWidth, y + 24);
+  doc.text(s.counter1Name, margin, y + 20);
+  doc.setFontSize(8);
+  doc.setTextColor(120, 113, 108);
+  doc.text("Counter 1", margin, y + 36);
+
+  // Counter 2
+  doc.setTextColor(28, 25, 23);
+  doc.setFontSize(10);
+  doc.line(margin + sigWidth + 30, y + 24, pageWidth - margin, y + 24);
+  doc.text(s.counter2Name, margin + sigWidth + 30, y + 20);
+  doc.setFontSize(8);
+  doc.setTextColor(120, 113, 108);
+  doc.text("Counter 2", margin + sigWidth + 30, y + 36);
+
+  y += 56;
+
+  // ── Footer ────────────────────────────────────────────────────────────
+  doc.setFontSize(8);
+  doc.setTextColor(168, 162, 158);
+  doc.text(
+    `${s.churchName} · Recorded by ${s.recordedBy} · ${formatDateLong(new Date())}`,
+    pageWidth - margin,
+    760,
+    { align: "right" },
+  );
+
+  return doc;
+}
+
+export function downloadOfferingSummary(s: OfferingSummary) {
+  const pdf = generateOfferingSummary(s);
+  const datePart = s.serviceDate.replace(/-/g, "");
+  pdf.save(`deposit-slip-${datePart}-${s.serviceName.replace(/\s+/g, "-").toLowerCase()}.pdf`);
+}
+
 /** Generate a one-page annual donor statement PDF in the browser. */
 export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
