@@ -23,12 +23,17 @@ create index if not exists offerings_date_idx on public.offerings (service_date 
 
 alter table public.offerings enable row level security;
 
--- RLS: admin/treasurer can do everything
+-- RLS: any authenticated user can record offerings (members, treasurer, admin)
+drop policy if exists offerings_insert on public.offerings;
+create policy offerings_insert on public.offerings
+  for insert to authenticated with check (true);
+
+-- RLS: admin/treasurer can update/delete
 drop policy if exists offerings_admin_all on public.offerings;
 create policy offerings_admin_all on public.offerings
   for all using (public.is_admin_or_treasurer()) with check (public.is_admin_or_treasurer());
 
--- RLS: members can view
-drop policy if exists offerings_member_read on public.offerings;
-create policy offerings_member_read on public.offerings
-  for select using (true);
+-- RLS: any authenticated user can view all offerings
+drop policy if exists offerings_read on public.offerings;
+create policy offerings_read on public.offerings
+  for select to authenticated using (true);
