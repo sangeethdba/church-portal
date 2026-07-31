@@ -117,7 +117,7 @@ export default function Offerings() {
   // ── Counter sign-off state ────────────────────────────────────────────
   const ctx = useOutletContext<{ profile: { id: string; full_name?: string | null } | null; isCounter: boolean }>();
   const [counterList, setCounterList] = useState<CounterInfo[]>([]);
-  const [counter1Id, setCounter1Id] = useState("");
+  const [counter1Id] = useState(ctx.profile?.id ?? "");
   const [counter1Pin, setCounter1Pin] = useState("");
   const [counter2Id, setCounter2Id] = useState("");
   const [counter2Pin, setCounter2Pin] = useState("");
@@ -180,7 +180,6 @@ export default function Offerings() {
     setDeductions([]);
     setChecks([]);
     setNotes("");
-    setCounter1Id("");
     setCounter1Pin("");
     setCounter2Id("");
     setCounter2Pin("");
@@ -212,12 +211,12 @@ export default function Offerings() {
   const handleSave = async () => {
     if (depositTotal <= 0) return;
 
-    if (supabase && (!counter1Id || !counter2Id || !counter1Pin || !counter2Pin)) {
-      setSignOffError("Both counters must be selected and PINs entered.");
+    if (supabase && (!counter2Id || !counter1Pin || !counter2Pin)) {
+      setSignOffError("Counter 2 must be selected and both PINs entered.");
       return;
     }
     if (supabase && counter1Id === counter2Id) {
-      setSignOffError("Counters must be two different people.");
+      setSignOffError("The second counter cannot be you — pick someone else.");
       return;
     }
 
@@ -535,27 +534,20 @@ export default function Offerings() {
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Counter 1 */}
-                  <div className="rounded-lg border border-amber-100 bg-white p-3">
-                    <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-amber-700">
-                      <UserCheck className="h-3.5 w-3.5" /> Counter 1
+                  {/* Counter 1 — logged-in user (auto) */}
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-emerald-700">
+                      <UserCheck className="h-3.5 w-3.5" /> Counter 1 (you)
                     </div>
-                    <Select
-                      value={counter1Id}
-                      onChange={(e) => { setCounter1Id(e.target.value); setSignOffError(""); }}
-                      className="mb-2 h-9 text-sm"
-                    >
-                      <option value="">Select counter…</option>
-                      {counterList.filter((c) => c.id !== counter2Id).map((c) => (
-                        <option key={c.id} value={c.id}>{c.full_name}</option>
-                      ))}
-                    </Select>
+                    <div className="mb-2 rounded-md bg-white/80 px-3 py-2 text-sm font-medium text-stone-800">
+                      {ctx.profile?.full_name ?? "Logged-in user"}
+                    </div>
                     <div className="relative">
                       <Key className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
                       <Input
                         type="password"
                         maxLength={6}
-                        placeholder="PIN"
+                        placeholder="Your PIN"
                         value={counter1Pin}
                         onChange={(e) => { setCounter1Pin(e.target.value); setSignOffError(""); }}
                         className="h-9 pl-8 text-sm"
@@ -572,7 +564,7 @@ export default function Offerings() {
                       onChange={(e) => { setCounter2Id(e.target.value); setSignOffError(""); }}
                       className="mb-2 h-9 text-sm"
                     >
-                      <option value="">Select counter…</option>
+                      <option value="">Select second counter…</option>
                       {counterList.filter((c) => c.id !== counter1Id).map((c) => (
                         <option key={c.id} value={c.id}>{c.full_name}</option>
                       ))}
@@ -582,7 +574,7 @@ export default function Offerings() {
                       <Input
                         type="password"
                         maxLength={6}
-                        placeholder="PIN"
+                        placeholder="Their PIN"
                         value={counter2Pin}
                         onChange={(e) => { setCounter2Pin(e.target.value); setSignOffError(""); }}
                         className="h-9 pl-8 text-sm"
