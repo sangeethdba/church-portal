@@ -148,7 +148,7 @@ export default function Dashboard() {
           supabase.from("donations").select("*").order("donation_date", { ascending: false }).limit(5),
           supabase.from("expenses").select("*").order("submitted_at", { ascending: false }).limit(5),
           supabase.from("offerings").select("total_amount").eq("deposit_status", "pending_deposit"),
-          supabase.from("expenses").select("amount").gte("submitted_at", yearStart),
+          supabase.from("expenses").select("amount,status").gte("submitted_at", yearStart),
           supabase.from("profiles").select("role, portal_access"),
           supabase.from("offerings").select("total_amount").gte("service_date", yearStart.slice(0, 10)),
           supabase.from("offerings").select("total_amount").gte("service_date", monthStart.slice(0, 10)),
