@@ -94,7 +94,7 @@ const FALLBACK_EXPENSES: Expense[] = [
 ];
 
 export default function Dashboard() {
-  const profile = useOutletContext<Profile | null>();
+  const { profile } = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
   const [kpis, setKpis] = useState<DashboardKpis>(zeroKpis);
   const [recentDonations, setRecentDonations] = useState<Donation[]>(FALLBACK_DONATIONS);
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>(FALLBACK_EXPENSES);

@@ -29,6 +29,7 @@ export interface Profile {
   full_name?: string | null;
   phone?: string | null;
   role: AppRole;
+  is_counter: boolean;
   church_name?: string | null;
   created_at: string;
 }

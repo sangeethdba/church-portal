@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, HandCoins, FileDown, Filter } from "lucide-react";
+import { useOutletContext } from "react-router-dom";
+import { Plus, HandCoins, FileDown, Filter, Shield } from "lucide-react";
 import {
   Button,
   Card,
@@ -78,6 +79,10 @@ const sampleDonorsForPick: { id: string; label: string }[] = [
 ];
 
 export default function Donations() {
+  const ctx = useOutletContext<{ profile: { id: string; role: string; is_counter?: boolean } | null; isCounter: boolean }>();
+  const isAdmin = ctx.profile?.role === "admin";
+  const canAccess = isAdmin || ctx.isCounter;
+
   const [donations, setDonations] = useState<Donation[]>(sampleDonations);
   const [donors, setDonors] = useState<{ id: string; label: string }[]>(sampleDonorsForPick);
   const [loading, setLoading] = useState(true);
@@ -229,6 +234,18 @@ export default function Donations() {
 
   return (
     <div>
+      {!canAccess && (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-amber-200 bg-amber-50/50 px-6 py-16 text-center">
+          <Shield className="mb-3 h-10 w-10 text-amber-400" />
+          <h2 className="font-serif text-xl font-semibold text-stone-800">Access restricted</h2>
+          <p className="mt-2 max-w-md text-sm text-stone-500">
+            The Donations section is only available to designated counters and admins.
+            Contact your church administrator if you need access.
+          </p>
+        </div>
+      )}
+      {canAccess && (
+      <>
       <PageHeader
         title="Donations"
         subtitle="Every gift, recorded faithfully. Issue annual tax statements in one click."
@@ -452,6 +469,8 @@ export default function Donations() {
             ))}
           </tbody>
         </TableWrap>
+      )}
+      </>
       )}
     </div>
   );

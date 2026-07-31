@@ -6,6 +6,7 @@ export interface AuthSessionState {
   email?: string;
   profile?: Profile;
   isAdmin: boolean;
+  isCounter: boolean;
 }
 
 export async function signInWithEmail(email: string, password: string) {
@@ -60,7 +61,7 @@ export async function getMyProfile(): Promise<Profile | null> {
 
 export async function getCurrentSession(): Promise<AuthSessionState> {
   const configured = isSupabaseConfigured();
-  if (!configured) return { configured: false, isAdmin: false };
+  if (!configured) return { configured: false, isAdmin: false, isCounter: false };
   const profile = await getMyProfile();
   const role: AppRole | null | undefined = profile?.role;
   return {
@@ -69,5 +70,6 @@ export async function getCurrentSession(): Promise<AuthSessionState> {
     email: profile?.email ?? undefined,
     profile: profile ?? undefined,
     isAdmin: role === "admin",
+    isCounter: profile?.is_counter ?? false,
   };
 }

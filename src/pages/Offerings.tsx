@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
+  Shield, UserCheck, Key, AlertTriangle, Clock,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -14,7 +16,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 
 // ── Denomination preset ───────────────────────────────────────────────────
 const DENOMS = [100, 50, 20, 10, 5, 2, 1] as const;
-type DenomCounts = Record<number, string>; // e.g. { 100: "5", 50: "2", ... }
+type DenomCounts = Record<number, string>;
 
 interface Deduction {
   reason: string;
@@ -22,11 +24,16 @@ interface Deduction {
 }
 
 interface CheckEntry {
-  key: string; // for React keys
+  key: string;
   donorName: string;
-  donorId: string; // uuid or ""
+  donorId: string;
   checkNumber: string;
   amount: string;
+}
+
+interface CounterInfo {
+  id: string;
+  full_name: string;
 }
 
 interface Offering {
@@ -43,6 +50,10 @@ interface Offering {
   recorded_by: string;
   notes: string | null;
   created_at: string;
+  counter_1_id: string | null;
+  counter_1_signed_at: string | null;
+  counter_2_id: string | null;
+  counter_2_signed_at: string | null;
 }
 
 // ── Sample data ────────────────────────────────────────────────────────────
@@ -55,12 +66,16 @@ function makeOffering(date: string, name: string, cash: number, checks: number, 
     check_amount: checks,
     total_amount: cash + checks,
     check_count: cnt,
-    cash_breakdown: {},
-    cash_deductions: [],
+    cash_breakdown: null,
+    cash_deductions: null,
     cash_net: cash,
     recorded_by: "demo",
     notes: null,
     created_at: new Date().toISOString(),
+    counter_1_id: null,
+    counter_1_signed_at: null,
+    counter_2_id: null,
+    counter_2_signed_at: null,
   };
 }
 
@@ -89,7 +104,6 @@ export default function Offerings() {
   const [saving, setSaving] = useState(false);
   const [filterYear, setFilterYear] = useState<string>("all");
 
-  // donors list for autocomplete
   const [donorList, setDonorList] = useState<Donor[]>([]);
 
   // ── Form state ─────────────────────────────────────────────────────────
@@ -99,6 +113,15 @@ export default function Offerings() {
   const [deductions, setDeductions] = useState<Deduction[]>([]);
   const [checks, setChecks] = useState<CheckEntry[]>([]);
   const [notes, setNotes] = useState("");
+
+  // ── Counter sign-off state ────────────────────────────────────────────
+  const ctx = useOutletContext<{ profile: { id: string; full_name?: string | null } | null; isCounter: boolean }>();
+  const [counterList, setCounterList] = useState<CounterInfo[]>([]);
+  const [counter1Id, setCounter1Id] = useState("");
+  const [counter1Pin, setCounter1Pin] = useState("");
+  const [counter2Id, setCounter2Id] = useState("");
+  const [counter2Pin, setCounter2Pin] = useState("");
+  const [signOffError, setSignOffError] = useState("");
 
   // ── Computed values ────────────────────────────────────────────────────
   const grossCash = computeCashFromDenoms(denoms);
@@ -127,15 +150,24 @@ export default function Offerings() {
     return Array.from(s).sort().reverse();
   }, [offerings]);
 
+  // Counter name lookup
+  const counterName = (id: string | null | undefined): string => {
+    if (!id) return "—";
+    const c = counterList.find((x) => x.id === id);
+    return c?.full_name ?? "Unknown";
+  };
+
   // ── Load data ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
     Promise.all([
       supabase.from("offerings").select("*").order("service_date", { ascending: false }),
       supabase.from("donors").select("id, first_name, last_name").order("last_name"),
-    ]).then(([{ data: oData }, { data: dData }]) => {
+      supabase.from("profiles").select("id, full_name").eq("is_counter", true).order("full_name"),
+    ]).then(([{ data: oData }, { data: dData }, { data: cData }]) => {
       if (oData) setOfferings(oData as Offering[]);
       if (dData) setDonorList(dData as Donor[]);
+      if (cData) setCounterList(cData as CounterInfo[]);
       setLoading(false);
     });
   }, []);
@@ -148,6 +180,11 @@ export default function Offerings() {
     setDeductions([]);
     setChecks([]);
     setNotes("");
+    setCounter1Id("");
+    setCounter1Pin("");
+    setCounter2Id("");
+    setCounter2Pin("");
+    setSignOffError("");
   };
 
   const addCheck = () => {
@@ -158,10 +195,6 @@ export default function Offerings() {
 
   const updateCheck = (key: string, patch: Partial<CheckEntry>) => {
     setChecks((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
-  };
-
-  const selectDonorForCheck = (key: string, donorId: string, donorName: string) => {
-    updateCheck(key, { donorId, donorName });
   };
 
   const addDeduction = () => {
@@ -178,7 +211,18 @@ export default function Offerings() {
 
   const handleSave = async () => {
     if (depositTotal <= 0) return;
+
+    if (supabase && (!counter1Id || !counter2Id || !counter1Pin || !counter2Pin)) {
+      setSignOffError("Both counters must be selected and PINs entered.");
+      return;
+    }
+    if (supabase && counter1Id === counter2Id) {
+      setSignOffError("Counters must be two different people.");
+      return;
+    }
+
     setSaving(true);
+    setSignOffError("");
 
     const payload = {
       service_date: svcDate,
@@ -194,7 +238,7 @@ export default function Offerings() {
     };
 
     if (supabase) {
-      // 1. Insert the offering record
+      // 1. Insert offering
       const { data: offData, error: offErr } = await supabase
         .from("offerings")
         .insert(payload)
@@ -202,17 +246,14 @@ export default function Offerings() {
         .maybeSingle();
 
       if (offErr) { console.warn("Insert offering failed:", offErr); setSaving(false); return; }
-
       const offeringId = (offData as Offering).id;
 
-      // 2. For each check, find/create donor and create a donation row
+      // 2. Create check donations
       for (const ch of checks) {
         const amt = Number(ch.amount);
         if (!amt || amt <= 0) continue;
 
         let donorId = ch.donorId;
-
-        // Create donor if not linked to an existing one
         if (!donorId && ch.donorName.trim()) {
           const [firstName, ...lastParts] = ch.donorName.trim().split(" ");
           const lastName = lastParts.join(" ") || firstName;
@@ -224,7 +265,6 @@ export default function Offerings() {
           if (newDonor) donorId = newDonor.id;
         }
 
-        // Create the donation row
         const { data: donData } = await supabase
           .from("donations")
           .insert({
@@ -239,7 +279,6 @@ export default function Offerings() {
           .select("id")
           .maybeSingle();
 
-        // Create the offering check link
         await supabase.from("offering_checks").insert({
           offering_id: offeringId,
           donor_id: donorId || null,
@@ -250,7 +289,23 @@ export default function Offerings() {
         });
       }
 
-      // 3. Refresh the list
+      // 3. Counter sign-off via RPC
+      const { error: signErr } = await supabase.rpc("sign_offering", {
+        p_offering_id: offeringId,
+        p_counter_1_id: counter1Id,
+        p_pin_1: counter1Pin,
+        p_counter_2_id: counter2Id,
+        p_pin_2: counter2Pin,
+      });
+
+      if (signErr) {
+        console.warn("Sign-off failed:", signErr);
+        setSignOffError(signErr.message || "PIN verification failed. Check PINs and try again.");
+        setSaving(false);
+        return;
+      }
+
+      // 4. Refresh
       const { data: fresh } = await supabase
         .from("offerings")
         .select("*")
@@ -265,6 +320,10 @@ export default function Offerings() {
         created_at: new Date().toISOString(),
         cash_breakdown: payload.cash_breakdown as DenomCounts,
         cash_deductions: payload.cash_deductions as Deduction[],
+        counter_1_id: null,
+        counter_1_signed_at: null,
+        counter_2_id: null,
+        counter_2_signed_at: null,
       } as Offering;
       setOfferings((prev) => [row, ...prev]);
     }
@@ -278,7 +337,7 @@ export default function Offerings() {
     <div>
       <PageHeader
         title="Offerings"
-        subtitle="Record Sunday collections — cash by denomination, individual checks per donor."
+        subtitle="Record Sunday collections — cash by denomination, individual checks per donor, and dual counter sign-off."
         badge={`${filtered.length} services`}
         actions={
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
@@ -289,7 +348,7 @@ export default function Offerings() {
               <DialogHeader>
                 <DialogTitle>Record a service offering</DialogTitle>
                 <DialogDescription>
-                  Enter cash by denomination, any deductions (pastor gift, etc.), and individual checks with donor names for tax receipts.
+                  Enter cash by denomination, any deductions, and individual checks with donor names. Both counters must sign off with their PIN before the offering is recorded.
                 </DialogDescription>
               </DialogHeader>
 
@@ -313,7 +372,7 @@ export default function Offerings() {
                 </div>
               </div>
 
-              {/* ── Cash by denomination ────────────────────────────────── */}
+              {/* Cash by denomination */}
               <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/30 p-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-medium text-stone-700">
                   <Banknote className="h-4 w-4 text-emerald-600" /> Cash by denomination
@@ -336,7 +395,7 @@ export default function Offerings() {
                 </div>
               </div>
 
-              {/* ── Cash deductions ─────────────────────────────────────── */}
+              {/* Cash deductions */}
               <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50/30 p-4">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
@@ -374,7 +433,7 @@ export default function Offerings() {
                 )}
               </div>
 
-              {/* ── Net cash display ────────────────────────────────────── */}
+              {/* Net cash display */}
               <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-center">
                 <span className="text-sm text-stone-500">Net cash deposit</span>
                 <div className="font-serif text-2xl font-semibold text-stone-900">
@@ -382,7 +441,7 @@ export default function Offerings() {
                 </div>
               </div>
 
-              {/* ── Checks per donor ────────────────────────────────────── */}
+              {/* Checks per donor */}
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-4">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
@@ -403,7 +462,6 @@ export default function Offerings() {
                         onChange={(e) => {
                           const val = e.target.value;
                           updateCheck(ch.key, { donorName: val });
-                          // Auto-fill donor ID if exact match found
                           const match = donorList.find(
                             (d) => `${d.first_name} ${d.last_name}`.toLowerCase() === val.toLowerCase()
                           );
@@ -450,7 +508,7 @@ export default function Offerings() {
                 )}
               </div>
 
-              {/* ── Deposit total ───────────────────────────────────────── */}
+              {/* Deposit total */}
               <div className="mt-3 rounded-lg border-2 border-accent bg-accent-soft p-3 text-center">
                 <span className="text-sm font-medium text-accent">Total deposit</span>
                 <div className="font-serif text-3xl font-bold text-stone-900">
@@ -459,6 +517,79 @@ export default function Offerings() {
                 <p className="mt-1 text-xs text-stone-500">
                   Net cash {formatCurrency(netCash)} + Checks {formatCurrency(totalChecks)}
                 </p>
+              </div>
+
+              {/* ── Counter sign-off ──────────────────────────────────── */}
+              <div className="mt-4 rounded-lg border-2 border-amber-200 bg-amber-50/40 p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-stone-700">
+                  <Shield className="h-4 w-4 text-amber-600" /> Counter sign-off (dual verification)
+                </div>
+                <p className="mb-3 text-xs text-stone-500">
+                  Both designated counters must enter their PIN to verify the cash count and deposit.
+                  This replaces the physical ledger signature.
+                </p>
+                {signOffError && (
+                  <div className="mb-3 flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <AlertTriangle className="h-4 w-4" />
+                    {signOffError}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Counter 1 */}
+                  <div className="rounded-lg border border-amber-100 bg-white p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-amber-700">
+                      <UserCheck className="h-3.5 w-3.5" /> Counter 1
+                    </div>
+                    <Select
+                      value={counter1Id}
+                      onChange={(e) => { setCounter1Id(e.target.value); setSignOffError(""); }}
+                      className="mb-2 h-9 text-sm"
+                    >
+                      <option value="">Select counter…</option>
+                      {counterList.filter((c) => c.id !== counter2Id).map((c) => (
+                        <option key={c.id} value={c.id}>{c.full_name}</option>
+                      ))}
+                    </Select>
+                    <div className="relative">
+                      <Key className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+                      <Input
+                        type="password"
+                        maxLength={6}
+                        placeholder="PIN"
+                        value={counter1Pin}
+                        onChange={(e) => { setCounter1Pin(e.target.value); setSignOffError(""); }}
+                        className="h-9 pl-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                  {/* Counter 2 */}
+                  <div className="rounded-lg border border-amber-100 bg-white p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-amber-700">
+                      <UserCheck className="h-3.5 w-3.5" /> Counter 2
+                    </div>
+                    <Select
+                      value={counter2Id}
+                      onChange={(e) => { setCounter2Id(e.target.value); setSignOffError(""); }}
+                      className="mb-2 h-9 text-sm"
+                    >
+                      <option value="">Select counter…</option>
+                      {counterList.filter((c) => c.id !== counter1Id).map((c) => (
+                        <option key={c.id} value={c.id}>{c.full_name}</option>
+                      ))}
+                    </Select>
+                    <div className="relative">
+                      <Key className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+                      <Input
+                        type="password"
+                        maxLength={6}
+                        placeholder="PIN"
+                        value={counter2Pin}
+                        onChange={(e) => { setCounter2Pin(e.target.value); setSignOffError(""); }}
+                        className="h-9 pl-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Notes */}
@@ -471,7 +602,7 @@ export default function Offerings() {
               <div className="mt-6 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancel</Button>
                 <Button onClick={handleSave} disabled={saving || depositTotal <= 0}>
-                  {saving ? "Saving…" : "Save offering"}
+                  {saving ? "Signing & saving…" : "Sign & record offering"}
                 </Button>
               </div>
             </DialogContent>
@@ -543,6 +674,7 @@ export default function Offerings() {
             <Tr>
               <Th>Date</Th>
               <Th>Service</Th>
+              <Th>Counters</Th>
               <Th className="text-right">Cash (net)</Th>
               <Th className="text-right">Checks</Th>
               <Th className="text-right">Total</Th>
@@ -554,6 +686,16 @@ export default function Offerings() {
               <Tr key={o.id}>
                 <Td className="whitespace-nowrap font-medium">{formatDate(o.service_date)}</Td>
                 <Td><Badge tone="indigo">{o.service_name}</Badge></Td>
+                <Td>
+                  {o.counter_1_id ? (
+                    <div className="flex items-center gap-1 text-xs text-stone-600">
+                      <Shield className="h-3 w-3 text-emerald-500" />
+                      <span>{counterName(o.counter_1_id)} & {counterName(o.counter_2_id)}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-stone-400 italic">Unsigned</span>
+                  )}
+                </Td>
                 <Td className="text-right font-mono text-sm text-stone-700">
                   {formatCurrency(o.cash_net || o.cash_amount)}
                 </Td>
@@ -570,7 +712,7 @@ export default function Offerings() {
               </Tr>
             ))}
             <Tr>
-              <Td colSpan={2} className="border-t-2 border-stone-200 py-4 text-right font-semibold">
+              <Td colSpan={3} className="border-t-2 border-stone-200 py-4 text-right font-semibold">
                 Totals ({filtered.length} services)
               </Td>
               <Td className="border-t-2 border-stone-200 py-4 text-right font-mono font-semibold text-stone-900">

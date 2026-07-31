@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useOutletContext } from "react-router-dom";
 import {
   LayoutDashboard,
   HandCoins,
@@ -11,23 +11,34 @@ import {
   LogOut,
   Church,
   Banknote,
+  Shield,
 } from "lucide-react";
 import Logo from "./Logo";
 import { Button, Badge } from "./ui";
 import { signOut } from "@/lib/auth";
+import type { Profile } from "@/lib/supabase";
 
-const items = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/offerings", label: "Offerings", icon: Banknote },
-  { to: "/donations", label: "Donations", icon: HandCoins },
-  { to: "/expenses", label: "Expenses", icon: Receipt },
-  { to: "/donors", label: "Donors", icon: Users },
-  { to: "/tax-report", label: "Tax report", icon: FileText },
+const allItems = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["member", "admin"] as string[] },
+  { to: "/offerings", label: "Offerings", icon: Banknote, roles: ["admin"] as string[], counters: true },
+  { to: "/donations", label: "Donations", icon: HandCoins, roles: ["admin"] as string[], counters: true },
+  { to: "/expenses", label: "Expenses", icon: Receipt, roles: ["member", "admin"] as string[] },
+  { to: "/donors", label: "Donors", icon: Users, roles: ["member", "admin"] as string[] },
+  { to: "/tax-report", label: "Tax report", icon: FileText, roles: ["admin"] as string[] },
 ];
 
 export default function AppShell() {
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
+  const isAdmin = ctx.profile?.role === "admin";
+
+  const visibleItems = allItems.filter((item) => {
+    if (item.roles.includes("admin") && isAdmin) return true;
+    if (item.roles.includes("member") && !isAdmin && !ctx.isCounter) return true;
+    if (item.counters && ctx.isCounter) return true;
+    return false;
+  });
 
   const onSignOut = async () => {
     await signOut();
@@ -67,7 +78,7 @@ export default function AppShell() {
           </div>
 
           <nav className="flex flex-col gap-1">
-            {items.map(({ to, label, icon: Icon }) => (
+            {visibleItems.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -89,11 +100,13 @@ export default function AppShell() {
           <div className="mt-8 rounded-xl border border-stone-200 bg-parchment-100/60 p-4">
             <div className="flex items-center gap-2 font-serif font-semibold text-stone-900">
               <Church className="h-4 w-4 text-accent" />
-              Your church
+              {ctx.profile?.church_name ?? "Your church"}
             </div>
-            <p className="mt-1 text-xs text-stone-600">
-              Set the church name in <code>profiles.church_name</code> via your Supabase table editor.
-            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Badge tone={isAdmin ? "indigo" : ctx.isCounter ? "amber" : "neutral"}>
+                {isAdmin ? "Admin" : ctx.isCounter ? "Counter" : "Member"}
+              </Badge>
+            </div>
           </div>
 
           <div className="mt-6">

@@ -39,5 +39,5 @@ export default function RequireAuth() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  return <Outlet context={state.profile} />;
+  return <Outlet context={{ profile: state.profile, isCounter: state.profile?.is_counter ?? false }} />;
 }
