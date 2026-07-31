@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [pendingDepositTotal, setPendingDepositTotal] = useState(0);
   const [ytdExpenses, setYtdExpenses] = useState(0);
   const [ytdNet, setYtdNet] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   const isAdmin = isAdminRole(profile?.role);
   const [counterOpen, setCounterOpen] = useState(false);
@@ -102,7 +103,7 @@ export default function Dashboard() {
       try {
         const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-        const [{ data: ytdRows }, { count: donorCount }, { count: pending }, { data: monthDon }, { data: monthExp }, { data: donations }, { data: expenses }, { data: pendingOff }, { data: ytdExpData }] = await Promise.all([
+        const [{ data: ytdRows }, { count: donorCount }, { count: pending }, { data: monthDon }, { data: monthExp }, { data: donations }, { data: expenses }, { data: pendingOff }, { data: ytdExpData }, { data: profilesAll }] = await Promise.all([
           supabase.from("donations").select("amount").gte("donation_date", yearStart.slice(0, 10)),
           supabase.from("donors").select("id", { count: "exact", head: true }).eq("is_active", true),
           supabase.from("expenses").select("id", { count: "exact", head: true }).eq("status", "pending"),
@@ -112,12 +113,16 @@ export default function Dashboard() {
           supabase.from("expenses").select("*").order("submitted_at", { ascending: false }).limit(5),
           supabase.from("offerings").select("total_amount").eq("deposit_status", "pending_deposit"),
           supabase.from("expenses").select("amount").gte("submitted_at", yearStart),
+          supabase.from("profiles").select("role, portal_access"),
         ]);
         const ytdGiving = (ytdRows ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
         const monthDonSum = (monthDon ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
         const monthExpPaid = (monthExp ?? []).filter((r: { status: string }) => r.status !== "rejected" && r.status !== "pending").reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
         if (!cancelled) {
           setKpis({ ytdGiving, donors: donorCount ?? 0, pendingExpenses: pending ?? 0, monthNet: monthDonSum - monthExpPaid });
+          if (profilesAll) {
+            setPendingApprovals((profilesAll as { role: string; portal_access: boolean }[]).filter((p) => !isAdminRole(p.role) && !p.portal_access).length);
+          }
           if (pendingOff) { setPendingDeposits(pendingOff.length); setPendingDepositTotal(pendingOff.reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0)); }
           if (ytdExpData) {
             const expPaidOrApproved = (ytdExpData as { amount: number; status: string }[]).filter((r) => r.status !== "rejected" && r.status !== "pending");
@@ -145,7 +150,12 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             {isAdmin && (
               <Dialog open={counterOpen} onOpenChange={(v) => { setCounterOpen(v); if (v) loadProfiles(); }}>
-                <DialogTrigger asChild><Button iconLeft={<Shield className="h-4 w-4" />} variant="outline">Manage counters</Button></DialogTrigger>
+                <DialogTrigger asChild>
+                  <Button iconLeft={<Shield className="h-4 w-4" />} variant="outline">
+                    Manage members & access
+                    {pendingApprovals > 0 && <Badge tone="amber" className="ml-2">{pendingApprovals} pending</Badge>}
+                  </Button>
+                </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Manage members & access</DialogTitle><DialogDescription>Approve who can use the portal, link members to donor records, and designate counters with sign-off PINs.</DialogDescription></DialogHeader>
                   <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600"><Shield className="mb-1 inline h-4 w-4 text-amber-500" /> Anyone with a Google account can sign in — but only members with <strong>Portal access</strong> approved here can view data or submit expenses.</div>
@@ -196,6 +206,11 @@ export default function Dashboard() {
                         )}
                       </div>
                     ))}
+                    {allProfiles.length <= 1 && (
+                      <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">
+                        Only your account is on file so far. Anyone who signs in with Google appears here for approval — then you can grant access, link them to a donor record, or designate them as a counter.
+                      </p>
+                    )}
                   </div>
                 </DialogContent>
               </Dialog>
@@ -204,6 +219,14 @@ export default function Dashboard() {
           </div>
         }
       />
+
+      {pendingApprovals > 0 && (
+        <button type="button" onClick={() => { setCounterOpen(true); loadProfiles(); }}
+          className="mb-6 flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-800 transition hover:bg-amber-100/80">
+          <UserCheck className="h-5 w-5 shrink-0 text-amber-600" />
+          <span><strong>{pendingApprovals} member{pendingApprovals > 1 ? "s" : ""} waiting for approval</strong> — someone signed in with Google. Click here to review, grant access, link their donor record, or make them a counter.</span>
+        </button>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Tile label="YTD Giving" value={formatCurrency(kpis.ytdGiving)} accent="indigo" icon={<HandCoins className="h-5 w-5" />}/>
