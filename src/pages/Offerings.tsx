@@ -390,10 +390,14 @@ export default function Offerings() {
                   <Select id="svc-name" value={svcName}
                     onChange={(e) => setSvcName(e.target.value)} className="mt-1.5">
                     <option>Sunday Service</option>
+                    <option>New Year's Eve (Dec 31)</option>
+                    <option>New Year's Day (Jan 1)</option>
+                    <option>Midweek Service</option>
                     <option>Wednesday Bible Study</option>
                     <option>Christmas Eve</option>
                     <option>Easter</option>
                     <option>Special Event</option>
+                    <option>Online Transfers</option>
                   </Select>
                 </div>
               </div>
