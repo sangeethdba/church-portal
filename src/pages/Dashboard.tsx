@@ -4,7 +4,7 @@ import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
   Shield, UserCheck, Lock, Banknote,
 } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label } from "@/components/ui";
+import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { supabase } from "@/lib/supabase";
@@ -42,13 +42,37 @@ export default function Dashboard() {
   const isAdmin = profile?.role === "admin";
   const [counterOpen, setCounterOpen] = useState(false);
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+  const [donorOptions, setDonorOptions] = useState<{ id: string; label: string }[]>([]);
   const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const loadProfiles = async () => {
     if (!supabase) return;
-    const { data } = await supabase.from("profiles").select("id, email, full_name, role, is_counter").order("full_name");
-    if (data) { setAllProfiles(data as Profile[]); setPinInputs({}); }
+    const [profilesRes, donorsRes] = await Promise.all([
+      supabase.from("profiles").select("id, email, full_name, role, is_counter, portal_access, linked_donor_id").order("full_name"),
+      supabase.from("donors").select("id, first_name, last_name").order("last_name"),
+    ]);
+    if (profilesRes.data) { setAllProfiles(profilesRes.data as Profile[]); setPinInputs({}); }
+    if (donorsRes.data) {
+      setDonorOptions((donorsRes.data as { id: string; first_name: string; last_name: string }[]).map((d) => ({ id: d.id, label: `${d.first_name} ${d.last_name}` })));
+    }
+  };
+
+  const togglePortalAccess = async (userId: string, newVal: boolean) => {
+    if (!supabase) return;
+    setSavingId(userId);
+    await supabase.from("profiles").update({ portal_access: newVal }).eq("id", userId);
+    setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, portal_access: newVal } : p)));
+    setSavingId(null);
+  };
+
+  const linkDonor = async (userId: string, donorId: string) => {
+    if (!supabase) return;
+    setSavingId(userId);
+    // Clear any previous link for this donor, then link the profile
+    await supabase.from("donors").update({ linked_user_id: userId }).eq("id", donorId);
+    setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: donorId } : p)));
+    setSavingId(null);
   };
 
   const toggleCounter = async (userId: string, newVal: boolean) => {
@@ -121,21 +145,54 @@ export default function Dashboard() {
             {isAdmin && (
               <Dialog open={counterOpen} onOpenChange={(v) => { setCounterOpen(v); if (v) loadProfiles(); }}>
                 <DialogTrigger asChild><Button iconLeft={<Shield className="h-4 w-4" />} variant="outline">Manage counters</Button></DialogTrigger>
-                <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
-                  <DialogHeader><DialogTitle>Manage counter pool</DialogTitle><DialogDescription>Designate members who can count and sign off on weekly offerings.</DialogDescription></DialogHeader>
-                  <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600"><Shield className="mb-1 inline h-4 w-4 text-amber-500" /> When recording an offering, only members in the counter pool appear in the sign-off dropdown.</div>
-                  <div className="mt-3 space-y-1">
+                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                  <DialogHeader><DialogTitle>Manage members & access</DialogTitle><DialogDescription>Approve who can use the portal, link members to donor records, and designate counters with sign-off PINs.</DialogDescription></DialogHeader>
+                  <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600"><Shield className="mb-1 inline h-4 w-4 text-amber-500" /> Anyone with a Google account can sign in — but only members with <strong>Portal access</strong> approved here can view data or submit expenses.</div>
+                  <div className="mt-3 space-y-2">
                     {allProfiles.map((p) => (
-                      <div key={p.id} className="flex items-center gap-3 rounded-lg border border-stone-100 px-3 py-2.5 hover:bg-stone-50/50">
-                        <button type="button" onClick={() => toggleCounter(p.id, !p.is_counter)} disabled={savingId === p.id}
-                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.is_counter ? "bg-emerald-500" : "bg-stone-300"}`}>
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.is_counter ? "translate-x-6" : "translate-x-1"}`}/>
-                        </button>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2"><span className="text-sm font-medium text-stone-900">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{p.role === "admin" && <Badge tone="indigo">Admin</Badge>}</div>
-                          <div className="truncate text-xs text-stone-400">{p.email}</div>
+                      <div key={p.id} className="rounded-lg border border-stone-100 px-3 py-2.5 hover:bg-stone-50/50">
+                        <div className="flex items-center gap-3">
+                          {/* Portal access toggle */}
+                          <div className="flex items-center gap-1.5">
+                            <button type="button" onClick={() => togglePortalAccess(p.id, !p.portal_access)} disabled={savingId === p.id || p.role === "admin"}
+                              title={p.role === "admin" ? "Admins always have access" : "Toggle portal access"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || p.role === "admin" ? "bg-indigo-500" : "bg-stone-300"} ${savingId === p.id ? "opacity-50" : ""}`}>
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || p.role === "admin" ? "translate-x-6" : "translate-x-1"}`}/>
+                            </button>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Access</span>
+                          </div>
+                          {/* Counter toggle */}
+                          <div className="flex items-center gap-1.5">
+                            <button type="button" onClick={() => toggleCounter(p.id, !p.is_counter)} disabled={savingId === p.id}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.is_counter ? "bg-emerald-500" : "bg-stone-300"}`}>
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.is_counter ? "translate-x-6" : "translate-x-1"}`}/>
+                            </button>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Counter</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2"><span className="text-sm font-medium text-stone-900">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{p.role === "admin" && <Badge tone="indigo">Admin</Badge>}{p.portal_access && p.role !== "admin" && <Badge tone="indigo">Access</Badge>}</div>
+                            <div className="truncate text-xs text-stone-400">{p.email}</div>
+                          </div>
                         </div>
-                        {p.is_counter && (<div className="flex items-center gap-2"><div className="relative"><Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400"/><Input type="password" maxLength={6} placeholder="New PIN" value={pinInputs[p.id] ?? ""} onChange={(e) => setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))} className="h-8 w-24 pl-7 text-xs"/></div><Button size="sm" variant="outline" disabled={savingId === p.id || !pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3} onClick={() => setPin(p.id)}>{savingId === p.id ? "…" : "Set"}</Button></div>)}
+                        {/* Link donor + PIN for counters */}
+                        {(p.portal_access || p.role === "admin" || p.is_counter) && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2">
+                            <div className="flex-1 min-w-[180px]">
+                              <Label className="text-[10px]">Link to donor record</Label>
+                              <Select value={p.linked_donor_id ?? ""} onChange={(e) => e.target.value && linkDonor(p.id, e.target.value)}
+                                className="mt-1 h-8 text-xs">
+                                <option value="">— Link donor —</option>
+                                {donorOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                              </Select>
+                            </div>
+                            {p.is_counter && (
+                              <div className="flex items-end gap-2">
+                                <div className="relative"><Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400"/><Input type="password" maxLength={6} placeholder="New PIN" value={pinInputs[p.id] ?? ""} onChange={(e) => setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))} className="h-8 w-24 pl-7 text-xs"/></div>
+                                <Button size="sm" variant="outline" disabled={savingId === p.id || !pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3} onClick={() => setPin(p.id)}>{savingId === p.id ? "…" : "Set"}</Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

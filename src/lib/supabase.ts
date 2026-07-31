@@ -37,6 +37,8 @@ export interface Profile {
   phone?: string | null;
   role: AppRole;
   is_counter: boolean;
+  portal_access: boolean;
+  linked_donor_id?: string | null;
   church_name?: string | null;
   created_at: string;
 }
