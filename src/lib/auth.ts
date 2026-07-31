@@ -5,7 +5,7 @@ export interface AuthSessionState {
   userId?: string;
   email?: string;
   profile?: Profile;
-  isAdminOrTreasurer: boolean;
+  isAdmin: boolean;
 }
 
 export async function signInWithEmail(email: string, password: string) {
@@ -60,7 +60,7 @@ export async function getMyProfile(): Promise<Profile | null> {
 
 export async function getCurrentSession(): Promise<AuthSessionState> {
   const configured = isSupabaseConfigured();
-  if (!configured) return { configured: false, isAdminOrTreasurer: false };
+  if (!configured) return { configured: false, isAdmin: false };
   const profile = await getMyProfile();
   const role: AppRole | null | undefined = profile?.role;
   return {
@@ -68,6 +68,6 @@ export async function getCurrentSession(): Promise<AuthSessionState> {
     userId: profile?.id ?? undefined,
     email: profile?.email ?? undefined,
     profile: profile ?? undefined,
-    isAdminOrTreasurer: role === "admin" || role === "treasurer" || role === "super_admin",
+    isAdmin: role === "admin",
   };
 }

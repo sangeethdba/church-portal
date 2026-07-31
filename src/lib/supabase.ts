@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // ----- Domain types (mirror the SQL enums) ------------------------------
-export type AppRole = "member" | "treasurer" | "admin" | "super_admin";
+export type AppRole = "member" | "admin";
 
 export type DonationKind = "tithe" | "offering" | "building" | "missions" | "other";
 export type PaymentMethod = "cash" | "check" | "online" | "card";
@@ -77,6 +77,7 @@ export interface Expense {
   category: ExpenseCategory;
   description?: string | null;
   receipt_paths: string[];
+  transfer_receipt_path?: string | null;
   user_id?: string | null;
   status: ExpenseStatus;
   submitted_at: string;

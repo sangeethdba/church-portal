@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote } from "lucide-react";
 import {
   Button,
   Card,
@@ -40,6 +40,7 @@ const sampleExpenses: Expense[] = [
     category: "utilities",
     description: "Monthly utility bill",
     receipt_paths: [],
+    transfer_receipt_path: null,
     user_id: null,
     status: "auto_paid",
     submitted_at: new Date(Date.now() - 9 * 86400000).toISOString(),
@@ -58,6 +59,7 @@ const sampleExpenses: Expense[] = [
     category: "supplies",
     description: "Markers, construction paper, glue",
     receipt_paths: [],
+    transfer_receipt_path: null,
     user_id: null,
     status: "pending",
     submitted_at: new Date(Date.now() - 2 * 86400000).toISOString(),
@@ -76,6 +78,7 @@ const sampleExpenses: Expense[] = [
     category: "events",
     description: "Saturday community meal",
     receipt_paths: [],
+    transfer_receipt_path: null,
     user_id: null,
     status: "approved",
     submitted_at: new Date(Date.now() - 4 * 86400000).toISOString(),
@@ -87,6 +90,26 @@ const sampleExpenses: Expense[] = [
     created_at: new Date(Date.now() - 4 * 86400000).toISOString(),
   },
 ];
+
+const SUPABASE_FN_URL = "https://qjoxqfkdyugwmgzgjzir.supabase.co/functions/v1/send-reimbursement-email";
+
+async function notifyMember(expenseId: string) {
+  try {
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+    await fetch(SUPABASE_FN_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ expense_id: expenseId }),
+    });
+  } catch {
+    // email notification is best-effort — don't block the UI
+    console.warn("Email notification failed; the status update was still saved.");
+  }
+}
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState<Expense[]>(sampleExpenses);
@@ -105,6 +128,13 @@ export default function Expenses() {
   const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // "Mark Paid" dialog state
+  const [payOpen, setPayOpen] = useState(false);
+  const [payExpenseId, setPayExpenseId] = useState<string | null>(null);
+  const [transferFile, setTransferFile] = useState<File | null>(null);
+  const [paySaving, setPaySaving] = useState(false);
+  const transferInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -141,6 +171,44 @@ export default function Expenses() {
       const { error } = await supabase.from("expenses").update(patch).eq("id", id);
       if (error) console.warn("Update expense failed:", error);
     }
+  };
+
+  const handleMarkPaid = async () => {
+    if (!payExpenseId) return;
+    setPaySaving(true);
+
+    let transferPath: string | null = null;
+
+    // Upload transfer receipt if provided
+    if (transferFile && supabase) {
+      const safeName = transferFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `transfers/${payExpenseId}/${Date.now()}-${safeName}`;
+      const { error } = await supabase.storage
+        .from("receipts")
+        .upload(path, transferFile, { cacheControl: "3600", upsert: false });
+      if (!error) transferPath = path;
+    }
+
+    const patch: Partial<Expense> = {
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      ...(transferPath ? { transfer_receipt_path: transferPath } : {}),
+    };
+
+    setExpenses((rows) =>
+      rows.map((r) => (r.id === payExpenseId ? { ...r, ...patch } : r)),
+    );
+
+    if (supabase) {
+      await supabase.from("expenses").update(patch).eq("id", payExpenseId);
+      // Best-effort email notification
+      notifyMember(payExpenseId);
+    }
+
+    setPaySaving(false);
+    setPayOpen(false);
+    setPayExpenseId(null);
+    setTransferFile(null);
   };
 
   const uploadReceipts = async (expenseId: string): Promise<string[]> => {
@@ -200,7 +268,6 @@ export default function Expenses() {
         .maybeSingle();
       if (data) {
         const expense = data as Expense;
-        // Upload receipts if any files were attached
         if (receiptFiles.length > 0) {
           setUploading(true);
           const paths = await uploadReceipts(expense.id);
@@ -241,6 +308,12 @@ export default function Expenses() {
           ? "indigo"
           : "amber";
 
+  const openPayDialog = (id: string) => {
+    setPayExpenseId(id);
+    setTransferFile(null);
+    setPayOpen(true);
+  };
+
   return (
     <div>
       <PageHeader
@@ -257,7 +330,7 @@ export default function Expenses() {
                 <DialogTitle>Record an expense</DialogTitle>
                 <DialogDescription>
                   Church-admin entries are auto-flagged as auto-paid once logged.
-                  Member-submitted refunds stay pending until a treasurer approves them.
+                  Member-submitted refunds stay pending until an admin approves them.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid grid-cols-2 gap-3">
@@ -270,7 +343,7 @@ export default function Expenses() {
                     }
                     className="mt-1.5"
                   >
-                    <option value="church_direct">Church-direct (admin/treasurer)</option>
+                    <option value="church_direct">Church-direct (admin)</option>
                     <option value="member_submitted">Member-submitted reimbursement</option>
                   </Select>
                 </div>
@@ -400,6 +473,70 @@ export default function Expenses() {
         }
       />
 
+      {/* Mark Paid with Transfer Receipt dialog */}
+      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark as paid & upload transfer receipt</DialogTitle>
+            <DialogDescription>
+              After transferring funds from your bank account, upload the transaction
+              receipt here. The member will be notified by email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Bank transfer receipt</Label>
+              <div className="mt-1.5">
+                <input
+                  ref={transferInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) setTransferFile(e.target.files[0]);
+                  }}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => transferInputRef.current?.click()}
+                  iconLeft={<Upload className="h-4 w-4" />}
+                >
+                  {transferFile ? "Change file" : "Upload transfer receipt"}
+                </Button>
+                {transferFile && (
+                  <div className="mt-2 flex items-center gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-1.5 text-sm">
+                    <Paperclip className="h-3.5 w-3.5 text-stone-400" />
+                    <span className="flex-1 truncate text-stone-700">{transferFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setTransferFile(null)}
+                      className="rounded p-0.5 text-stone-400 hover:bg-stone-200 hover:text-stone-600"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              <Banknote className="mb-1 h-4 w-4" />
+              This will mark the expense as paid and send an email notification to the
+              submitting member if applicable.
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setPayOpen(false); setTransferFile(null); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleMarkPaid} disabled={paySaving}>
+              {paySaving ? "Saving…" : "Confirm payment"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Tabs defaultValue="all">
         <TabsList>
           <TabsTrigger value="all">All</TabsTrigger>
@@ -411,6 +548,7 @@ export default function Expenses() {
           <ExpenseList
             rows={filtered}
             onTransition={transition}
+            onMarkPaid={openPayDialog}
             statusTone={statusTone}
           />
         </TabsContent>
@@ -418,6 +556,7 @@ export default function Expenses() {
           <ExpenseList
             rows={filtered.filter((e) => e.source === "member_submitted")}
             onTransition={transition}
+            onMarkPaid={openPayDialog}
             statusTone={statusTone}
             hideSource
           />
@@ -426,6 +565,7 @@ export default function Expenses() {
           <ExpenseList
             rows={filtered.filter((e) => e.source === "church_direct")}
             onTransition={transition}
+            onMarkPaid={openPayDialog}
             statusTone={statusTone}
             hideSource
           />
@@ -444,11 +584,13 @@ export default function Expenses() {
 function ExpenseList({
   rows,
   onTransition,
+  onMarkPaid,
   statusTone,
   hideSource,
 }: {
   rows: Expense[];
   onTransition: (id: string, status: ExpenseStatus) => void;
+  onMarkPaid: (id: string) => void;
   statusTone: (s: ExpenseStatus) => "neutral" | "indigo" | "amber" | "emerald" | "rose";
   hideSource?: boolean;
 }) {
@@ -486,6 +628,9 @@ function ExpenseList({
                     {e.title ?? e.description?.slice(0, 60) ?? "—"}
                   </div>
                   <div className="text-xs text-stone-500">Logged {formatDate(e.submitted_at)}</div>
+                  {e.transfer_receipt_path && (
+                    <div className="mt-1 text-xs text-emerald-700">✓ Transfer receipt attached</div>
+                  )}
                 </Td>
                 <Td>
                   <span className="text-stone-600">{e.category}</span>
@@ -529,10 +674,10 @@ function ExpenseList({
                       <Button
                         size="sm"
                         variant="warm"
-                        onClick={() => onTransition(e.id, "auto_paid")}
-                        iconLeft={<Sparkles className="h-3.5 w-3.5" />}
+                        onClick={() => onMarkPaid(e.id)}
+                        iconLeft={<Banknote className="h-3.5 w-3.5" />}
                       >
-                        Mark auto-paid
+                        Mark paid
                       </Button>
                     )}
                     {e.status === "rejected" && (
