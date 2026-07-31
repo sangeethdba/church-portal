@@ -11,10 +11,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase } from "@/lib/supabase";
+import { supabase, getReceiptUrl } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { downloadOfferingSummary, offeringSummaryDataUrl, downloadOfferingReceipt, offeringReceiptDataUrl, type OfferingSummary, type OfferingReceipt, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
+import { downloadOfferingSummary, offeringSummaryDataUrl, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
 
 // ── Denomination preset ───────────────────────────────────────────────────
 const DENOMS = [100, 50, 20, 10, 5, 2, 1] as const;
@@ -156,16 +156,19 @@ export default function Offerings() {
     });
   };
 
-  const openReceiptPreview = (receipt: OfferingReceipt) => {
+  // Open the treasurer's uploaded bank transaction receipt (from the Deposit flow)
+  const openBankSlip = async (o: Offering) => {
+    const url = await getReceiptUrl(o.deposit_receipt_path);
+    if (!url) return;
     setDocPreview({
-      url: offeringReceiptDataUrl(receipt),
-      title: "Offering receipt",
-      subtitle: `${receipt.serviceName} · ${formatDate(receipt.serviceDate)} · Total received ${formatCurrency(receipt.totalDeposit)}`,
-      onDownload: () => downloadOfferingReceipt(receipt),
+      url,
+      title: "Bank transaction receipt",
+      subtitle: `${o.service_name} · ${formatDate(o.service_date)} · Total deposit ${formatCurrency(o.total_amount)}`,
+      onDownload: () => window.open(url, "_blank"),
     });
   };
 
-  // Build both documents from a stored offering row + its check lines
+  // Build the ledger document from a stored offering row + its check lines
   const buildOfferingDocs = (o: Offering, checksData: { donor_name: string; check_number: string | null; amount: number }[]) => {
     const net = Number(o.cash_net ?? o.cash_amount) || 0;
     const dedSum = Number((o.cash_deductions as Deduction[])?.reduce((s, d) => s + (Number(d.amount) || 0), 0) ?? 0) || 0;
@@ -194,23 +197,7 @@ export default function Offerings() {
       counter1Name,
       counter2Name,
     };
-    const receipt: OfferingReceipt = {
-      churchName,
-      receiptNumber: `R-${(o.id ?? "").replace(/-/g, "").slice(0, 8).toUpperCase()}`,
-      serviceName: o.service_name,
-      serviceDate: o.service_date,
-      cashDenoms: denomEntries,
-      deductions,
-      grossCash: net + dedSum,
-      netCash: net,
-      checks,
-      totalChecks: checksTotal,
-      totalDeposit: net + checksTotal,
-      counter1Name,
-      counter2Name,
-      notes: o.notes ?? null,
-    };
-    return { summary, receipt };
+    return { summary };
   };
 
   const loadOfferingChecks = async (o: Offering) => {
@@ -988,13 +975,12 @@ export default function Offerings() {
                       Ledger
                     </Button>
                     <Button size="sm" variant="ghost"
-                      onClick={async () => {
-                        const checksData = await loadOfferingChecks(o);
-                        openReceiptPreview(buildOfferingDocs(o, checksData).receipt);
-                      }}
+                      disabled={!o.deposit_receipt_path}
+                      title={o.deposit_receipt_path ? "Open the bank transaction receipt uploaded after deposit" : "No bank slip uploaded yet — use the Deposit button after the bank run"}
+                      onClick={() => openBankSlip(o)}
                       iconLeft={<Receipt className="h-3.5 w-3.5" />}
                     >
-                      Receipt
+                      View bank slip
                     </Button>
                   </div>
                 </Td>
