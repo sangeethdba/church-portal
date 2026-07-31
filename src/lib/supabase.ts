@@ -126,19 +126,58 @@ const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "";
 export const isSupabaseConfigured = (): boolean =>
   url.length > 0 && anon.length > 0;
 
-if (!isSupabaseConfigured()) {
-  console.error(
-    "GraceLedger: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set. " +
-    "Add them in your Vercel project Settings → Environment Variables.",
-  );
+let _supabase: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (_supabase) return _supabase;
+
+  // Only create the real client when env vars are present.
+  // createClient throws on empty URL, so we guard it here.
+  if (isSupabaseConfigured()) {
+    _supabase = createClient(url, anon, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce",
+      },
+    });
+  } else {
+    console.error(
+      "GraceLedger: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set. " +
+      "Add them in your Vercel project Settings → Environment Variables.",
+    );
+    // Return a no-op stub that won't crash the app.
+    // Every method returns a rejected promise so callers can handle errors.
+    _supabase = new Proxy({} as SupabaseClient, {
+      get(_, prop) {
+        if (prop === "auth") {
+          return new Proxy({}, {
+            get(_, authProp) {
+              return (..._args: unknown[]) => {
+                if (authProp === "onAuthStateChange") {
+                  return {
+                    data: { subscription: { unsubscribe: () => {} } },
+                  };
+                }
+                return Promise.reject(
+                  new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."),
+                );
+              };
+            },
+          });
+        }
+        if (prop === "from" || prop === "rpc" || prop === "storage" || prop === "channel") {
+          return () =>
+            Promise.reject(
+              new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."),
+            );
+        }
+        return undefined;
+      },
+    });
+  }
+  return _supabase;
 }
 
-export const supabase: SupabaseClient = createClient(url, anon, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      flowType: "pkce",
-    },
-  },
-);
+export const supabase = getSupabase();
