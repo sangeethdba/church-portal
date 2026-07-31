@@ -80,6 +80,8 @@ export interface Expense {
   description?: string | null;
   receipt_paths: string[];
   transfer_receipt_path?: string | null;
+  payment_method?: string | null;
+  check_number?: string | null;
   user_id?: string | null;
   status: ExpenseStatus;
   submitted_at: string;

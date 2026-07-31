@@ -126,8 +126,12 @@ export default function Expenses() {
   });
   const [saving, setSaving] = useState(false);
   const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
+  const [checkImage, setCheckImage] = useState<File | null>(null);
+  const [checkNumber, setCheckNumber] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("online");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const checkImageRef = useRef<HTMLInputElement>(null);
 
   // "Mark Paid" dialog state
   const [payOpen, setPayOpen] = useState(false);
@@ -230,10 +234,17 @@ export default function Expenses() {
   const handleCreate = async () => {
     setSaving(true);
     const value = Number(form.amount);
-    if (!value || value <= 0) {
-      setSaving(false);
-      return;
+    if (!value || value <= 0) { setSaving(false); return; }
+
+    // Upload check image if present
+    let checkImagePath: string | null = null;
+    if (paymentMethod === "check" && checkImage && supabase) {
+      const safeName = checkImage.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `check-images/${Date.now()}-${safeName}`;
+      const { error } = await supabase.storage.from("receipts").upload(path, checkImage, { cacheControl: "3600", upsert: false });
+      if (!error) checkImagePath = path;
     }
+
     const baseRow: Expense = {
       id: `local-${Date.now()}`,
       source: form.source,
@@ -251,23 +262,22 @@ export default function Expenses() {
       paid_by: null,
       notes: form.notes || null,
       created_at: new Date().toISOString(),
+      payment_method: paymentMethod,
+      check_number: checkNumber || null,
     };
     if (supabase) {
-      const { data, error } = await supabase
-        .from("expenses")
-        .insert({
-          source: baseRow.source,
-          title: baseRow.title,
-          amount: baseRow.amount,
-          category: baseRow.category,
-          description: baseRow.description,
-          notes: baseRow.notes,
-          status: baseRow.status,
-        })
-        .select()
-        .maybeSingle();
+      const { data, error } = await supabase.from("expenses").insert({
+        source: baseRow.source, title: baseRow.title, amount: baseRow.amount, category: baseRow.category,
+        description: baseRow.description, notes: baseRow.notes, status: baseRow.status,
+        payment_method: paymentMethod, check_number: checkNumber || null,
+      }).select().maybeSingle();
       if (data) {
         const expense = data as Expense;
+        // Attach check image to receipt_paths if uploaded
+        if (checkImagePath) {
+          await supabase.from("expenses").update({ receipt_paths: [checkImagePath] }).eq("id", expense.id);
+          expense.receipt_paths = [checkImagePath];
+        }
         if (receiptFiles.length > 0) {
           setUploading(true);
           const paths = await uploadReceipts(expense.id);
@@ -289,14 +299,11 @@ export default function Expenses() {
     setSaving(false);
     setOpen(false);
     setReceiptFiles([]);
-    setForm({
-      source: "church_direct",
-      title: "",
-      amount: "",
-      category: "other",
-      description: "",
-      notes: "",
-    });
+    setForm({ source: "church_direct", title: "", amount: "", category: "other", description: "", notes: "" });
+    setReceiptFiles([]);
+    setCheckImage(null);
+    setCheckNumber("");
+    setPaymentMethod("online");
   };
 
   const statusTone = (s: ExpenseStatus) =>
@@ -347,6 +354,28 @@ export default function Expenses() {
                     <option value="member_submitted">Member-submitted reimbursement</option>
                   </Select>
                 </div>
+
+                {/* Payment method (church-direct only) */}
+                {form.source === "church_direct" && (
+                  <>
+                  <div>
+                    <Label>Payment method</Label>
+                    <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="mt-1.5">
+                      <option value="online">Online / Auto-debit</option>
+                      <option value="check">Check</option>
+                      <option value="cash">Cash</option>
+                      <option value="card">Card</option>
+                    </Select>
+                  </div>
+                  {paymentMethod === "check" && (
+                    <div>
+                      <Label htmlFor="check-no">Check #</Label>
+                      <Input id="check-no" value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)}
+                        className="mt-1.5" placeholder="#4502" />
+                    </div>
+                  )}
+                  </>
+                )}
                 <div>
                   <Label htmlFor="amt">Amount (USD)</Label>
                   <Input
@@ -408,6 +437,26 @@ export default function Expenses() {
                     className="mt-1.5"
                   />
                 </div>
+                {/* Check image upload */}
+                {form.source === "church_direct" && paymentMethod === "check" && (
+                  <div className="col-span-2">
+                    <Label>Check image</Label>
+                    <div className="mt-1.5">
+                      <input ref={checkImageRef} type="file" accept="image/*,.pdf,.jpg,.jpeg,.png,.webp"
+                        onChange={(e) => { if (e.target.files?.[0]) setCheckImage(e.target.files[0]); }}
+                        className="hidden" />
+                      <Button type="button" variant="outline" size="sm"
+                        onClick={() => checkImageRef.current?.click()}
+                        iconLeft={<Upload className="h-4 w-4" />}>
+                        {checkImage ? "Change check image" : "Upload check image"}
+                      </Button>
+                      {checkImage && (
+                        <span className="ml-2 text-xs text-emerald-600">✓ {checkImage.name}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="col-span-2">
                   <Label>Receipts (optional)</Label>
                   <div className="mt-1.5">
