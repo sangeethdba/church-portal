@@ -63,7 +63,7 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   doc.setTextColor(87, 83, 78);
-  doc.text(`Deposit Slip · ${s.serviceName}`, margin, 68);
+  doc.text(`Offering Ledger · ${s.serviceName}`, margin, 68);
   doc.setFontSize(9);
   doc.text(`Date: ${formatDateLong(s.serviceDate)}`, pageWidth - margin, 68, { align: "right" });
 
@@ -107,11 +107,11 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   doc.text(formatCurrency(s.grossCash), pageWidth - margin - 8, y, { align: "right" });
   y += 20;
 
-  // ── Deductions ────────────────────────────────────────────────────────
+  // ── Cash deductions (pastor gift, etc.) ───────────────────────────────
   if (s.deductions.length > 0) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("Deductions", margin, y);
+    doc.text("Cash deductions (pastor gift, etc.)", margin, y);
     y += 20;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
@@ -129,7 +129,7 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   y += 4;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text("Net cash deposit", margin + 8, y);
+  doc.text("Total cash", margin + 8, y);
   doc.text(formatCurrency(s.netCash), pageWidth - margin - 8, y, { align: "right" });
   y += 24;
 
@@ -175,7 +175,7 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   doc.setTextColor(255, 255, 255);
   doc.setFont("times", "bold");
   doc.setFontSize(14);
-  doc.text("Total deposit", margin + 12, y + 12);
+  doc.text("Total to be deposited", margin + 12, y + 12);
   doc.setFontSize(16);
   doc.text(formatCurrency(s.totalDeposit), pageWidth - margin - 12, y + 12, { align: "right" });
   y += 38;
