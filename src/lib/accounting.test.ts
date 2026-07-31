@@ -5,7 +5,7 @@ import {
   aggregateDonorStats,
   buildWeeklyBuckets,
 } from "./accounting";
-import { isAdminRole, normalizeLineItems } from "./supabase";
+import { isAdminRole, normalizeLineItems, buildReceiptPath } from "./supabase";
 import { formatCurrency, formatDate } from "./utils";
 
 // ── normName ───────────────────────────────────────────────────────────────
@@ -144,5 +144,29 @@ describe("normalizeLineItems", () => {
     expect(normalizeLineItems("not json at all")).toEqual([]);
     expect(normalizeLineItems('{"a":1}')).toEqual([]);
     expect(normalizeLineItems(42)).toEqual([]);
+  });
+});
+
+describe("buildReceiptPath", () => {
+  it("prefixes member uploads with their profile id (first folder = uid for storage RLS)", () => {
+    expect(buildReceiptPath("uid-123", "line-items", "My Receipt!.png")).toMatch(
+      /^uid-123\/line-items\/\d+-My_Receipt_\.png$/,
+    );
+  });
+
+  it("places expense receipts under <uid>/receipts/<expenseId>/", () => {
+    expect(buildReceiptPath("uid-123", "receipts", "bill.jpg", "exp-9")).toMatch(
+      /^uid-123\/receipts\/exp-9\/\d+-bill\.jpg$/,
+    );
+  });
+
+  it("sanitizes unsafe filename characters", () => {
+    expect(buildReceiptPath("uid-1", "check-images", "a/b\\c:d?.png")).toMatch(
+      /\/check-images\/\d+-a_b_c_d_\.png$/,
+    );
+  });
+
+  it("falls back to the unknown folder when there is no user id", () => {
+    expect(buildReceiptPath(null, "line-items", "x.png")).toMatch(/^unknown\/line-items\//);
   });
 });

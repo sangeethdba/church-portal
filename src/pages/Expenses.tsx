@@ -30,7 +30,7 @@ import {
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
-import { supabase, isAdminRole, normalizeLineItems, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
+import { supabase, isAdminRole, buildReceiptPath, normalizeLineItems, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const sampleExpenses: Expense[] = [
@@ -264,8 +264,7 @@ export default function Expenses() {
     if (!supabase || receiptFiles.length === 0) return [];
     const paths: string[] = [];
     for (const file of receiptFiles) {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${expenseId}/${Date.now()}-${safeName}`;
+      const path = buildReceiptPath(ctx.profile?.id, "receipts", file.name, expenseId);
       const { error } = await supabase.storage.from("receipts").upload(path, file, {
         cacheControl: "3600",
         upsert: false,
@@ -297,8 +296,7 @@ export default function Expenses() {
     // Upload check image if present
     let checkImagePath: string | null = null;
     if (paymentMethod === "check" && checkImage && supabase) {
-      const safeName = checkImage.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `check-images/${Date.now()}-${safeName}`;
+      const path = buildReceiptPath(ctx.profile?.id, "check-images", checkImage.name);
       const { error } = await supabase.storage.from("receipts").upload(path, checkImage, { cacheControl: "3600", upsert: false });
       if (!error) checkImagePath = path;
     }
@@ -309,8 +307,7 @@ export default function Expenses() {
       for (const li of lineItems) {
         let receiptPath: string | null = null;
         if (li.file) {
-          const safeName = li.file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-          const path = `line-items/${Date.now()}-${safeName}`;
+          const path = buildReceiptPath(ctx.profile?.id, "line-items", li.file.name);
           const { error } = await supabase.storage.from("receipts").upload(path, li.file, { cacheControl: "3600", upsert: false });
           if (!error) receiptPath = path;
         }

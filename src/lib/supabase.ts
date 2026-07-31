@@ -47,6 +47,29 @@ export function normalizeLineItems(value: unknown): LineItem[] {
   }
   return [];
 }
+
+/**
+ * Build a storage path inside the `receipts` bucket.
+ *
+ * Member-uploaded files are always prefixed with the uploader's profile id so
+ * the storage RLS policies (`first folder = auth.uid()`) apply cleanly to both
+ * upload and read. Layouts:
+ *   <uid>/check-images/<stamp>-<file>
+ *   <uid>/line-items/<stamp>-<file>
+ *   <uid>/receipts/<expenseId>/<stamp>-<file>
+ */
+export function buildReceiptPath(
+  userId: string | null | undefined,
+  kind: "check-images" | "line-items" | "receipts",
+  fileName: string,
+  id?: string,
+): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const stamp = Date.now();
+  const folder = userId ?? "unknown";
+  if (kind === "receipts") return `${folder}/receipts/${id}/${stamp}-${safe}`;
+  return `${folder}/${kind}/${stamp}-${safe}`;
+}
 export type ExpenseCategory =
   | "utilities"
   | "maintenance"
