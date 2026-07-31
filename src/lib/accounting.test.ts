@@ -5,7 +5,7 @@ import {
   aggregateDonorStats,
   buildWeeklyBuckets,
 } from "./accounting";
-import { isAdminRole } from "./supabase";
+import { isAdminRole, normalizeLineItems } from "./supabase";
 import { formatCurrency, formatDate } from "./utils";
 
 // ── normName ───────────────────────────────────────────────────────────────
@@ -115,5 +115,34 @@ describe("formatCurrency", () => {
 describe("formatDate", () => {
   it("formats ISO dates as MMM DD, YYYY", () => {
     expect(formatDate("2026-07-18")).toBe("Jul 18, 2026");
+  });
+});
+
+describe("normalizeLineItems", () => {
+  it("returns an empty array for null/undefined", () => {
+    expect(normalizeLineItems(null)).toEqual([]);
+    expect(normalizeLineItems(undefined)).toEqual([]);
+  });
+
+  it("passes real arrays through unchanged", () => {
+    const items = [{ description: "Pens", amount: 4.5, receipt_path: "receipts/a.png" }];
+    expect(normalizeLineItems(items)).toBe(items);
+  });
+
+  it("parses legacy stringified arrays (old JSON.stringify inserts)", () => {
+    const raw = JSON.stringify([
+      { description: "Electricity — December", amount: 184.32, no_receipt_note: "lost the paper bill" },
+      { description: "Paper", amount: 12, receipt_path: "receipts/b.png" },
+    ]);
+    const result = normalizeLineItems(raw);
+    expect(result).toHaveLength(2);
+    expect(result[0].description).toBe("Electricity — December");
+    expect(result[1].receipt_path).toBe("receipts/b.png");
+  });
+
+  it("never crashes on malformed strings or non-array shapes", () => {
+    expect(normalizeLineItems("not json at all")).toEqual([]);
+    expect(normalizeLineItems('{"a":1}')).toEqual([]);
+    expect(normalizeLineItems(42)).toEqual([]);
   });
 });

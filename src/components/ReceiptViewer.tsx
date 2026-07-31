@@ -9,7 +9,7 @@ import {
   Badge, Button, Dialog, DialogContent, DialogDescription, DialogHeader,
   DialogTitle, EmptyState, Label, Textarea,
 } from "@/components/ui";
-import { getReceiptUrl, supabase } from "@/lib/supabase";
+import { getReceiptUrl, normalizeLineItems, supabase } from "@/lib/supabase";
 import type { Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -58,9 +58,10 @@ export default function ReceiptViewer({
   const [replying, setReplying] = useState(false);
 
   // Collect every stored receipt path: line-item bills + expense receipts + transfer proof
+  const lineItems = normalizeLineItems(data?.line_items);
   const billPaths = data
     ? [
-        ...(data.line_items ?? []).map((li) => li.receipt_path).filter((p): p is string => !!p),
+        ...lineItems.map((li) => li.receipt_path).filter((p): p is string => !!p),
         ...(data.receipt_paths ?? []),
       ]
     : [];
@@ -272,11 +273,11 @@ export default function ReceiptViewer({
         </div>
 
         {/* ── Line items breakdown ────────────────────────────────────── */}
-        {data.line_items && data.line_items.length > 0 && (
+        {lineItems.length > 0 && (
           <div className="mt-5">
             <div className="mb-2 text-sm font-semibold text-stone-800">Bill breakdown</div>
             <div className="overflow-hidden rounded-lg border border-stone-200">
-              {data.line_items.map((li, i) => (
+              {lineItems.map((li, i) => (
                 <div key={i} className={`px-3 py-2 text-sm ${i % 2 ? "bg-stone-50" : "bg-white"}`}>
                   <div className="flex items-center justify-between">
                     <span className="min-w-0 flex-1 truncate text-stone-700">{li.description || "Bill"}</span>

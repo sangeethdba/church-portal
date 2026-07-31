@@ -5,7 +5,7 @@ import { Button, Card, CardBody, CardHeader, Tile, Badge, Label, Select, EmptySt
 import { downloadMemberReport } from "@/lib/pdf";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
-import { supabase } from "@/lib/supabase";
+import { normalizeLineItems, supabase } from "@/lib/supabase";
 import type { Donation, Expense, Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -143,7 +143,8 @@ export function MemberOverview() {
             {!loading && expenses.length === 0 ? (
               <EmptyState icon={<Receipt className="h-6 w-6" />} title="No submissions yet" description="Bills you submit for reimbursement will appear here with their status." />
             ) : expenses.map((e) => {
-              const hasBills = (e.receipt_paths?.length ?? 0) > 0 || (e.line_items ?? []).some((li) => !!li.receipt_path);
+              const lineItems = normalizeLineItems(e.line_items);
+              const hasBills = (e.receipt_paths?.length ?? 0) > 0 || lineItems.some((li) => !!li.receipt_path);
               return (
               <div key={e.id} className="rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60">
                 <div className="flex items-center justify-between gap-3">
@@ -151,12 +152,12 @@ export function MemberOverview() {
                     <div className="font-medium text-stone-900">{e.title ?? e.description ?? "Expense"}</div>
                     <div className="text-xs text-stone-500">
                       {formatDate(e.submitted_at)}
-                      {e.line_items && e.line_items.length > 1 ? ` · ${e.line_items.length} bills` : ""}
+                      {lineItems.length > 1 ? ` · ${lineItems.length} bills` : ""}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {hasBills && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">
-                          <Paperclip className="h-3 w-3" /> {(e.receipt_paths?.length ?? 0) + (e.line_items ?? []).filter((li) => !!li.receipt_path).length} receipt{(e.receipt_paths?.length ?? 0) + (e.line_items ?? []).filter((li) => !!li.receipt_path).length === 1 ? "" : "s"}
+                          <Paperclip className="h-3 w-3" /> {(e.receipt_paths?.length ?? 0) + lineItems.filter((li) => !!li.receipt_path).length} receipt{(e.receipt_paths?.length ?? 0) + lineItems.filter((li) => !!li.receipt_path).length === 1 ? "" : "s"}
                         </span>
                       )}
                       {e.transfer_receipt_path && (
@@ -174,15 +175,15 @@ export function MemberOverview() {
                     </Button>
                   </div>
                 </div>
-                {e.line_items && e.line_items.length > 0 && (
+                {lineItems.length > 0 && (
                   <div className="mt-2 border-t border-stone-100 pt-2 text-xs text-stone-500">
-                    {e.line_items.slice(0, 4).map((li, i) => (
+                    {lineItems.slice(0, 4).map((li, i) => (
                       <div key={i} className="flex justify-between py-0.5">
                         <span className="truncate pr-3">{li.description || "Bill"}</span>
                         <span className="font-mono">{formatCurrency(li.amount)}</span>
                       </div>
                     ))}
-                    {e.line_items.length > 4 && <div className="mt-1 text-stone-400">+ {e.line_items.length - 4} more…</div>}
+                    {lineItems.length > 4 && <div className="mt-1 text-stone-400">+ {lineItems.length - 4} more…</div>}
                   </div>
                 )}
               </div>

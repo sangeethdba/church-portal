@@ -30,7 +30,7 @@ import {
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
-import { supabase, isAdminRole, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
+import { supabase, isAdminRole, normalizeLineItems, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const sampleExpenses: Expense[] = [
@@ -352,7 +352,9 @@ export default function Expenses() {
       };
       // RLS requires member-submitted expenses to carry the submitter's profile id
       if (form.source === "member_submitted") insertPayload.user_id = ctx.profile?.id ?? null;
-      if (lineItemsData.length > 0) { insertPayload.line_items = JSON.stringify(lineItemsData); }
+      // jsonb column — insert the array directly (JSON.stringify here produced a
+      // jsonb *string*, which crashed every reader: .some/.map on a string)
+      if (lineItemsData.length > 0) { insertPayload.line_items = lineItemsData; }
       const { data, error } = await supabase.from("expenses").insert(insertPayload).select().maybeSingle();
       if (data) {
         const expense = data as Expense;
@@ -939,9 +941,9 @@ function ExpenseList({
                   {e.transfer_receipt_path && (
                     <div className="mt-1 text-xs text-emerald-700">✓ Transfer receipt attached</div>
                   )}
-                  {e.line_items && (e.line_items as unknown[]).length > 0 && (
+                  {normalizeLineItems(e.line_items).length > 0 && (
                     <div className="mt-1 text-xs text-stone-500">
-                      {(e.line_items as unknown[]).length} bill{(e.line_items as unknown[]).length === 1 ? "" : "s"} attached
+                      {normalizeLineItems(e.line_items).length} bill{normalizeLineItems(e.line_items).length === 1 ? "" : "s"} attached
                     </div>
                   )}
                   {e.admin_note && !e.member_reply && (

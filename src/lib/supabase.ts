@@ -26,6 +26,27 @@ export interface LineItem {
   /** Member's explanation when they couldn't attach a receipt for this bill. */
   no_receipt_note?: string | null;
 }
+
+/**
+ * Safely interpret the `line_items` jsonb column.
+ *
+ * Older versions of the expense form stored the bill array as a *JSON string*
+ * (JSON.stringify'd) inside the jsonb column, so the value round-trips as a JS
+ * string (e.g. '[{"description":…}]') instead of an array. Callers must never
+ * assume the shape — normalize it before calling .map/.some/.filter.
+ */
+export function normalizeLineItems(value: unknown): LineItem[] {
+  if (Array.isArray(value)) return value as LineItem[];
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as LineItem[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 export type ExpenseCategory =
   | "utilities"
   | "maintenance"
