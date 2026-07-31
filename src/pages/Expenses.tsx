@@ -678,7 +678,11 @@ export default function Expenses() {
                   Cancel
                 </Button>
                 <Button onClick={handleCreate} disabled={saving || uploading}>
-                  {uploading ? "Uploading…" : saving ? "Saving…" : "Save expense"}
+                  {uploading
+                    ? "Uploading…"
+                    : saving
+                      ? (form.source === "member_submitted" ? "Submitting…" : "Saving…")
+                      : (form.source === "member_submitted" ? "Submit expense" : "Save expense")}
                 </Button>
               </div>
             </DialogContent>
@@ -827,16 +831,21 @@ export default function Expenses() {
         <TabsContent value="all">
           <ExpenseList
             rows={filtered}
+            isAdmin={isAdmin}
+            title={isAdmin ? "All expenses" : "My reimbursements"}
             onTransition={transition}
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
             onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
             statusTone={statusTone}
+            hideSource={!isAdmin}
           />
         </TabsContent>
         <TabsContent value="member_submitted">
           <ExpenseList
             rows={filtered.filter((e) => e.source === "member_submitted")}
+            isAdmin={isAdmin}
+            title={isAdmin ? "Member reimbursements" : "My reimbursements"}
             onTransition={transition}
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
@@ -849,6 +858,8 @@ export default function Expenses() {
           <TabsContent value="church_direct">
             <ExpenseList
               rows={filtered.filter((e) => e.source === "church_direct")}
+              isAdmin
+              title="Church-direct expenses"
               onTransition={transition}
               onMarkPaid={openPayDialog}
               onView={setViewExpense}
@@ -871,6 +882,8 @@ export default function Expenses() {
 
 function ExpenseList({
   rows,
+  isAdmin,
+  title,
   onTransition,
   onMarkPaid,
   onView,
@@ -879,6 +892,9 @@ function ExpenseList({
   hideSource,
 }: {
   rows: Expense[];
+  /** Admin sees review actions (Ask/Approve/Reject/Clear); members only see their own submission. */
+  isAdmin: boolean;
+  title: string;
   onTransition: (id: string, status: ExpenseStatus) => void;
   onMarkPaid: (id: string) => void;
   onView: (e: Expense) => void;
@@ -898,7 +914,7 @@ function ExpenseList({
   return (
     <Card>
       <CardHeader>
-        <h2 className="font-serif text-lg font-semibold text-stone-900">All expenses</h2>
+        <h2 className="font-serif text-lg font-semibold text-stone-900">{title}</h2>
       </CardHeader>
       <CardBody className="px-0 py-2">
         <TableWrap className="border-0 shadow-none">
@@ -965,7 +981,7 @@ function ExpenseList({
                     >
                       View
                     </Button>
-                    {e.status === "pending" && (
+                    {isAdmin && e.status === "pending" && (
                       <>
                         <Button
                           size="sm"
@@ -994,7 +1010,7 @@ function ExpenseList({
                         </Button>
                       </>
                     )}
-                    {e.status === "approved" && (
+                    {isAdmin && e.status === "approved" && (
                       <Button
                         size="sm"
                         variant="warm"
@@ -1003,6 +1019,12 @@ function ExpenseList({
                       >
                         Clear reimbursement
                       </Button>
+                    )}
+                    {!isAdmin && e.status === "pending" && (
+                      <span className="text-xs text-stone-400">Awaiting admin review</span>
+                    )}
+                    {!isAdmin && e.status === "approved" && (
+                      <span className="text-xs text-amber-700">Awaiting payment</span>
                     )}
                     {e.status === "rejected" && (
                       <span className="text-xs text-stone-400">— no further action</span>
