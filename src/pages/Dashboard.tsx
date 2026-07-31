@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
-  Shield, UserCheck, Lock, Banknote,
+  Shield, UserCheck, Lock, Banknote, UserPlus,
 } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
@@ -47,6 +47,9 @@ export default function Dashboard() {
   const [donorOptions, setDonorOptions] = useState<{ id: string; label: string }[]>([]);
   const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [quickCreateFor, setQuickCreateFor] = useState<string | null>(null);
+  const [quickCreateName, setQuickCreateName] = useState("");
+  const [quickCreateSaving, setQuickCreateSaving] = useState(false);
 
   const loadProfiles = async () => {
     if (!supabase) return;
@@ -76,6 +79,28 @@ export default function Dashboard() {
     await supabase.from("profiles").update({ linked_donor_id: donorId }).eq("id", userId);
     setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: donorId } : p)));
     setSavingId(null);
+  };
+
+  const createAndLinkDonor = async (userId: string) => {
+    if (!supabase || !quickCreateName.trim()) return;
+    const parts = quickCreateName.trim().split(/\s+/);
+    const firstName = parts[0];
+    const lastName = parts.slice(1).join(" ") || firstName;
+    setQuickCreateSaving(true);
+    const { data, error } = await supabase
+      .from("donors")
+      .insert({ first_name: firstName, last_name: lastName, linked_user_id: userId })
+      .select("id, first_name, last_name")
+      .maybeSingle();
+    if (error) { console.warn("Create donor failed:", error); setQuickCreateSaving(false); return; }
+    if (data) {
+      await supabase.from("profiles").update({ linked_donor_id: data.id }).eq("id", userId);
+      setDonorOptions((prev) => [...prev, { id: data.id, label: `${data.first_name} ${data.last_name}` }]);
+      setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: data.id } : p)));
+    }
+    setQuickCreateName("");
+    setQuickCreateFor(null);
+    setQuickCreateSaving(false);
   };
 
   const toggleCounter = async (userId: string, newVal: boolean) => {
@@ -191,11 +216,31 @@ export default function Dashboard() {
                           <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2">
                             <div className="flex-1 min-w-[180px]">
                               <Label className="text-[10px]">Link to donor record</Label>
-                              <Select value={p.linked_donor_id ?? ""} onChange={(e) => e.target.value && linkDonor(p.id, e.target.value)}
-                                className="mt-1 h-8 text-xs">
-                                <option value="">— Link donor —</option>
-                                {donorOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-                              </Select>
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <Select value={p.linked_donor_id ?? ""} onChange={(e) => e.target.value && linkDonor(p.id, e.target.value)}
+                                  className="h-8 flex-1 text-xs">
+                                  <option value="">{donorOptions.length === 0 ? "— No donors yet —" : "— Link donor —"}</option>
+                                  {donorOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                                </Select>
+                                {quickCreateFor === p.id ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <Input autoFocus value={quickCreateName} onChange={(e) => setQuickCreateName(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === "Enter") createAndLinkDonor(p.id); if (e.key === "Escape") { setQuickCreateFor(null); setQuickCreateName(""); } }}
+                                      placeholder="First Last" className="h-8 w-32 text-xs" />
+                                    <Button size="sm" variant="solid" disabled={!quickCreateName.trim() || quickCreateSaving} onClick={() => createAndLinkDonor(p.id)}>{quickCreateSaving ? "…" : "Save"}</Button>
+                                    <Button size="sm" variant="ghost" onClick={() => { setQuickCreateFor(null); setQuickCreateName(""); }}>✕</Button>
+                                  </div>
+                                ) : (
+                                  <Button size="sm" variant="outline" className="h-8 px-2" title="Create a new donor record and link it to this member" onClick={() => setQuickCreateFor(p.id)}>
+                                    <UserPlus className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                              {donorOptions.length === 0 && (
+                                <p className="mt-1 text-[10px] leading-snug text-stone-400">
+                                  No donor records yet. Add members in the <strong>Donors</strong> page, or create one here with the ＋ button.
+                                </p>
+                              )}
                             </div>
                             {p.is_counter && (
                               <div className="flex items-end gap-2">
