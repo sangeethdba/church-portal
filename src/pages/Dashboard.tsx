@@ -160,7 +160,9 @@ export default function Dashboard() {
         const ytdGiving = standaloneGiving + offeringGiving;
         const monthDonSum = (monthDon ?? []).filter((r: { offering_id?: string | null }) => !r.offering_id).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0)
           + (monthOfferings ?? []).reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0);
-        const monthExpPaid = (monthExp ?? []).filter((r: { status: string }) => r.status !== "rejected" && r.status !== "pending").reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
+        // Only *settled* expenses (transfer receipt uploaded / auto-paid) count toward tallies —
+        // approval alone is not settlement; the bank transfer + proof completes the journal entry.
+        const monthExpPaid = (monthExp ?? []).filter((r: { status: string }) => r.status === "paid" || r.status === "auto_paid").reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
         if (!cancelled) {
           setKpis({ ytdGiving, donors: donorCount ?? 0, pendingExpenses: pending ?? 0, monthNet: monthDonSum - monthExpPaid });
           if (profilesAll) {
@@ -168,8 +170,8 @@ export default function Dashboard() {
           }
           if (pendingOff) { setPendingDeposits(pendingOff.length); setPendingDepositTotal(pendingOff.reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0)); }
           if (ytdExpData) {
-            const expPaidOrApproved = (ytdExpData as { amount: number; status: string }[]).filter((r) => r.status !== "rejected" && r.status !== "pending");
-            const expTotal = expPaidOrApproved.reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
+            const expSettled = (ytdExpData as { amount: number; status: string }[]).filter((r) => r.status === "paid" || r.status === "auto_paid");
+            const expTotal = expSettled.reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
             setYtdExpenses(expTotal);
             setYtdNet(ytdGiving - expTotal);
           }

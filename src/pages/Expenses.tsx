@@ -30,6 +30,7 @@ import {
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
+import ReceiptThumbs from "@/components/ReceiptThumbs";
 import { supabase, isAdminRole, buildReceiptPath, normalizeLineItems, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -943,6 +944,13 @@ function ExpenseList({
                       {normalizeLineItems(e.line_items).length} bill{normalizeLineItems(e.line_items).length === 1 ? "" : "s"} attached
                     </div>
                   )}
+                  <ReceiptThumbs
+                    paths={[
+                      ...normalizeLineItems(e.line_items).map((li) => li.receipt_path).filter((p): p is string => !!p),
+                      ...(e.receipt_paths ?? []),
+                    ]}
+                    onOpen={() => onView(e)}
+                  />
                   {e.admin_note && !e.member_reply && (
                     <div className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-700">
                       <MessageSquare className="h-3 w-3" /> Clarification requested
