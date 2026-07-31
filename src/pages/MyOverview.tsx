@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote, CalendarRange } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, Badge, Label, EmptyState } from "@/components/ui";
+import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote, CalendarRange, FileDown } from "lucide-react";
+import { Button, Card, CardBody, CardHeader, Tile, Badge, Label, Select, EmptyState } from "@/components/ui";
+import { downloadMemberReport } from "@/lib/pdf";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
 import { supabase } from "@/lib/supabase";
@@ -10,6 +11,24 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 
 const statusTone = (s: string) =>
   s === "paid" || s === "auto_paid" ? "emerald" : s === "rejected" ? "rose" : s === "approved" ? "indigo" : "amber";
+
+type ReportPeriod = "this_week" | "this_month" | "this_year" | "all";
+
+function memberPeriodRange(p: ReportPeriod): { start: string; label: string } {
+  const now = new Date();
+  if (p === "this_week") {
+    const sun = new Date(now);
+    sun.setDate(now.getDate() - now.getDay());
+    return { start: sun.toISOString().slice(0, 10), label: "This week" };
+  }
+  if (p === "this_month") {
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10), label: "This month" };
+  }
+  if (p === "this_year") {
+    return { start: new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10), label: "This year" };
+  }
+  return { start: "2000-01-01", label: "All time" };
+}
 
 export function MemberOverview() {
   const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
@@ -22,6 +41,8 @@ export function MemberOverview() {
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
   const [billFrom, setBillFrom] = useState("");
   const [billTo, setBillTo] = useState("");
+  const [period, setPeriod] = useState<ReportPeriod>("this_year");
+  const range = memberPeriodRange(period);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,7 +52,7 @@ export function MemberOverview() {
       const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
       const [donRes, ytdRes, expRes] = await Promise.all([
         myDonorId
-          ? supabase.from("donations").select("*").eq("donor_id", myDonorId).order("donation_date", { ascending: false }).limit(20)
+          ? supabase.from("donations").select("*").eq("donor_id", myDonorId).gte("donation_date", range.start).order("donation_date", { ascending: false })
           : Promise.resolve({ data: null as Donation[] | null }),
         myDonorId
           ? supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart)
@@ -52,11 +73,36 @@ export function MemberOverview() {
     }
     load();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.linked_donor_id, billFrom, billTo]);
+  }, [profile?.id, profile?.linked_donor_id, billFrom, billTo, range.start]);
 
   const outstanding = expenses.filter((e) => e.status === "pending" || e.status === "approved").reduce((s, e) => s + Number(e.amount ?? 0), 0);
   const reimbursed = expenses.filter((e) => e.status === "paid" || e.status === "auto_paid").reduce((s, e) => s + Number(e.amount ?? 0), 0);
   const openBills = expenses.filter((e) => e.status === "pending").length;
+  const periodGiving = donations.reduce((s, d) => s + Number(d.amount ?? 0), 0);
+
+  const handleDownloadReport = () => {
+    if (!profile?.full_name) return;
+    const periodExpenses = expenses.filter((e) => (e.submitted_at?.slice(0, 10) ?? "") >= range.start);
+    const reimbursedTotal = periodExpenses.filter((e) => e.status === "paid" || e.status === "auto_paid").reduce((s, e) => s + Number(e.amount ?? 0), 0);
+    const outstandingTotal = periodExpenses.filter((e) => e.status === "pending" || e.status === "approved").reduce((s, e) => s + Number(e.amount ?? 0), 0);
+    downloadMemberReport({
+      churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
+      memberName: profile.full_name,
+      periodLabel: range.label,
+      donations,
+      expenses: periodExpenses.map((e) => ({
+        date: e.submitted_at?.slice(0, 10) ?? "",
+        title: e.title ?? e.description ?? "Expense",
+        category: e.category,
+        status: e.status,
+        amount: Number(e.amount ?? 0),
+      })),
+      givingTotal: periodGiving,
+      expensesTotal: periodExpenses.reduce((s, e) => s + Number(e.amount ?? 0), 0),
+      reimbursedTotal,
+      outstandingTotal,
+    });
+  };
 
   return (
     <>
@@ -147,9 +193,23 @@ export function MemberOverview() {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <h2 className="font-serif text-lg font-semibold text-stone-900">My donations</h2>
-              <Button size="sm" variant="ghost" onClick={() => navigate("/tax-report")} iconLeft={<FileText className="h-3.5 w-3.5" />}>Tax statement</Button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">My donations</h2>
+                <p className="text-xs text-stone-500">
+                  {range.label} total: <span className="font-semibold text-stone-700">{formatCurrency(periodGiving)}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={period} onChange={(e) => setPeriod(e.target.value as ReportPeriod)} className="w-28 text-sm">
+                  <option value="this_week">This week</option>
+                  <option value="this_month">This month</option>
+                  <option value="this_year">This year</option>
+                  <option value="all">All time</option>
+                </Select>
+                <Button size="sm" variant="ghost" onClick={handleDownloadReport} iconLeft={<FileDown className="h-3.5 w-3.5" />} disabled={!profile?.linked_donor_id}>Report PDF</Button>
+                <Button size="sm" variant="ghost" onClick={() => navigate("/tax-report")} iconLeft={<FileText className="h-3.5 w-3.5" />}>Tax statement</Button>
+              </div>
             </div>
           </CardHeader>
           <CardBody className="space-y-3">
@@ -161,7 +221,7 @@ export function MemberOverview() {
               <div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60">
                 <div>
                   <div className="font-medium text-stone-900">{d.donor_name}</div>
-                  <div className="text-xs text-stone-500">{formatDate(d.donation_date)} · {d.donation_type} · {d.payment_method}</div>
+                  <div className="text-xs text-stone-500">{formatDate(d.donation_date)} · {d.donation_type} · {d.payment_method}{d.check_number ? ` · #${d.check_number}` : ""}</div>
                 </div>
                 <div className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(d.amount)}</div>
               </div>
