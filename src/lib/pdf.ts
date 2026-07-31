@@ -236,6 +236,207 @@ export function offeringSummaryDataUrl(s: OfferingSummary): string {
   return generateOfferingSummary(s).output("datauristring");
 }
 
+// ── Offering receipt ────────────────────────────────────────────────────
+
+export interface OfferingReceipt {
+  churchName: string;
+  receiptNumber: string;
+  serviceName: string;
+  serviceDate: string;
+  cashDenoms: OfferingDenomEntry[];
+  deductions: OfferingDeductionEntry[];
+  grossCash: number;
+  netCash: number;
+  checks: OfferingCheckEntry[];
+  totalChecks: number;
+  totalDeposit: number;
+  counter1Name: string;
+  counter2Name: string;
+  notes?: string | null;
+}
+
+export function generateOfferingReceipt(r: OfferingReceipt): jsPDF {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 50;
+  let y = margin;
+
+  // ── Header ────────────────────────────────────────────────────────────
+  doc.setFillColor(247, 241, 231);
+  doc.rect(0, 0, pageWidth, 90, "F");
+  doc.setTextColor(28, 25, 23);
+  doc.setFont("times", "bold");
+  doc.setFontSize(20);
+  doc.text(r.churchName, margin, 46);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(87, 83, 78);
+  doc.text(`Offering Receipt · ${r.serviceName}`, margin, 68);
+  doc.setFontSize(9);
+  doc.text(`Receipt # ${r.receiptNumber}`, pageWidth - margin, 46, { align: "right" });
+  doc.text(`Date: ${formatDateLong(r.serviceDate)}`, pageWidth - margin, 68, { align: "right" });
+
+  y = 110;
+
+  // ── Acknowledgment line ───────────────────────────────────────────────
+  doc.setFont("times", "italic");
+  doc.setFontSize(12);
+  doc.setTextColor(28, 25, 23);
+  doc.text(
+    `This receipt acknowledges the offering received on ${formatDateLong(r.serviceDate)} for the ${r.serviceName}.`,
+    margin,
+    y,
+    { maxWidth: pageWidth - margin * 2 },
+  );
+  y += 30;
+
+  // ── Amounts box ───────────────────────────────────────────────────────
+  doc.setFillColor(250, 250, 249);
+  doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(120, 113, 108);
+  doc.text("Cash (net)", margin + 8, y);
+  doc.text("Checks", pageWidth / 2, y);
+  doc.text("Total received", pageWidth - margin - 8, y, { align: "right" });
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(28, 25, 23);
+  doc.text(formatCurrency(r.netCash), margin + 8, y);
+  doc.text(formatCurrency(r.totalChecks), pageWidth / 2, y);
+  doc.text(formatCurrency(r.totalDeposit), pageWidth - margin - 8, y, { align: "right" });
+  y += 26;
+
+  // ── Cash by denomination ──────────────────────────────────────────────
+  if (r.cashDenoms.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(28, 25, 23);
+    doc.text("Cash by denomination", margin, y);
+    y += 20;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    for (const d of r.cashDenoms) {
+      doc.text(`$${d.denomination.toLocaleString()} × ${d.count}`, margin + 8, y);
+      doc.text(formatCurrency(d.subtotal), pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+    y += 5;
+  }
+
+  // ── Deductions ────────────────────────────────────────────────────────
+  if (r.deductions.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(28, 25, 23);
+    doc.text("Cash deductions", margin, y);
+    y += 20;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    for (const ded of r.deductions) {
+      doc.text(ded.reason || "—", margin + 8, y);
+      doc.text(`(${formatCurrency(ded.amount)})`, pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+    y += 5;
+  }
+
+  // ── Checks received ───────────────────────────────────────────────────
+  if (r.checks.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(28, 25, 23);
+    doc.text("Checks received", margin, y);
+    y += 20;
+    doc.setFillColor(250, 250, 249);
+    doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text("Donor", margin + 8, y);
+    doc.text("Check #", margin + 260, y);
+    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(28, 25, 23);
+    for (const ch of r.checks) {
+      doc.text(ch.donorName, margin + 8, y);
+      doc.text(ch.checkNumber || "—", margin + 260, y);
+      doc.text(formatCurrency(ch.amount), pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+    y += 8;
+  }
+
+  // ── Notes ─────────────────────────────────────────────────────────────
+  if (r.notes) {
+    y += 6;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text(`Note: ${r.notes}`, margin, y, { maxWidth: pageWidth - margin * 2 });
+    y += 18;
+  }
+
+  // ── Verified by ───────────────────────────────────────────────────────
+  y += 16;
+  doc.setDrawColor(231, 229, 228);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 22;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(28, 25, 23);
+  doc.text("Verified by", margin, y);
+  y += 22;
+  const sigWidth = (pageWidth - margin * 2 - 30) / 2;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setDrawColor(120, 113, 108);
+  doc.line(margin, y + 24, margin + sigWidth, y + 24);
+  doc.text(r.counter1Name, margin, y + 20);
+  doc.setFontSize(8);
+  doc.setTextColor(120, 113, 108);
+  doc.text("Counter 1", margin, y + 36);
+  doc.setTextColor(28, 25, 23);
+  doc.setFontSize(10);
+  doc.line(margin + sigWidth + 30, y + 24, pageWidth - margin, y + 24);
+  doc.text(r.counter2Name, margin + sigWidth + 30, y + 20);
+  doc.setFontSize(8);
+  doc.setTextColor(120, 113, 108);
+  doc.text("Counter 2", margin + sigWidth + 30, y + 36);
+
+  y += 56;
+
+  // ── Thank you ─────────────────────────────────────────────────────────
+  doc.setFont("times", "italic");
+  doc.setFontSize(10);
+  doc.setTextColor(87, 83, 78);
+  doc.text("Thank you for your faithful giving.", margin, y);
+
+  // ── Footer ────────────────────────────────────────────────────────────
+  doc.setFontSize(8);
+  doc.setTextColor(168, 162, 158);
+  doc.text(
+    `${r.churchName} · Generated ${formatDateLong(new Date())}`,
+    pageWidth - margin,
+    760,
+    { align: "right" },
+  );
+
+  return doc;
+}
+
+export function downloadOfferingReceipt(r: OfferingReceipt) {
+  const pdf = generateOfferingReceipt(r);
+  pdf.save(`offering-receipt-${r.receiptNumber.replace(/[^a-zA-Z0-9-]/g, "")}.pdf`);
+}
+
+export function offeringReceiptDataUrl(r: OfferingReceipt): string {
+  return generateOfferingReceipt(r).output("datauristring");
+}
+
 /** Generate a one-page annual donor statement PDF in the browser. */
 export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "letter" });

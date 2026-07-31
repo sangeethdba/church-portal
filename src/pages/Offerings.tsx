@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
   Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
-  Download, Printer,
+  Download, Printer, Receipt,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/Layout";
 import { supabase } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { downloadOfferingSummary, offeringSummaryDataUrl, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
+import { downloadOfferingSummary, offeringSummaryDataUrl, downloadOfferingReceipt, offeringReceiptDataUrl, type OfferingSummary, type OfferingReceipt, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
 
 // ── Denomination preset ───────────────────────────────────────────────────
 const DENOMS = [100, 50, 20, 10, 5, 2, 1] as const;
@@ -137,11 +137,83 @@ export default function Offerings() {
   const [depositError, setDepositError] = useState("");
   const depositOffering = offerings.find((o) => o.id === depositOfferingId) ?? null;
 
-  // ── Slip preview state ──────────────────────────────────────────────────
-  const [slipPreview, setSlipPreview] = useState<{ url: string; summary: OfferingSummary } | null>(null);
+  // ── Document preview state (ledger slip or receipt) ─────────────────────
+  const [docPreview, setDocPreview] = useState<{ url: string; title: string; subtitle: string; onDownload: () => void } | null>(null);
 
-  const openSlipPreview = (summary: OfferingSummary) => {
-    setSlipPreview({ url: offeringSummaryDataUrl(summary), summary });
+  const openLedgerPreview = (summary: OfferingSummary) => {
+    setDocPreview({
+      url: offeringSummaryDataUrl(summary),
+      title: "Deposit slip / ledger",
+      subtitle: `${summary.serviceName} · ${formatDate(summary.serviceDate)} · Total deposit ${formatCurrency(summary.totalDeposit)}`,
+      onDownload: () => downloadOfferingSummary(summary),
+    });
+  };
+
+  const openReceiptPreview = (receipt: OfferingReceipt) => {
+    setDocPreview({
+      url: offeringReceiptDataUrl(receipt),
+      title: "Offering receipt",
+      subtitle: `${receipt.serviceName} · ${formatDate(receipt.serviceDate)} · Total received ${formatCurrency(receipt.totalDeposit)}`,
+      onDownload: () => downloadOfferingReceipt(receipt),
+    });
+  };
+
+  // Build both documents from a stored offering row + its check lines
+  const buildOfferingDocs = (o: Offering, checksData: { donor_name: string; check_number: string | null; amount: number }[]) => {
+    const net = Number(o.cash_net ?? o.cash_amount) || 0;
+    const dedSum = Number((o.cash_deductions as Deduction[])?.reduce((s, d) => s + (Number(d.amount) || 0), 0) ?? 0) || 0;
+    const checksTotal = checksData.reduce((s, c) => s + (Number(c.amount) || 0), 0) || Number(o.check_amount) || 0;
+    const breakdown = (o.cash_breakdown as DenomCounts | null) ?? {};
+    const denomEntries: OfferingDenomEntry[] = DENOMS
+      .map((d) => ({ denomination: d, count: Number(breakdown[d]) || 0, subtotal: (Number(breakdown[d]) || 0) * d }))
+      .filter((e) => e.count > 0);
+    const churchName = (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church";
+    const checks = checksData.map((c) => ({ donorName: c.donor_name || "—", checkNumber: c.check_number ?? "", amount: Number(c.amount) || 0 }));
+    const deductions = (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [];
+    const counter1Name = counterName(o.counter_1_id);
+    const counter2Name = counterName(o.counter_2_id);
+    const summary: OfferingSummary = {
+      serviceDate: o.service_date,
+      serviceName: o.service_name,
+      cashDenoms: denomEntries,
+      grossCash: net + dedSum,
+      deductions,
+      netCash: net,
+      checks,
+      totalChecks: checksTotal,
+      totalDeposit: net + checksTotal,
+      churchName,
+      recordedBy: "Admin",
+      counter1Name,
+      counter2Name,
+    };
+    const receipt: OfferingReceipt = {
+      churchName,
+      receiptNumber: `R-${(o.id ?? "").replace(/-/g, "").slice(0, 8).toUpperCase()}`,
+      serviceName: o.service_name,
+      serviceDate: o.service_date,
+      cashDenoms: denomEntries,
+      deductions,
+      grossCash: net + dedSum,
+      netCash: net,
+      checks,
+      totalChecks: checksTotal,
+      totalDeposit: net + checksTotal,
+      counter1Name,
+      counter2Name,
+      notes: o.notes ?? null,
+    };
+    return { summary, receipt };
+  };
+
+  const loadOfferingChecks = async (o: Offering) => {
+    if (!supabase) return [];
+    const { data } = await supabase
+      .from("offering_checks")
+      .select("donor_name, check_number, amount")
+      .eq("offering_id", o.id)
+      .order("donor_name");
+    return (data ?? []) as { donor_name: string; check_number: string | null; amount: number }[];
   };
 
   // ── Computed values ────────────────────────────────────────────────────
@@ -378,8 +450,8 @@ export default function Offerings() {
         .order("service_date", { ascending: false });
       if (fresh) setOfferings(fresh as Offering[]);
 
-      // Show the deposit slip in-app (replaces silent auto-download)
-      openSlipPreview(buildSummary());
+      // Show the deposit slip / ledger in-app (replaces silent auto-download)
+      openLedgerPreview(buildSummary());
     } else {
       // Demo mode
       const row: Offering = {
@@ -396,8 +468,8 @@ export default function Offerings() {
       } as Offering;
       setOfferings((prev) => [row, ...prev]);
 
-      // Show the deposit slip in-app (replaces silent auto-download)
-      openSlipPreview(buildSummary());
+      // Show the deposit slip / ledger in-app (replaces silent auto-download)
+      openLedgerPreview(buildSummary());
     }
 
     setSaving(false);
@@ -812,7 +884,7 @@ export default function Offerings() {
               <Th>Service</Th>
               <Th>Counters</Th>
               <Th>Deposit</Th>
-              <Th>Slip</Th>
+              <Th>Docs</Th>
               <Th className="text-right">Cash (net)</Th>
               <Th className="text-right">Checks</Th>
               <Th className="text-right">Total</Th>
@@ -849,50 +921,26 @@ export default function Offerings() {
                   )}
                 </Td>
                 <Td>
-                  <Button size="sm" variant="ghost"
-                    onClick={async () => {
-                      let checksData: { donor_name: string; check_number: string | null; amount: number }[] = [];
-                      if (supabase) {
-                        const { data } = await supabase
-                          .from("offering_checks")
-                          .select("donor_name, check_number, amount")
-                          .eq("offering_id", o.id)
-                          .order("donor_name");
-                        checksData = (data ?? []) as typeof checksData;
-                      }
-                      // Recompute the total from its parts so the printed slip always matches the math on screen.
-                      const net = Number(o.cash_net ?? o.cash_amount) || 0;
-                      const dedSum = Number((o.cash_deductions as Deduction[])?.reduce((s, d) => s + (Number(d.amount) || 0), 0) ?? 0) || 0;
-                      const checksTotal = checksData.reduce((s, c) => s + (Number(c.amount) || 0), 0) || Number(o.check_amount) || 0;
-                      // Rebuild the denomination breakdown from the stored cash_breakdown so the slip shows each bill count.
-                      const breakdown = (o.cash_breakdown as DenomCounts | null) ?? {};
-                      const denomEntries: OfferingDenomEntry[] = DENOMS
-                        .map((d) => ({
-                          denomination: d,
-                          count: Number(breakdown[d]) || 0,
-                          subtotal: (Number(breakdown[d]) || 0) * d,
-                        }))
-                        .filter((e) => e.count > 0);
-                      openSlipPreview({
-                        serviceDate: o.service_date,
-                        serviceName: o.service_name,
-                        cashDenoms: denomEntries,
-                        grossCash: net + dedSum,
-                        deductions: (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [],
-                        netCash: net,
-                        checks: checksData.map((c) => ({ donorName: c.donor_name || "—", checkNumber: c.check_number ?? "", amount: Number(c.amount) || 0 })),
-                        totalChecks: checksTotal,
-                        totalDeposit: net + checksTotal,
-                        churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
-                        recordedBy: "Admin",
-                        counter1Name: counterName(o.counter_1_id),
-                        counter2Name: counterName(o.counter_2_id),
-                      });
-                    }}
-                    iconLeft={<FileDown className="h-3.5 w-3.5" />}
-                  >
-                    Slip
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button size="sm" variant="ghost"
+                      onClick={async () => {
+                        const checksData = await loadOfferingChecks(o);
+                        openLedgerPreview(buildOfferingDocs(o, checksData).summary);
+                      }}
+                      iconLeft={<FileDown className="h-3.5 w-3.5" />}
+                    >
+                      Ledger
+                    </Button>
+                    <Button size="sm" variant="ghost"
+                      onClick={async () => {
+                        const checksData = await loadOfferingChecks(o);
+                        openReceiptPreview(buildOfferingDocs(o, checksData).receipt);
+                      }}
+                      iconLeft={<Receipt className="h-3.5 w-3.5" />}
+                    >
+                      Receipt
+                    </Button>
+                  </div>
                 </Td>
                 <Td className="text-right font-mono text-sm text-stone-700">
                   {formatCurrency(o.cash_net || o.cash_amount)}
@@ -965,20 +1013,20 @@ export default function Offerings() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Deposit slip preview ───────────────────────────────────────── */}
-      <Dialog open={slipPreview !== null} onOpenChange={(v) => { if (!v) setSlipPreview(null); }}>
+      {/* ── Document preview (ledger slip / receipt) ───────────────────── */}
+      <Dialog open={docPreview !== null} onOpenChange={(v) => { if (!v) setDocPreview(null); }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Deposit slip preview</DialogTitle>
+            <DialogTitle>{docPreview?.title ?? "Document preview"}</DialogTitle>
             <DialogDescription>
-              {slipPreview ? `${slipPreview.summary.serviceName} · ${formatDate(slipPreview.summary.serviceDate)} · Total deposit ${formatCurrency(slipPreview.summary.totalDeposit)}` : ""}
+              {docPreview?.subtitle ?? ""}
             </DialogDescription>
           </DialogHeader>
-          {slipPreview && (
+          {docPreview && (
             <div className="h-[62vh] overflow-hidden rounded-lg border border-stone-200 bg-stone-50">
               <iframe
-                title="Deposit slip preview"
-                src={slipPreview.url}
+                title="Document preview"
+                src={docPreview.url}
                 className="h-full w-full"
               />
             </div>
@@ -987,7 +1035,7 @@ export default function Offerings() {
             <Button
               variant="outline"
               onClick={() => {
-                const frame = document.querySelector<HTMLIFrameElement>("iframe[title='Deposit slip preview']");
+                const frame = document.querySelector<HTMLIFrameElement>("iframe[title='Document preview']");
                 frame?.contentWindow?.print();
               }}
               iconLeft={<Printer className="h-4 w-4" />}
@@ -996,12 +1044,12 @@ export default function Offerings() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => { if (slipPreview) downloadOfferingSummary(slipPreview.summary); }}
+              onClick={() => docPreview?.onDownload()}
               iconLeft={<Download className="h-4 w-4" />}
             >
               Download PDF
             </Button>
-            <Button onClick={() => setSlipPreview(null)}>Close</Button>
+            <Button onClick={() => setDocPreview(null)}>Close</Button>
           </div>
         </DialogContent>
       </Dialog>
