@@ -7,6 +7,7 @@ import {
 import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
+import { MemberOverview } from "@/pages/MyOverview";
 import { supabase, isAdminRole } from "@/lib/supabase";
 import type { Profile, Donation, Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -49,7 +50,6 @@ export default function Dashboard() {
   const [ytdExpenses, setYtdExpenses] = useState(0);
   const [ytdNet, setYtdNet] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
-  const [myGiving, setMyGiving] = useState(0);
 
   const isAdmin = isAdminRole(profile?.role);
   const [counterOpen, setCounterOpen] = useState(false);
@@ -161,11 +161,6 @@ export default function Dashboard() {
         const monthDonSum = (monthDon ?? []).filter((r: { offering_id?: string | null }) => !r.offering_id).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0)
           + (monthOfferings ?? []).reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0);
         const monthExpPaid = (monthExp ?? []).filter((r: { status: string }) => r.status !== "rejected" && r.status !== "pending").reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
-        const myDonorId = profile?.linked_donor_id;
-        if (myDonorId) {
-          const { data: myRows } = await supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart.slice(0, 10));
-          setMyGiving((myRows ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0));
-        }
         if (!cancelled) {
           setKpis({ ytdGiving, donors: donorCount ?? 0, pendingExpenses: pending ?? 0, monthNet: monthDonSum - monthExpPaid });
           if (profilesAll) {
@@ -191,6 +186,15 @@ export default function Dashboard() {
     load();
     return () => { cancelled = true; };
   }, []);
+
+  if (!isAdmin) {
+    return (
+      <div>
+        <PageHeader title={`Welcome, ${profile?.full_name ?? "member"}`} subtitle="Your personal giving, submitted bills, and reimbursement status." badge="Member" />
+        <MemberOverview />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -309,8 +313,7 @@ export default function Dashboard() {
       </div>
 
       <p className="mt-3 text-xs text-stone-400">
-        Church-wide YTD totals — weekly offerings (cash + checks) and all individual gifts.
-        {myGiving > 0 && <> Your giving this year: <span className="font-semibold text-stone-600">{formatCurrency(myGiving)}</span>.</>}
+        Church-wide YTD totals — weekly offerings (cash + checks) and all individual gifts across every member.
       </p>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">

@@ -13,6 +13,7 @@ import {
   Church,
   Banknote,
   Shield,
+  Wallet,
 } from "lucide-react";
 import Logo from "./Logo";
 import { Button, Badge } from "./ui";
@@ -21,6 +22,7 @@ import { isAdminRole, type Profile } from "@/lib/supabase";
 
 const allItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["member", "admin"] as string[] },
+  { to: "/my", label: "My giving & bills", icon: Wallet, roles: ["member", "admin"] as string[] },
   { to: "/offerings", label: "Offerings", icon: Banknote, roles: ["admin"] as string[], counters: true },
   { to: "/donations", label: "Donations", icon: HandCoins, roles: ["admin"] as string[], counters: true },
   { to: "/expenses", label: "Expenses", icon: Receipt, roles: ["member", "admin"] as string[] },

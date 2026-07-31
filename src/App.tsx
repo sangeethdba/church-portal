@@ -5,6 +5,7 @@ import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
+import MyOverview from "@/pages/MyOverview";
 import Donors from "@/pages/Donors";
 import Donations from "@/pages/Donations";
 import Expenses from "@/pages/Expenses";
@@ -21,6 +22,7 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/my" element={<MyOverview />} />
           <Route path="/donors" element={<Donors />} />
           <Route path="/donations" element={<Donations />} />
           <Route path="/expenses" element={<Expenses />} />
