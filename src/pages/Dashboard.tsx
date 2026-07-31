@@ -36,6 +36,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [pendingDeposits, setPendingDeposits] = useState(0);
   const [pendingDepositTotal, setPendingDepositTotal] = useState(0);
+  const [ytdExpenses, setYtdExpenses] = useState(0);
+  const [ytdNet, setYtdNet] = useState(0);
 
   const isAdmin = profile?.role === "admin";
   const [counterOpen, setCounterOpen] = useState(false);
@@ -75,7 +77,7 @@ export default function Dashboard() {
       try {
         const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-        const [{ data: ytdRows }, { count: donorCount }, { count: pending }, { data: monthDon }, { data: monthExp }, { data: donations }, { data: expenses }, { data: pendingOff }] = await Promise.all([
+        const [{ data: ytdRows }, { count: donorCount }, { count: pending }, { data: monthDon }, { data: monthExp }, { data: donations }, { data: expenses }, { data: pendingOff }, { data: ytdExpData }] = await Promise.all([
           supabase.from("donations").select("amount").gte("donation_date", yearStart.slice(0, 10)),
           supabase.from("donors").select("id", { count: "exact", head: true }).eq("is_active", true),
           supabase.from("expenses").select("id", { count: "exact", head: true }).eq("status", "pending"),
@@ -84,6 +86,7 @@ export default function Dashboard() {
           supabase.from("donations").select("*").order("donation_date", { ascending: false }).limit(5),
           supabase.from("expenses").select("*").order("submitted_at", { ascending: false }).limit(5),
           supabase.from("offerings").select("total_amount").eq("deposit_status", "pending_deposit"),
+          supabase.from("expenses").select("amount").gte("submitted_at", yearStart),
         ]);
         const ytdGiving = (ytdRows ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
         const monthDonSum = (monthDon ?? []).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
@@ -91,6 +94,12 @@ export default function Dashboard() {
         if (!cancelled) {
           setKpis({ ytdGiving, donors: donorCount ?? 0, pendingExpenses: pending ?? 0, monthNet: monthDonSum - monthExpPaid });
           if (pendingOff) { setPendingDeposits(pendingOff.length); setPendingDepositTotal(pendingOff.reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0)); }
+          if (ytdExpData) {
+            const expPaidOrApproved = (ytdExpData as { amount: number; status: string }[]).filter((r) => r.status !== "rejected" && r.status !== "pending");
+            const expTotal = expPaidOrApproved.reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
+            setYtdExpenses(expTotal);
+            setYtdNet(ytdGiving - expTotal);
+          }
           if (donations) setRecentDonations(donations as Donation[]);
           if (expenses) setRecentExpenses(expenses as Expense[]);
         }
@@ -138,11 +147,12 @@ export default function Dashboard() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Tile label="YTD Giving" value={formatCurrency(kpis.ytdGiving)} accent="indigo" icon={<HandCoins className="h-5 w-5" />}/>
-        <Tile label="Active donors" value={kpis.donors.toString()} accent="emerald" icon={<Users className="h-5 w-5" />}/>
+        <Tile label="YTD Expenses" value={formatCurrency(ytdExpenses)} accent={ytdExpenses > 0 ? "rose" : "emerald"} icon={<Receipt className="h-5 w-5" />}/>
+        <Tile label="Net position" value={formatCurrency(ytdNet)} accent={ytdNet >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />}/>
         <Tile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}/>
-        <Tile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent={kpis.pendingExpenses > 0 ? "amber" : "emerald"} icon={<Receipt className="h-5 w-5" />}/>
+        <Tile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}/>
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
