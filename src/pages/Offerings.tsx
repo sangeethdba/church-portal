@@ -785,7 +785,16 @@ export default function Offerings() {
                 </Td>
                 <Td>
                   <Button size="sm" variant="ghost"
-                    onClick={() => {
+                    onClick={async () => {
+                      let checksData: { donor_name: string; check_number: string | null; amount: number }[] = [];
+                      if (supabase) {
+                        const { data } = await supabase
+                          .from("offering_checks")
+                          .select("donor_name, check_number, amount")
+                          .eq("offering_id", o.id)
+                          .order("donor_name");
+                        checksData = (data ?? []) as typeof checksData;
+                      }
                       downloadOfferingSummary({
                         serviceDate: o.service_date,
                         serviceName: o.service_name,
@@ -793,7 +802,7 @@ export default function Offerings() {
                         grossCash: (o.cash_net ?? o.cash_amount) + (o.cash_deductions ? (o.cash_deductions as Deduction[]).reduce((s, d) => s + (Number(d.amount) || 0), 0) : 0),
                         deductions: (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [],
                         netCash: o.cash_net ?? o.cash_amount,
-                        checks: [],
+                        checks: checksData.map((c) => ({ donorName: c.donor_name || "—", checkNumber: c.check_number ?? "", amount: Number(c.amount) || 0 })),
                         totalChecks: o.check_amount,
                         totalDeposit: o.total_amount,
                         churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
