@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   FileText, Image as ImageIcon, ExternalLink, Paperclip, CheckCircle2,
   Clock, XCircle, Banknote, Eye, ShieldCheck, Receipt as ReceiptIcon,
-  MessageSquare, Send,
+  MessageSquare, Send, Upload,
 } from "lucide-react";
 import {
   Badge, Button, Dialog, DialogContent, DialogDescription, DialogHeader,
   DialogTitle, EmptyState, Label, Textarea,
 } from "@/components/ui";
-import { getReceiptUrl, normalizeLineItems, supabase } from "@/lib/supabase";
+import { getReceiptUrl, buildReceiptPath, isAdminRole, normalizeLineItems, supabase } from "@/lib/supabase";
 import type { Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -47,7 +47,7 @@ export default function ReceiptViewer({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const ctx = useOutletContext<{ profile: { id?: string } | null }>();
+  const ctx = useOutletContext<{ profile: { id?: string; role?: string } | null }>();
   const [data, setData] = useState<Expense | null>(expense);
   useEffect(() => {
     setData(expense);
@@ -56,6 +56,9 @@ export default function ReceiptViewer({
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
   const [replyText, setReplyText] = useState("");
   const [replying, setReplying] = useState(false);
+  const [attachIndex, setAttachIndex] = useState<number | null>(null);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Collect every stored receipt path: line-item bills + expense receipts + transfer proof
   const lineItems = normalizeLineItems(data?.line_items);
@@ -86,6 +89,10 @@ export default function ReceiptViewer({
   const isOwner = data ? data.user_id === ctx.profile?.id : false;
   const awaitingReply =
     !!data?.admin_note && !data?.member_reply && data?.status === "pending" && isOwner;
+  // Owner can attach missing bills while pending; admins can attach anytime.
+  const canAttach = data
+    ? isAdminRole(ctx.profile?.role) || (isOwner && data.status === "pending")
+    : false;
 
   const handleReply = async () => {
     if (!data || !replyText.trim() || !supabase) return;
@@ -101,6 +108,42 @@ export default function ReceiptViewer({
       console.warn("Reply failed:", error);
     }
     setReplying(false);
+  };
+
+  const handleAttach = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !data || attachIndex === null || !supabase) return;
+    setAttachBusy(true);
+    // Store under the expense owner's folder so the owner can always read it back.
+    const path = buildReceiptPath(data.user_id ?? ctx.profile?.id, "line-items", file.name);
+    const { error } = await supabase.storage.from("receipts").upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+    if (!error) {
+      const { error: rpcErr } = await supabase.rpc("attach_receipt_to_expense", {
+        p_expense_id: data.id,
+        p_line_index: attachIndex,
+        p_path: path,
+      });
+      if (!rpcErr) {
+        setData({
+          ...data,
+          line_items: normalizeLineItems(data.line_items).map((li, i) =>
+            i === attachIndex ? { ...li, receipt_path: path } : li,
+          ),
+        });
+        const url = await getReceiptUrl(path);
+        if (url) setReceiptUrls((m) => ({ ...m, [path]: url }));
+      } else {
+        console.warn("Attach receipt failed:", rpcErr);
+      }
+    } else {
+      console.warn("Receipt upload failed:", error);
+    }
+    setAttachBusy(false);
+    setAttachIndex(null);
   };
 
   if (!data) return null;
@@ -263,7 +306,9 @@ export default function ReceiptViewer({
             <EmptyState
               icon={<ImageIcon className="h-6 w-6" />}
               title="No receipts attached"
-              description="This expense was recorded without an uploaded bill or receipt."
+              description={canAttach
+                ? "No bill images yet — click Attach bill under each bill in the breakdown to add them now."
+                : "This expense was recorded without an uploaded bill or receipt."}
             />
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -286,6 +331,16 @@ export default function ReceiptViewer({
                         className="mr-3 inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-indigo-700 hover:underline">
                         <Eye className="h-3 w-3" /> view
                       </a>
+                    )}
+                    {canAttach && !li.receipt_path && (
+                      <button
+                        type="button"
+                        onClick={() => { setAttachIndex(i); fileInputRef.current?.click(); }}
+                        disabled={attachBusy}
+                        className="mr-3 inline-flex shrink-0 items-center gap-1 rounded-md border border-stone-200 px-1.5 py-0.5 text-[11px] font-medium text-stone-600 transition hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-50"
+                      >
+                        <Upload className="h-3 w-3" /> {attachBusy && attachIndex === i ? "Uploading…" : "Attach bill"}
+                      </button>
                     )}
                     <span className="shrink-0 font-mono font-medium text-stone-900">{formatCurrency(li.amount)}</span>
                   </div>
@@ -328,6 +383,13 @@ export default function ReceiptViewer({
           </div>
         )}
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.pdf"
+          className="hidden"
+          onChange={handleAttach}
+        />
         <div className="mt-6 flex justify-end">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
         </div>
