@@ -23,8 +23,8 @@ import { isAdminRole, type Profile } from "@/lib/supabase";
 const allItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["member", "admin"] as string[] },
   { to: "/my", label: "My giving & bills", icon: Wallet, roles: ["member", "admin"] as string[] },
-  { to: "/offerings", label: "Offerings", icon: Banknote, roles: ["admin"] as string[], counters: true },
-  { to: "/donations", label: "Donations", icon: HandCoins, roles: ["admin"] as string[], counters: true },
+  { to: "/offerings", label: "Offerings", icon: Banknote, roles: ["admin"] as string[] },
+  { to: "/donations", label: "Donations", icon: HandCoins, roles: ["admin"] as string[] },
   { to: "/expenses", label: "Expenses", icon: Receipt, roles: ["member", "admin"] as string[] },
   { to: "/donors", label: "Donors", icon: Users, roles: ["member", "admin"] as string[] },
   { to: "/tax-report", label: "Tax report", icon: FileText, roles: ["admin"] as string[] },
@@ -39,8 +39,9 @@ export default function AppShell() {
 
   const visibleItems = allItems.filter((item) => {
     if (item.roles.includes("admin") && isAdmin) return true;
-    if (item.roles.includes("member") && !isAdmin && !ctx.isCounter) return true;
-    if (item.counters && ctx.isCounter) return true;
+    // Counters are regular members too — they only verify/sign off, so they get
+    // the member navigation, never the admin-only ledger pages.
+    if (item.roles.includes("member") && !isAdmin) return true;
     return false;
   });
 

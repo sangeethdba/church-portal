@@ -130,7 +130,9 @@ export default function Offerings() {
 
   // ── Counter sign-off state ────────────────────────────────────────────
   const ctx = useOutletContext<{ profile: { id: string; full_name?: string | null; role?: string } | null; isCounter: boolean }>();
-  const canAccess = isAdminRole(ctx.profile?.role) || ctx.isCounter;
+  // Counters verify and sign off, but the ledger pages are admin-only —
+  // counters are otherwise regular members who only see their own records.
+  const canAccess = isAdminRole(ctx.profile?.role);
   const [counterList, setCounterList] = useState<CounterInfo[]>([]);
   const [nameProfiles, setNameProfiles] = useState<CounterInfo[]>([]);
   const [counter1Id] = useState(ctx.profile?.id ?? "");

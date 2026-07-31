@@ -82,7 +82,9 @@ export default function Donations() {
   const navigate = useNavigate();
   const ctx = useOutletContext<{ profile: { id: string; role: string; is_counter?: boolean } | null; isCounter: boolean }>();
   const isAdmin = isAdminRole(ctx.profile?.role);
-  const canAccess = isAdmin || ctx.isCounter;
+  // Counters verify and sign off, but the ledger pages are admin-only —
+  // counters are otherwise regular members who only see their own records.
+  const canAccess = isAdmin;
 
   const [donations, setDonations] = useState<Donation[]>(sampleDonations);
   const [donors, setDonors] = useState<{ id: string; label: string }[]>(sampleDonorsForPick);
