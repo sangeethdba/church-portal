@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
   Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
+  Download, Printer,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -13,7 +14,7 @@ import { PageHeader } from "@/components/Layout";
 import { supabase } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { downloadOfferingSummary, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
+import { downloadOfferingSummary, offeringSummaryDataUrl, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
 
 // ── Denomination preset ───────────────────────────────────────────────────
 const DENOMS = [100, 50, 20, 10, 5, 2, 1] as const;
@@ -135,6 +136,13 @@ export default function Offerings() {
   const [depositSaving, setDepositSaving] = useState(false);
   const [depositError, setDepositError] = useState("");
   const depositOffering = offerings.find((o) => o.id === depositOfferingId) ?? null;
+
+  // ── Slip preview state ──────────────────────────────────────────────────
+  const [slipPreview, setSlipPreview] = useState<{ url: string; summary: OfferingSummary } | null>(null);
+
+  const openSlipPreview = (summary: OfferingSummary) => {
+    setSlipPreview({ url: offeringSummaryDataUrl(summary), summary });
+  };
 
   // ── Computed values ────────────────────────────────────────────────────
   const grossCash = computeCashFromDenoms(denoms);
@@ -370,8 +378,8 @@ export default function Offerings() {
         .order("service_date", { ascending: false });
       if (fresh) setOfferings(fresh as Offering[]);
 
-      // Auto-download deposit slip
-      downloadOfferingSummary(buildSummary());
+      // Show the deposit slip in-app (replaces silent auto-download)
+      openSlipPreview(buildSummary());
     } else {
       // Demo mode
       const row: Offering = {
@@ -388,8 +396,8 @@ export default function Offerings() {
       } as Offering;
       setOfferings((prev) => [row, ...prev]);
 
-      // Auto-download deposit slip
-      downloadOfferingSummary(buildSummary());
+      // Show the deposit slip in-app (replaces silent auto-download)
+      openSlipPreview(buildSummary());
     }
 
     setSaving(false);
@@ -852,16 +860,20 @@ export default function Offerings() {
                           .order("donor_name");
                         checksData = (data ?? []) as typeof checksData;
                       }
-                      downloadOfferingSummary({
+                      // Recompute the total from its parts so the printed slip always matches the math on screen.
+                      const net = Number(o.cash_net ?? o.cash_amount) || 0;
+                      const dedSum = Number((o.cash_deductions as Deduction[])?.reduce((s, d) => s + (Number(d.amount) || 0), 0) ?? 0) || 0;
+                      const checksTotal = checksData.reduce((s, c) => s + (Number(c.amount) || 0), 0) || Number(o.check_amount) || 0;
+                      openSlipPreview({
                         serviceDate: o.service_date,
                         serviceName: o.service_name,
                         cashDenoms: [],
-                        grossCash: (o.cash_net ?? o.cash_amount) + (o.cash_deductions ? (o.cash_deductions as Deduction[]).reduce((s, d) => s + (Number(d.amount) || 0), 0) : 0),
+                        grossCash: net + dedSum,
                         deductions: (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [],
-                        netCash: o.cash_net ?? o.cash_amount,
+                        netCash: net,
                         checks: checksData.map((c) => ({ donorName: c.donor_name || "—", checkNumber: c.check_number ?? "", amount: Number(c.amount) || 0 })),
-                        totalChecks: o.check_amount,
-                        totalDeposit: o.total_amount,
+                        totalChecks: checksTotal,
+                        totalDeposit: net + checksTotal,
                         churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
                         recordedBy: "Admin",
                         counter1Name: counterName(o.counter_1_id),
@@ -940,6 +952,47 @@ export default function Offerings() {
             <Button onClick={handleMarkDeposited} disabled={depositSaving}>
               {depositSaving ? "Marking…" : "Mark as deposited"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Deposit slip preview ───────────────────────────────────────── */}
+      <Dialog open={slipPreview !== null} onOpenChange={(v) => { if (!v) setSlipPreview(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Deposit slip preview</DialogTitle>
+            <DialogDescription>
+              {slipPreview ? `${slipPreview.summary.serviceName} · ${formatDate(slipPreview.summary.serviceDate)} · Total deposit ${formatCurrency(slipPreview.summary.totalDeposit)}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {slipPreview && (
+            <div className="h-[62vh] overflow-hidden rounded-lg border border-stone-200 bg-stone-50">
+              <iframe
+                title="Deposit slip preview"
+                src={slipPreview.url}
+                className="h-full w-full"
+              />
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const frame = document.querySelector<HTMLIFrameElement>("iframe[title='Deposit slip preview']");
+                frame?.contentWindow?.print();
+              }}
+              iconLeft={<Printer className="h-4 w-4" />}
+            >
+              Print
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => { if (slipPreview) downloadOfferingSummary(slipPreview.summary); }}
+              iconLeft={<Download className="h-4 w-4" />}
+            >
+              Download PDF
+            </Button>
+            <Button onClick={() => setSlipPreview(null)}>Close</Button>
           </div>
         </DialogContent>
       </Dialog>

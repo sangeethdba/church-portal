@@ -231,6 +231,11 @@ export function downloadOfferingSummary(s: OfferingSummary) {
   pdf.save(`deposit-slip-${datePart}-${s.serviceName.replace(/\s+/g, "-").toLowerCase()}.pdf`);
 }
 
+/** Render the slip to a data URL so it can be previewed in-app (iframe) when browser downloads are blocked. */
+export function offeringSummaryDataUrl(s: OfferingSummary): string {
+  return generateOfferingSummary(s).output("datauristring");
+}
+
 /** Generate a one-page annual donor statement PDF in the browser. */
 export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
