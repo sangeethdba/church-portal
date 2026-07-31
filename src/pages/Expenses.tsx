@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange, AlertTriangle, MessageSquare } from "lucide-react";
 import {
   Button,
   Card,
@@ -138,14 +138,34 @@ export default function Expenses() {
   const checkImageRef = useRef<HTMLInputElement>(null);
 
   // ── Line items (batch bills for member_submitted) ─────────────────────
-  interface LineItemDraft { key: string; description: string; amount: string; file: File | null; }
+  interface LineItemDraft { key: string; description: string; amount: string; file: File | null; noReceiptNote: string; }
   const [lineItems, setLineItems] = useState<LineItemDraft[]>([]);
 
-  const addLineItem = () => setLineItems((prev) => [...prev, { key: `li${Date.now()}`, description: "", amount: "", file: null }]);
+  const addLineItem = () => setLineItems((prev) => [...prev, { key: `li${Date.now()}`, description: "", amount: "", file: null, noReceiptNote: "" }]);
   const removeLineItem = (key: string) => setLineItems((prev) => prev.filter((li) => li.key !== key));
   const updateLineItem = (key: string, patch: Partial<LineItemDraft>) =>
     setLineItems((prev) => prev.map((li) => (li.key === key ? { ...li, ...patch } : li)));
   const lineItemTotal = lineItems.reduce((s, li) => s + (Number(li.amount) || 0), 0);
+  const [formError, setFormError] = useState("");
+
+  // "Ask clarification" dialog state — admin questions a submission before approving/rejecting
+  const [clarifyExpense, setClarifyExpense] = useState<Expense | null>(null);
+  const [clarifyNote, setClarifyNote] = useState("");
+  const [clarifySaving, setClarifySaving] = useState(false);
+
+  const handleRequestClarification = async () => {
+    if (!clarifyExpense || !clarifyNote.trim()) return;
+    setClarifySaving(true);
+    const patch = { admin_note: clarifyNote.trim(), admin_note_at: new Date().toISOString() };
+    setExpenses((rows) => rows.map((r) => (r.id === clarifyExpense.id ? { ...r, ...patch } : r)));
+    if (supabase) {
+      const { error } = await supabase.from("expenses").update(patch).eq("id", clarifyExpense.id);
+      if (error) console.warn("Clarification update failed:", error);
+    }
+    setClarifySaving(false);
+    setClarifyExpense(null);
+    setClarifyNote("");
+  };
 
   // "Mark Paid" dialog state
   const [payOpen, setPayOpen] = useState(false);
@@ -255,6 +275,18 @@ export default function Expenses() {
 
   const handleCreate = async () => {
     setSaving(true);
+    setFormError("");
+    if (form.source === "member_submitted" && lineItems.length === 0) {
+      setFormError("Add at least one bill — each purchase needs its amount, plus a receipt (or a note explaining why there isn't one).");
+      setSaving(false);
+      return;
+    }
+    const missingNotes = lineItems.filter((li) => !li.file && !li.noReceiptNote.trim());
+    if (missingNotes.length > 0) {
+      setFormError(`Add a "No receipt?" explanation for ${missingNotes.length} bill${missingNotes.length === 1 ? "" : "s"} without a receipt.`);
+      setSaving(false);
+      return;
+    }
     // Use line item total if present, otherwise form amount
     const value = lineItems.length > 0 ? lineItemTotal : Number(form.amount);
     if (!value || value <= 0) { setSaving(false); return; }
@@ -269,7 +301,7 @@ export default function Expenses() {
     }
 
     // Upload line item receipts
-    const lineItemsData: { description: string; amount: number; receipt_path: string | null }[] = [];
+    const lineItemsData: { description: string; amount: number; receipt_path: string | null; no_receipt_note: string | null }[] = [];
     if (supabase) {
       for (const li of lineItems) {
         let receiptPath: string | null = null;
@@ -279,7 +311,12 @@ export default function Expenses() {
           const { error } = await supabase.storage.from("receipts").upload(path, li.file, { cacheControl: "3600", upsert: false });
           if (!error) receiptPath = path;
         }
-        lineItemsData.push({ description: li.description || "Bill", amount: Number(li.amount) || 0, receipt_path: receiptPath });
+        lineItemsData.push({
+          description: li.description || "Bill",
+          amount: Number(li.amount) || 0,
+          receipt_path: receiptPath,
+          no_receipt_note: li.noReceiptNote.trim() || null,
+        });
       }
     }
 
@@ -372,7 +409,7 @@ export default function Expenses() {
         subtitle="Track what flows out — both member reimbursements and church-direct outlays."
         badge={`${formatCurrency(total)} total · ${pending} pending`}
         actions={
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setFormError(""); } }}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>New expense</Button>
             </DialogTrigger>
@@ -380,8 +417,7 @@ export default function Expenses() {
               <DialogHeader>
                 <DialogTitle>Record an expense</DialogTitle>
                 <DialogDescription>
-                  Church-admin entries are auto-flagged as auto-paid once logged.
-                  Member-submitted refunds stay pending until an admin approves them.
+                  Two kinds of entries: <strong>member reimbursement</strong> — you spent your own money, upload each bill and the church pays you back after approval — or <strong>church-direct</strong>, a bank auto-debit the admin logs (auto-settled).
                 </DialogDescription>
               </DialogHeader>
               <div className="grid grid-cols-2 gap-3">
@@ -394,10 +430,16 @@ export default function Expenses() {
                     }
                     className="mt-1.5"
                   >
-                    <option value="church_direct">Church-direct (admin)</option>
-                    <option value="member_submitted">Member-submitted reimbursement</option>
+                    <option value="church_direct">Church-direct — auto-debited from bank account (admin)</option>
+                    <option value="member_submitted">Member reimbursement — my own money, church pays me back</option>
                   </Select>
                 </div>
+
+                {formError && (
+                  <div className="col-span-2 flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0" /> {formError}
+                  </div>
+                )}
 
                 {/* Payment method (church-direct only) */}
                 {form.source === "church_direct" && (
@@ -420,6 +462,7 @@ export default function Expenses() {
                   )}
                   </>
                 )}
+                {form.source !== "member_submitted" && (
                 <div>
                   <Label htmlFor="amt">Amount (USD)</Label>
                   <Input
@@ -433,6 +476,7 @@ export default function Expenses() {
                     required
                   />
                 </div>
+                )}
                 <div>
                   <Label htmlFor="cat">Category</Label>
                   <Select
@@ -458,9 +502,9 @@ export default function Expenses() {
                   <div className="col-span-2 rounded-lg border border-stone-200 bg-stone-50/50 p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-stone-600">
-                        <ListPlus className="h-3.5 w-3.5" /> Bills (add each bill separately)
+                        <ListPlus className="h-3.5 w-3.5" /> Bills ({lineItems.length}/10 — add each bill separately)
                       </span>
-                      <Button size="sm" variant="outline" onClick={addLineItem}>+ Add bill</Button>
+                      <Button size="sm" variant="outline" onClick={addLineItem} disabled={lineItems.length >= 10}>+ Add bill</Button>
                     </div>
                     {lineItems.length === 0 && (
                       <p className="text-xs text-stone-400">No bills added yet. Click "Add bill" to enter each receipt.</p>
@@ -488,6 +532,14 @@ export default function Expenses() {
                               onChange={(e) => { if (e.target.files?.[0]) updateLineItem(li.key, { file: e.target.files[0] }); }} />
                           </label>
                         </div>
+                        {!li.file && (
+                          <div className="w-full">
+                            <Label className="text-xs text-amber-700">No receipt? Explain why (required for review)</Label>
+                            <Input placeholder="e.g. Lost the paper receipt — paid in cash" value={li.noReceiptNote}
+                              onChange={(e) => updateLineItem(li.key, { noReceiptNote: e.target.value })}
+                              className="mt-1 h-8 text-sm" />
+                          </div>
+                        )}
                         <button onClick={() => removeLineItem(li.key)}
                           className="mt-5 rounded p-1 text-stone-400 hover:bg-rose-100 hover:text-rose-600">
                           <Trash2 className="h-4 w-4" />
@@ -495,8 +547,9 @@ export default function Expenses() {
                       </div>
                     ))}
                     {lineItems.length > 0 && (
-                      <div className="mt-2 text-right text-sm text-stone-600">
-                        Total: <span className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(lineItemTotal)}</span>
+                      <div className="mt-2 flex items-center justify-between rounded-md bg-emerald-50 px-3 py-2 text-sm">
+                        <span className="text-stone-600">Reimbursement amount (sum of bills)</span>
+                        <span className="font-serif text-lg font-semibold text-emerald-800">{formatCurrency(lineItemTotal)}</span>
                       </div>
                     )}
                   </div>
@@ -615,6 +668,36 @@ export default function Expenses() {
         }
       />
 
+      {/* Ask clarification dialog */}
+      <Dialog open={clarifyExpense !== null} onOpenChange={(v) => { if (!v) setClarifyExpense(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ask for clarification</DialogTitle>
+            <DialogDescription>
+              Send a note to the submitting member before you approve or reject. The expense stays
+              pending until they reply — then you can approve or reject with full information.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label htmlFor="clarify-note">Your question / note</Label>
+            <Textarea
+              id="clarify-note"
+              rows={4}
+              value={clarifyNote}
+              onChange={(e) => setClarifyNote(e.target.value)}
+              className="mt-1.5"
+              placeholder="e.g. Could you upload the receipt for the grocery bill? The amount looks higher than expected."
+            />
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setClarifyExpense(null)}>Cancel</Button>
+            <Button onClick={handleRequestClarification} disabled={clarifySaving || !clarifyNote.trim()}>
+              {clarifySaving ? "Sending…" : "Send clarification request"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Clear reimbursement — upload bank transfer receipt dialog */}
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent>
@@ -729,6 +812,7 @@ export default function Expenses() {
             onTransition={transition}
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
+            onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
             statusTone={statusTone}
           />
         </TabsContent>
@@ -738,6 +822,7 @@ export default function Expenses() {
             onTransition={transition}
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
+            onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
             statusTone={statusTone}
             hideSource
           />
@@ -748,6 +833,7 @@ export default function Expenses() {
             onTransition={transition}
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
+            onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
             statusTone={statusTone}
             hideSource
           />
@@ -768,6 +854,7 @@ function ExpenseList({
   onTransition,
   onMarkPaid,
   onView,
+  onClarify,
   statusTone,
   hideSource,
 }: {
@@ -775,6 +862,7 @@ function ExpenseList({
   onTransition: (id: string, status: ExpenseStatus) => void;
   onMarkPaid: (id: string) => void;
   onView: (e: Expense) => void;
+  onClarify: (e: Expense) => void;
   statusTone: (s: ExpenseStatus) => "neutral" | "indigo" | "amber" | "emerald" | "rose";
   hideSource?: boolean;
 }) {
@@ -820,6 +908,16 @@ function ExpenseList({
                       {(e.line_items as unknown[]).length} bill{(e.line_items as unknown[]).length === 1 ? "" : "s"} attached
                     </div>
                   )}
+                  {e.admin_note && !e.member_reply && (
+                    <div className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-700">
+                      <MessageSquare className="h-3 w-3" /> Clarification requested
+                    </div>
+                  )}
+                  {e.member_reply && (
+                    <div className="mt-1 flex items-center gap-1 text-xs font-medium text-emerald-700">
+                      <CheckCircle2 className="h-3 w-3" /> Member replied
+                    </div>
+                  )}
                 </Td>
                 <Td>
                   <span className="text-stone-600">{e.category}</span>
@@ -849,6 +947,15 @@ function ExpenseList({
                     </Button>
                     {e.status === "pending" && (
                       <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onClarify(e)}
+                          iconLeft={<MessageSquare className="h-3.5 w-3.5" />}
+                          title="Ask the member a question before approving or rejecting"
+                        >
+                          Ask
+                        </Button>
                         <Button
                           size="sm"
                           variant="success"

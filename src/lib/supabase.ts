@@ -23,6 +23,8 @@ export interface LineItem {
   description: string;
   amount: number;
   receipt_path?: string | null;
+  /** Member's explanation when they couldn't attach a receipt for this bill. */
+  no_receipt_note?: string | null;
 }
 export type ExpenseCategory =
   | "utilities"
@@ -104,6 +106,10 @@ export interface Expense {
   paid_at?: string | null;
   paid_by?: string | null;
   notes?: string | null;
+  admin_note?: string | null;
+  admin_note_at?: string | null;
+  member_reply?: string | null;
+  member_reply_at?: string | null;
   created_at: string;
 }
 

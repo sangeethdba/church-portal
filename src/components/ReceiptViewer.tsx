@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import {
   FileText, Image as ImageIcon, ExternalLink, Paperclip, CheckCircle2,
   Clock, XCircle, Banknote, Eye, ShieldCheck, Receipt as ReceiptIcon,
+  MessageSquare, Send,
 } from "lucide-react";
 import {
   Badge, Button, Dialog, DialogContent, DialogDescription, DialogHeader,
-  DialogTitle, EmptyState,
+  DialogTitle, EmptyState, Label, Textarea,
 } from "@/components/ui";
-import { getReceiptUrl } from "@/lib/supabase";
+import { getReceiptUrl, supabase } from "@/lib/supabase";
 import type { Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -30,10 +32,11 @@ function fileName(p: string) {
 }
 
 /**
- * Full audit view of one expense — the status timeline, every submitted bill
- * receipt (from the batch line items and/or the expense), and the bank transfer
- * receipt that cleared the reimbursement. Used by members ("My bills") and
- * admins (Expenses page) so anyone can verify bills and transfer proof anytime.
+ * Full audit view of one expense — the status timeline, the clarification
+ * thread (admin question → member reply), every submitted bill receipt (from
+ * the batch line items and/or the expense), and the bank transfer receipt that
+ * cleared the reimbursement. Used by members ("My bills") and admins (Expenses
+ * page) so anyone can verify bills and transfer proof anytime.
  */
 export default function ReceiptViewer({
   expense,
@@ -44,19 +47,27 @@ export default function ReceiptViewer({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const ctx = useOutletContext<{ profile: { id?: string } | null }>();
+  const [data, setData] = useState<Expense | null>(expense);
+  useEffect(() => {
+    setData(expense);
+  }, [expense]);
+
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
+  const [replyText, setReplyText] = useState("");
+  const [replying, setReplying] = useState(false);
 
   // Collect every stored receipt path: line-item bills + expense receipts + transfer proof
-  const billPaths = expense
+  const billPaths = data
     ? [
-        ...(expense.line_items ?? []).map((li) => li.receipt_path).filter((p): p is string => !!p),
-        ...(expense.receipt_paths ?? []),
+        ...(data.line_items ?? []).map((li) => li.receipt_path).filter((p): p is string => !!p),
+        ...(data.receipt_paths ?? []),
       ]
     : [];
-  const transferPath = expense?.transfer_receipt_path ?? null;
+  const transferPath = data?.transfer_receipt_path ?? null;
 
   useEffect(() => {
-    if (!open || !expense) return;
+    if (!open || !data) return;
     let cancelled = false;
     const paths = [...billPaths, ...(transferPath ? [transferPath] : [])];
     (async () => {
@@ -69,23 +80,43 @@ export default function ReceiptViewer({
       setReceiptUrls(map);
     })();
     return () => { cancelled = true; };
-  }, [open, expense?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, data?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!expense) return null;
+  const isOwner = data ? data.user_id === ctx.profile?.id : false;
+  const awaitingReply =
+    !!data?.admin_note && !data?.member_reply && data?.status === "pending" && isOwner;
+
+  const handleReply = async () => {
+    if (!data || !replyText.trim() || !supabase) return;
+    setReplying(true);
+    const { error } = await supabase.rpc("reply_to_expense", {
+      p_expense_id: data.id,
+      p_reply: replyText.trim(),
+    });
+    if (!error) {
+      setData({ ...data, member_reply: replyText.trim(), member_reply_at: new Date().toISOString() });
+      setReplyText("");
+    } else {
+      console.warn("Reply failed:", error);
+    }
+    setReplying(false);
+  };
+
+  if (!data) return null;
 
   const timeline = [
-    { label: "Submitted", date: expense.submitted_at, done: true, icon: Clock },
+    { label: "Submitted", date: data.submitted_at, done: true, icon: Clock },
     {
-      label: expense.status === "rejected" ? "Rejected" : "Approved",
-      date: expense.approved_at ?? null,
-      done: expense.status === "approved" || expense.status === "paid" || expense.status === "auto_paid" || expense.status === "rejected",
-      icon: expense.status === "rejected" ? XCircle : CheckCircle2,
-      danger: expense.status === "rejected",
+      label: data.status === "rejected" ? "Rejected" : "Approved",
+      date: data.approved_at ?? null,
+      done: data.status === "approved" || data.status === "paid" || data.status === "auto_paid" || data.status === "rejected",
+      icon: data.status === "rejected" ? XCircle : CheckCircle2,
+      danger: data.status === "rejected",
     },
     {
       label: "Cleared (reimbursed)",
-      date: expense.paid_at ?? null,
-      done: expense.status === "paid" || expense.status === "auto_paid",
+      date: data.paid_at ?? null,
+      done: data.status === "paid" || data.status === "auto_paid",
       icon: Banknote,
     },
   ];
@@ -134,11 +165,11 @@ export default function ReceiptViewer({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 pr-8">
             <ReceiptIcon className="h-5 w-5 text-indigo-600" />
-            {expense.title ?? expense.description?.slice(0, 60) ?? "Expense"}
+            {data.title ?? data.description?.slice(0, 60) ?? "Expense"}
           </DialogTitle>
           <DialogDescription>
-            {formatCurrency(expense.amount)} · {expense.category} · Submitted {formatDate(expense.submitted_at)}
-            <span className="ml-2"><Badge tone={statusTone(expense.status)}>{expense.status.replace("_", " ")}</Badge></span>
+            {formatCurrency(data.amount)} · {data.category} · Submitted {formatDate(data.submitted_at)}
+            <span className="ml-2"><Badge tone={statusTone(data.status)}>{data.status.replace("_", " ")}</Badge></span>
           </DialogDescription>
         </DialogHeader>
 
@@ -158,18 +189,69 @@ export default function ReceiptViewer({
               </div>
             ))}
           </div>
-          {expense.status === "paid" || expense.status === "auto_paid" ? (
+          {data.status === "paid" || data.status === "auto_paid" ? (
             <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Reimbursement cleared — bank transfer receipt attached below.
+              Reimbursement cleared — bank transfer receipt attached below. Approval alone is not settlement.
             </div>
-          ) : expense.status === "pending" ? (
+          ) : data.status === "pending" && data.admin_note ? (
+            <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-700">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Waiting on your reply to the treasurer's clarification request.
+            </div>
+          ) : data.status === "pending" ? (
             <div className="mt-3 flex items-center gap-1.5 text-xs text-stone-500">
               <Clock className="h-3.5 w-3.5" />
               Waiting for the treasurer to review your bills.
             </div>
           ) : null}
         </div>
+
+        {/* ── Clarification thread ────────────────────────────────────── */}
+        {(data.admin_note || data.member_reply) && (
+          <div className="mt-4 space-y-2">
+            {data.admin_note && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Clarification requested {data.admin_note_at ? `· ${formatDate(data.admin_note_at)}` : ""}
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-stone-700">{data.admin_note}</p>
+              </div>
+            )}
+            {data.member_reply && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-sm">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Member reply {data.member_reply_at ? `· ${formatDate(data.member_reply_at)}` : ""}
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-stone-700">{data.member_reply}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Member reply box ────────────────────────────────────────── */}
+        {awaitingReply && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+            <Label htmlFor="reply-note" className="text-xs font-medium text-amber-800">
+              Reply to the treasurer
+            </Label>
+            <Textarea
+              id="reply-note"
+              rows={3}
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              className="mt-1.5"
+              placeholder="Answer the question or provide the missing details…"
+            />
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" onClick={handleReply} disabled={replying || !replyText.trim()} iconLeft={<Send className="h-3.5 w-3.5" />}>
+                {replying ? "Sending…" : "Send reply"}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── Submitted bills & receipts ──────────────────────────────── */}
         <div className="mt-5">
@@ -190,25 +272,33 @@ export default function ReceiptViewer({
         </div>
 
         {/* ── Line items breakdown ────────────────────────────────────── */}
-        {expense.line_items && expense.line_items.length > 0 && (
+        {data.line_items && data.line_items.length > 0 && (
           <div className="mt-5">
             <div className="mb-2 text-sm font-semibold text-stone-800">Bill breakdown</div>
             <div className="overflow-hidden rounded-lg border border-stone-200">
-              {expense.line_items.map((li, i) => (
-                <div key={i} className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-stone-50" : "bg-white"}`}>
-                  <span className="min-w-0 flex-1 truncate text-stone-700">{li.description || "Bill"}</span>
-                  {li.receipt_path && receiptUrls[li.receipt_path] && (
-                    <a href={receiptUrls[li.receipt_path]} target="_blank" rel="noreferrer"
-                      className="mr-3 inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-indigo-700 hover:underline">
-                      <Eye className="h-3 w-3" /> view
-                    </a>
+              {data.line_items.map((li, i) => (
+                <div key={i} className={`px-3 py-2 text-sm ${i % 2 ? "bg-stone-50" : "bg-white"}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="min-w-0 flex-1 truncate text-stone-700">{li.description || "Bill"}</span>
+                    {li.receipt_path && receiptUrls[li.receipt_path] && (
+                      <a href={receiptUrls[li.receipt_path]} target="_blank" rel="noreferrer"
+                        className="mr-3 inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-indigo-700 hover:underline">
+                        <Eye className="h-3 w-3" /> view
+                      </a>
+                    )}
+                    <span className="shrink-0 font-mono font-medium text-stone-900">{formatCurrency(li.amount)}</span>
+                  </div>
+                  {li.no_receipt_note && (
+                    <div className="mt-1 flex items-start gap-1 text-[11px] italic text-amber-700">
+                      <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>No receipt — {li.no_receipt_note}</span>
+                    </div>
                   )}
-                  <span className="shrink-0 font-mono font-medium text-stone-900">{formatCurrency(li.amount)}</span>
                 </div>
               ))}
               <div className="flex items-center justify-between border-t border-stone-200 bg-stone-100 px-3 py-2 text-sm font-semibold text-stone-900">
                 <span>Total</span>
-                <span className="font-mono">{formatCurrency(expense.amount)}</span>
+                <span className="font-mono">{formatCurrency(data.amount)}</span>
               </div>
             </div>
           </div>
@@ -223,17 +313,17 @@ export default function ReceiptViewer({
             <ReceiptCard path={transferPath} />
           ) : (
             <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50/60 px-3 py-3 text-xs text-stone-500">
-              {expense.status === "paid" || expense.status === "auto_paid"
+              {data.status === "paid" || data.status === "auto_paid"
                 ? "This reimbursement was cleared, but no transfer receipt was uploaded."
-                : "No transfer receipt yet — the treasurer uploads this after the manual bank transfer clears the reimbursement."}
+                : "No transfer receipt yet — the treasurer uploads this after the manual bank transfer clears the reimbursement. The expense is only completed once this receipt exists."}
             </div>
           )}
         </div>
 
         {/* ── Notes ───────────────────────────────────────────────────── */}
-        {expense.notes && (
+        {data.notes && (
           <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-sm text-stone-700">
-            <span className="font-medium text-amber-800">Notes: </span>{expense.notes}
+            <span className="font-medium text-amber-800">Notes: </span>{data.notes}
           </div>
         )}
 
