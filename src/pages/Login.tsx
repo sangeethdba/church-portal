@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Church, Mail, LogIn, UserPlus, Sparkles, AlertCircle } from "lucide-react";
+import { Church, Mail, LogIn, UserPlus, Sparkles } from "lucide-react";
 import Logo from "@/components/Logo";
 import { Button, Card, CardBody, Input, Label, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
 import {
@@ -8,13 +8,12 @@ import {
   signUpWithEmail,
   signInWithGoogle,
 } from "@/lib/auth";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 export default function Login() {
   const [, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const configured = isSupabaseConfigured();
 
   // If already signed in, kick straight to dashboard
   useEffect(() => {
@@ -27,13 +26,13 @@ export default function Login() {
   // Auto-trigger Google flow when ?provider=google
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get("provider") === "google" && configured) {
+    if (params.get("provider") === "google") {
       signInWithGoogle().catch((e: unknown) => {
         setError(e instanceof Error ? e.message : "Google sign-in failed");
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search, configured]);
+  }, [location.search]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -102,27 +101,12 @@ export default function Login() {
               </p>
             </div>
 
-            {!configured && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                  <div>
-                    <strong>Supabase isn't configured yet.</strong> Add{" "}
-                    <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">VITE_SUPABASE_URL</code>{" "}
-                    and{" "}
-                    <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">VITE_SUPABASE_ANON_KEY</code>{" "}
-                    to your Freebuff project's API Keys tab, then come back.
-                  </div>
-                </div>
-              </div>
-            )}
-
             <Button
               size="lg"
               variant="outline"
               className="w-full"
               onClick={handleGoogle}
-              disabled={!configured || loading}
+              disabled={loading}
               iconLeft={
                 <svg
                   aria-hidden="true"
@@ -206,7 +190,7 @@ export default function Login() {
                   )}
                   <Button
                     type="submit"
-                    disabled={!configured || loading}
+                    disabled={loading}
                     className="w-full"
                     iconLeft={<Mail className="h-4 w-4" />}
                   >
@@ -259,7 +243,7 @@ export default function Login() {
                   )}
                   <Button
                     type="submit"
-                    disabled={!configured || loading}
+                    disabled={loading}
                     className="w-full"
                     iconLeft={<Church className="h-4 w-4" />}
                   >
