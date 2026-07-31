@@ -24,12 +24,14 @@ export async function signUpWithEmail(email: string, password: string, fullName?
   return data;
 }
 
+// Production URL for OAuth redirects.  Update this when you get a custom domain.
+const SITE_URL = "https://church-portal-ro76v3w0s-grace-32d4.vercel.app";
+
 export async function signInWithGoogle(redirectTo?: string) {
-  const siteUrl = window.location.origin;
   const { error, data } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${siteUrl}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`,
+      redirectTo: `${SITE_URL}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`,
     },
   });
   if (error) throw error;
