@@ -30,7 +30,7 @@ import {
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
-import { supabase, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
+import { supabase, isAdminRole, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const sampleExpenses: Expense[] = [
@@ -115,13 +115,16 @@ async function notifyMember(expenseId: string) {
 
 export default function Expenses() {
   const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
+  // Church-direct (bank auto-debits) is an admin-only flow — members only submit
+  // their own reimbursements, so they must never see or pick the church-direct source.
+  const isAdmin = isAdminRole(ctx.profile?.role);
   const [expenses, setExpenses] = useState<Expense[]>(sampleExpenses);
   const [loading, setLoading] = useState(true);
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
-    source: "church_direct" as ExpenseSource,
+    source: "member_submitted" as ExpenseSource,
     title: "",
     amount: "",
     category: "other" as Expense["category"],
@@ -379,7 +382,7 @@ export default function Expenses() {
     setSaving(false);
     setOpen(false);
     setReceiptFiles([]);
-    setForm({ source: "church_direct", title: "", amount: "", category: "other", description: "", notes: "" });
+    setForm({ source: "member_submitted", title: "", amount: "", category: "other", description: "", notes: "" });
     setReceiptFiles([]);
     setCheckImage(null);
     setCheckNumber("");
@@ -417,23 +420,34 @@ export default function Expenses() {
               <DialogHeader>
                 <DialogTitle>Record an expense</DialogTitle>
                 <DialogDescription>
-                  Two kinds of entries: <strong>member reimbursement</strong> — you spent your own money, upload each bill and the church pays you back after approval — or <strong>church-direct</strong>, a bank auto-debit the admin logs (auto-settled).
+                  {isAdmin ? (
+                    <>Two kinds of entries: <strong>member reimbursement</strong> — you spent your own money, upload each bill and the church pays you back after approval — or <strong>church-direct</strong>, a bank auto-debit the admin logs (auto-settled).</>
+                  ) : (
+                    <>Submit a <strong>member reimbursement</strong> — you spent your own money, upload each bill with its receipt, and the church pays you back after admin approval.</>
+                  )}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <Label>Source</Label>
-                  <Select
-                    value={form.source}
-                    onChange={(e) =>
-                      setForm({ ...form, source: e.target.value as ExpenseSource })
-                    }
-                    className="mt-1.5"
-                  >
-                    <option value="church_direct">Church-direct — auto-debited from bank account (admin)</option>
-                    <option value="member_submitted">Member reimbursement — my own money, church pays me back</option>
-                  </Select>
-                </div>
+                {isAdmin ? (
+                  <div className="col-span-2">
+                    <Label>Source</Label>
+                    <Select
+                      value={form.source}
+                      onChange={(e) =>
+                        setForm({ ...form, source: e.target.value as ExpenseSource })
+                      }
+                      className="mt-1.5"
+                    >
+                      <option value="church_direct">Church-direct — auto-debited from bank account (admin)</option>
+                      <option value="member_submitted">Member reimbursement — my own money, church pays me back</option>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="col-span-2 flex items-center gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">
+                    <Banknote className="h-4 w-4 shrink-0 text-emerald-600" />
+                    Member reimbursement — the church pays you back after admin approval.
+                  </div>
+                )}
 
                 {formError && (
                   <div className="col-span-2 flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -803,7 +817,7 @@ export default function Expenses() {
         <TabsList>
           <TabsTrigger value="all">All</TabsTrigger>
           <TabsTrigger value="member_submitted">Member-side</TabsTrigger>
-          <TabsTrigger value="church_direct">Church-direct</TabsTrigger>
+          {isAdmin && <TabsTrigger value="church_direct">Church-direct</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="all">
@@ -827,17 +841,19 @@ export default function Expenses() {
             hideSource
           />
         </TabsContent>
-        <TabsContent value="church_direct">
-          <ExpenseList
-            rows={filtered.filter((e) => e.source === "church_direct")}
-            onTransition={transition}
-            onMarkPaid={openPayDialog}
-            onView={setViewExpense}
-            onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
-            statusTone={statusTone}
-            hideSource
-          />
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="church_direct">
+            <ExpenseList
+              rows={filtered.filter((e) => e.source === "church_direct")}
+              onTransition={transition}
+              onMarkPaid={openPayDialog}
+              onView={setViewExpense}
+              onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
+              statusTone={statusTone}
+              hideSource
+            />
+          </TabsContent>
+        )}
       </Tabs>
 
       {!supabase && (
