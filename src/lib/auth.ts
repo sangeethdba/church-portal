@@ -25,7 +25,7 @@ export async function signUpWithEmail(email: string, password: string, fullName?
 }
 
 export async function signInWithGoogle(redirectTo?: string) {
-  const siteUrl = import.meta.env.VITE_SITE_URL ?? window.location.origin;
+  const siteUrl = window.location.origin;
   const { error, data } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
