@@ -11,7 +11,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase, getReceiptUrl } from "@/lib/supabase";
+import { supabase, getReceiptUrl, isAdminRole } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { downloadOfferingSummary, offeringSummaryDataUrl, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
@@ -36,6 +36,7 @@ interface CheckEntry {
 interface CounterInfo {
   id: string;
   full_name: string;
+  email?: string | null;
 }
 
 interface Offering {
@@ -128,8 +129,10 @@ export default function Offerings() {
   const [activeSuggestKey, setActiveSuggestKey] = useState<string | null>(null);
 
   // ── Counter sign-off state ────────────────────────────────────────────
-  const ctx = useOutletContext<{ profile: { id: string; full_name?: string | null } | null; isCounter: boolean }>();
+  const ctx = useOutletContext<{ profile: { id: string; full_name?: string | null; role?: string } | null; isCounter: boolean }>();
+  const canAccess = isAdminRole(ctx.profile?.role) || ctx.isCounter;
   const [counterList, setCounterList] = useState<CounterInfo[]>([]);
+  const [nameProfiles, setNameProfiles] = useState<CounterInfo[]>([]);
   const [counter1Id] = useState(ctx.profile?.id ?? "");
   const [counter1Pin, setCounter1Pin] = useState("");
   const [counter2Id, setCounter2Id] = useState("");
@@ -241,11 +244,12 @@ export default function Offerings() {
     return Array.from(s).sort().reverse();
   }, [offerings]);
 
-  // Counter name lookup
+  // Counter name lookup — resolve from ALL profiles (not just current counters),
+  // falling back to email so stored sign-offs never render as "Unknown".
   const counterName = (id: string | null | undefined): string => {
     if (!id) return "—";
-    const c = counterList.find((x) => x.id === id);
-    return c?.full_name ?? "Unknown";
+    const c = nameProfiles.find((x) => x.id === id) ?? counterList.find((x) => x.id === id);
+    return c?.full_name || c?.email || "Unknown";
   };
 
   // ── Load data ──────────────────────────────────────────────────────────
@@ -254,11 +258,13 @@ export default function Offerings() {
     Promise.all([
       supabase.from("offerings").select("*").order("service_date", { ascending: false }),
       supabase.from("donors").select("id, first_name, last_name").order("last_name"),
-      supabase.from("profiles").select("id, full_name").eq("is_counter", true).order("full_name"),
-    ]).then(([{ data: oData }, { data: dData }, { data: cData }]) => {
+      supabase.from("profiles").select("id, full_name, email").eq("is_counter", true).order("full_name"),
+      supabase.from("profiles").select("id, full_name, email").order("full_name"),
+    ]).then(([{ data: oData }, { data: dData }, { data: cData }, { data: nData }]) => {
       if (oData) setOfferings(oData as Offering[]);
       if (dData) setDonorList(dData as Donor[]);
       if (cData) setCounterList(cData as CounterInfo[]);
+      if (nData) setNameProfiles(nData as CounterInfo[]);
       setLoading(false);
     });
   }, []);
@@ -531,6 +537,18 @@ export default function Offerings() {
 
   return (
     <div>
+      {!canAccess && (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-amber-200 bg-amber-50/50 px-6 py-16 text-center">
+          <Shield className="mb-3 h-10 w-10 text-amber-400" />
+          <h2 className="font-serif text-xl font-semibold text-stone-800">Access restricted</h2>
+          <p className="mt-2 max-w-md text-sm text-stone-500">
+            The Offerings section is only available to designated counters and admins.
+            Contact your church administrator if you need access.
+          </p>
+        </div>
+      )}
+      {canAccess && (
+      <>
       <PageHeader
         title="Offerings"
         subtitle="Record Sunday collections — cash by denomination, individual checks per donor, and dual counter sign-off."
@@ -1095,6 +1113,8 @@ export default function Offerings() {
           </div>
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </div>
   );
 }
