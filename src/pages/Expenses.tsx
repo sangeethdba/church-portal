@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus } from "lucide-react";
+import { useOutletContext } from "react-router-dom";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye } from "lucide-react";
 import {
   Button,
   Card,
@@ -28,7 +29,8 @@ import {
   DialogTrigger,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase, type Expense, type ExpenseSource, type ExpenseStatus } from "@/lib/supabase";
+import ReceiptViewer from "@/components/ReceiptViewer";
+import { supabase, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const sampleExpenses: Expense[] = [
@@ -112,8 +114,10 @@ async function notifyMember(expenseId: string) {
 }
 
 export default function Expenses() {
+  const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
   const [expenses, setExpenses] = useState<Expense[]>(sampleExpenses);
   const [loading, setLoading] = useState(true);
+  const [viewExpense, setViewExpense] = useState<Expense | null>(null);
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -298,6 +302,8 @@ export default function Expenses() {
         description: baseRow.description, notes: baseRow.notes, status: baseRow.status,
         payment_method: paymentMethod, check_number: checkNumber || null,
       };
+      // RLS requires member-submitted expenses to carry the submitter's profile id
+      if (form.source === "member_submitted") insertPayload.user_id = ctx.profile?.id ?? null;
       if (lineItemsData.length > 0) { insertPayload.line_items = JSON.stringify(lineItemsData); }
       const { data, error } = await supabase.from("expenses").insert(insertPayload).select().maybeSingle();
       if (data) {
@@ -601,14 +607,15 @@ export default function Expenses() {
         }
       />
 
-      {/* Mark Paid with Transfer Receipt dialog */}
+      {/* Clear reimbursement — upload bank transfer receipt dialog */}
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mark as paid & upload transfer receipt</DialogTitle>
+            <DialogTitle>Clear reimbursement — upload bank transfer receipt</DialogTitle>
             <DialogDescription>
-              After transferring funds from your bank account, upload the transaction
-              receipt here. The member will be notified by email.
+              After making the manual bank transfer to the member, upload the transaction
+              receipt here to clear the reimbursement. The member will be notified by email
+              and can verify the receipt anytime.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -650,8 +657,8 @@ export default function Expenses() {
             </div>
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <Banknote className="mb-1 h-4 w-4" />
-              This will mark the expense as paid and send an email notification to the
-              submitting member if applicable.
+              This clears the reimbursement: the expense is marked paid, the transfer
+              receipt is attached for auditing, and the submitting member is notified by email.
             </div>
           </div>
           <div className="mt-6 flex justify-end gap-2">
@@ -659,11 +666,18 @@ export default function Expenses() {
               Cancel
             </Button>
             <Button onClick={handleMarkPaid} disabled={paySaving}>
-              {paySaving ? "Saving…" : "Confirm payment"}
+              {paySaving ? "Saving…" : "Confirm & clear reimbursement"}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Expense audit viewer */}
+      <ReceiptViewer
+        expense={viewExpense}
+        open={viewExpense !== null}
+        onOpenChange={(v) => { if (!v) setViewExpense(null); }}
+      />
 
       <Tabs defaultValue="all">
         <TabsList>
@@ -677,6 +691,7 @@ export default function Expenses() {
             rows={filtered}
             onTransition={transition}
             onMarkPaid={openPayDialog}
+            onView={setViewExpense}
             statusTone={statusTone}
           />
         </TabsContent>
@@ -685,6 +700,7 @@ export default function Expenses() {
             rows={filtered.filter((e) => e.source === "member_submitted")}
             onTransition={transition}
             onMarkPaid={openPayDialog}
+            onView={setViewExpense}
             statusTone={statusTone}
             hideSource
           />
@@ -694,6 +710,7 @@ export default function Expenses() {
             rows={filtered.filter((e) => e.source === "church_direct")}
             onTransition={transition}
             onMarkPaid={openPayDialog}
+            onView={setViewExpense}
             statusTone={statusTone}
             hideSource
           />
@@ -713,12 +730,14 @@ function ExpenseList({
   rows,
   onTransition,
   onMarkPaid,
+  onView,
   statusTone,
   hideSource,
 }: {
   rows: Expense[];
   onTransition: (id: string, status: ExpenseStatus) => void;
   onMarkPaid: (id: string) => void;
+  onView: (e: Expense) => void;
   statusTone: (s: ExpenseStatus) => "neutral" | "indigo" | "amber" | "emerald" | "rose";
   hideSource?: boolean;
 }) {
@@ -783,6 +802,14 @@ function ExpenseList({
                 </Td>
                 <Td>
                   <div className="flex flex-wrap gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onView(e)}
+                      iconLeft={<Eye className="h-3.5 w-3.5" />}
+                    >
+                      View
+                    </Button>
                     {e.status === "pending" && (
                       <>
                         <Button
@@ -810,7 +837,7 @@ function ExpenseList({
                         onClick={() => onMarkPaid(e.id)}
                         iconLeft={<Banknote className="h-3.5 w-3.5" />}
                       >
-                        Mark paid
+                        Clear reimbursement
                       </Button>
                     )}
                     {e.status === "rejected" && (

@@ -156,3 +156,12 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON
     flowType: "pkce",
   },
 });
+
+/** Resolve a stored receipt path to a viewable URL (signed URL with public fallback). */
+export async function getReceiptUrl(path: string | null | undefined): Promise<string | null> {
+  if (!path || !supabase) return null;
+  const { data: signed } = await supabase.storage.from("receipts").createSignedUrl(path, 3600);
+  if (signed?.signedUrl) return signed.signedUrl;
+  const { data: pub } = supabase.storage.from("receipts").getPublicUrl(path);
+  return pub?.publicUrl ?? null;
+}

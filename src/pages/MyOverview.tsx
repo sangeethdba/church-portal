@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight } from "lucide-react";
+import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
+import ReceiptViewer from "@/components/ReceiptViewer";
 import { supabase } from "@/lib/supabase";
 import type { Donation, Expense, Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -18,6 +19,7 @@ export function MemberOverview() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [myYtd, setMyYtd] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [viewExpense, setViewExpense] = useState<Expense | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +71,9 @@ export function MemberOverview() {
           <CardBody className="space-y-3">
             {!loading && expenses.length === 0 ? (
               <EmptyState icon={<Receipt className="h-6 w-6" />} title="No submissions yet" description="Bills you submit for reimbursement will appear here with their status." />
-            ) : expenses.map((e) => (
+            ) : expenses.map((e) => {
+              const hasBills = (e.receipt_paths?.length ?? 0) > 0 || (e.line_items ?? []).some((li) => !!li.receipt_path);
+              return (
               <div key={e.id} className="rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -78,10 +82,25 @@ export function MemberOverview() {
                       {formatDate(e.submitted_at)}
                       {e.line_items && e.line_items.length > 1 ? ` · ${e.line_items.length} bills` : ""}
                     </div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {hasBills && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">
+                          <Paperclip className="h-3 w-3" /> {(e.receipt_paths?.length ?? 0) + (e.line_items ?? []).filter((li) => !!li.receipt_path).length} receipt{(e.receipt_paths?.length ?? 0) + (e.line_items ?? []).filter((li) => !!li.receipt_path).length === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      {e.transfer_receipt_path && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                          <Banknote className="h-3 w-3" /> Transfer receipt
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
+                  <div className="flex shrink-0 flex-col items-end gap-1">
                     <div className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(e.amount)}</div>
                     <Badge tone={statusTone(e.status)}>{e.status.replace("_", " ")}</Badge>
+                    <Button size="sm" variant="ghost" onClick={() => setViewExpense(e)} iconLeft={<Eye className="h-3.5 w-3.5" />}>
+                      View
+                    </Button>
                   </div>
                 </div>
                 {e.line_items && e.line_items.length > 0 && (
@@ -96,7 +115,8 @@ export function MemberOverview() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </CardBody>
         </Card>
 
@@ -124,6 +144,12 @@ export function MemberOverview() {
           </CardBody>
         </Card>
       </div>
+
+      <ReceiptViewer
+        expense={viewExpense}
+        open={viewExpense !== null}
+        onOpenChange={(v) => { if (!v) setViewExpense(null); }}
+      />
     </>
   );
 }
