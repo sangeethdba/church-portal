@@ -1,6 +1,100 @@
 import jsPDF from "jspdf";
 import { formatCurrency, formatDateLong } from "./utils";
-import type { Donor, Donation, Expense } from "./supabase";
+import type { Donor, Donation } from "./supabase";
+
+/** Official Atlanta Little Flock Church details used on every generated document. */
+export const ALF_DOCUMENT_BRANDING = {
+  name: "Atlanta Little Flock Church",
+  address: "7445 Cheswick Ct, Atlanta, GA 30350",
+  phones: "404-660-6501 / 470-361-5878",
+  website: "www.atlantalittleflock.org",
+  email: "atlantalittleflock@gmail.com",
+  ein: "81-3421276",
+  treasurer: "Sangeeth Talluri",
+} as const;
+
+const displayChurchName = (churchName?: string | null) =>
+  !churchName || churchName === "Grace Community Church" || churchName === "GraceLedger"
+    ? ALF_DOCUMENT_BRANDING.name
+    : churchName;
+
+/** Draws the compact flock-and-cross mark used by the portal favicon. */
+function drawBrandMark(doc: jsPDF, x: number, y: number, scale = 1) {
+  doc.setFillColor(79, 70, 229);
+  doc.roundedRect(x, y, 34 * scale, 34 * scale, 8 * scale, 8 * scale, "F");
+  doc.setDrawColor(255, 255, 255);
+  doc.setLineWidth(1.6 * scale);
+  doc.line(x + 17 * scale, y + 13 * scale, x + 17 * scale, y + 27 * scale);
+  doc.line(x + 11 * scale, y + 20 * scale, x + 23 * scale, y + 20 * scale);
+  doc.setFillColor(255, 255, 255);
+  for (const [birdX, birdY] of [[9, 9], [15, 6], [21, 9]]) {
+    doc.ellipse(x + birdX * scale, y + birdY * scale, 3 * scale, 1.7 * scale, "F");
+  }
+}
+
+/** Shared branded header. Returns the first safe content baseline. */
+function drawDocumentHeader(
+  doc: jsPDF,
+  churchName: string | null | undefined,
+  title: string,
+  meta: string[] = [],
+) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 50;
+  doc.setFillColor(247, 241, 231);
+  doc.rect(0, 0, pageWidth, 112, "F");
+  drawBrandMark(doc, margin, 22, 1.05);
+  doc.setTextColor(28, 25, 23);
+  doc.setFont("times", "bold");
+  doc.setFontSize(18);
+  doc.text(displayChurchName(churchName), margin + 46, 43);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(87, 83, 78);
+  doc.text(title, margin + 46, 61);
+  doc.setFontSize(7.5);
+  doc.text(`${ALF_DOCUMENT_BRANDING.address} · Tel: ${ALF_DOCUMENT_BRANDING.phones}`, margin + 46, 76);
+  doc.text(`${ALF_DOCUMENT_BRANDING.website} · ${ALF_DOCUMENT_BRANDING.email}`, margin + 46, 89);
+  doc.setFontSize(8.5);
+  meta.forEach((line, index) => {
+    if (line) doc.text(line, pageWidth - margin, 42 + index * 14, { align: "right" });
+  });
+  return 132;
+}
+
+const TOTAL_PAGES_TOKEN = "{total_pages_count_string}";
+
+function drawDocumentFooter(doc: jsPDF) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 50;
+  doc.setDrawColor(231, 229, 228);
+  doc.line(margin, 737, pageWidth - margin, 737);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 113, 108);
+  doc.text(
+    `${ALF_DOCUMENT_BRANDING.address} · Tel: ${ALF_DOCUMENT_BRANDING.phones}`,
+    margin,
+    750,
+  );
+  doc.text(
+    `${ALF_DOCUMENT_BRANDING.website} · ${ALF_DOCUMENT_BRANDING.email} · EIN ${ALF_DOCUMENT_BRANDING.ein}`,
+    margin,
+    762,
+  );
+  doc.setFontSize(7);
+  doc.text(
+    `Atlanta Little Flock Church · Page ${doc.getCurrentPageInfo().pageNumber} of ${TOTAL_PAGES_TOKEN}`,
+    pageWidth - margin,
+    762,
+    { align: "right" },
+  );
+}
+
+function finalizeDocument(doc: jsPDF) {
+  doc.putTotalPages(TOTAL_PAGES_TOKEN);
+  return doc;
+}
 
 export interface AnnualStatement {
   donor: Donor;
@@ -53,21 +147,10 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   const margin = 50;
   let y = margin;
 
-  // ── Header ────────────────────────────────────────────────────────────
-  doc.setFillColor(247, 241, 231);
-  doc.rect(0, 0, pageWidth, 90, "F");
-  doc.setTextColor(28, 25, 23);
-  doc.setFont("times", "bold");
-  doc.setFontSize(20);
-  doc.text(s.churchName, margin, 46);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.setTextColor(87, 83, 78);
-  doc.text(`Offering Ledger · ${s.serviceName}`, margin, 68);
-  doc.setFontSize(9);
-  doc.text(`Date: ${formatDateLong(s.serviceDate)}`, pageWidth - margin, 68, { align: "right" });
-
-  y = 110;
+  // ── Branded header ────────────────────────────────────────────────────
+  y = drawDocumentHeader(doc, s.churchName, `Offering ledger · ${s.serviceName}`, [
+    `Date: ${formatDateLong(s.serviceDate)}`,
+  ]);
 
   // ── Cash breakdown ────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
@@ -213,16 +296,12 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   y += 56;
 
   // ── Footer ────────────────────────────────────────────────────────────
-  doc.setFontSize(8);
-  doc.setTextColor(168, 162, 158);
-  doc.text(
-    `${s.churchName} · Recorded by ${s.recordedBy} · ${formatDateLong(new Date())}`,
-    pageWidth - margin,
-    760,
-    { align: "right" },
-  );
+  drawDocumentFooter(doc);
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 113, 108);
+  doc.text(`Recorded by ${s.recordedBy} · ${formatDateLong(new Date())}`, margin, 775);
 
-  return doc;
+  return finalizeDocument(doc);
 }
 
 export function downloadOfferingSummary(s: OfferingSummary) {
@@ -261,22 +340,11 @@ export function generateOfferingReceipt(r: OfferingReceipt): jsPDF {
   const margin = 50;
   let y = margin;
 
-  // ── Header ────────────────────────────────────────────────────────────
-  doc.setFillColor(247, 241, 231);
-  doc.rect(0, 0, pageWidth, 90, "F");
-  doc.setTextColor(28, 25, 23);
-  doc.setFont("times", "bold");
-  doc.setFontSize(20);
-  doc.text(r.churchName, margin, 46);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.setTextColor(87, 83, 78);
-  doc.text(`Offering Receipt · ${r.serviceName}`, margin, 68);
-  doc.setFontSize(9);
-  doc.text(`Receipt # ${r.receiptNumber}`, pageWidth - margin, 46, { align: "right" });
-  doc.text(`Date: ${formatDateLong(r.serviceDate)}`, pageWidth - margin, 68, { align: "right" });
-
-  y = 110;
+  // ── Branded header ────────────────────────────────────────────────────
+  y = drawDocumentHeader(doc, r.churchName, `Offering receipt · ${r.serviceName}`, [
+    `Receipt # ${r.receiptNumber}`,
+    `Date: ${formatDateLong(r.serviceDate)}`,
+  ]);
 
   // ── Acknowledgment line ───────────────────────────────────────────────
   doc.setFont("times", "italic");
@@ -416,16 +484,12 @@ export function generateOfferingReceipt(r: OfferingReceipt): jsPDF {
   doc.text("Thank you for your faithful giving.", margin, y);
 
   // ── Footer ────────────────────────────────────────────────────────────
-  doc.setFontSize(8);
-  doc.setTextColor(168, 162, 158);
-  doc.text(
-    `${r.churchName} · Generated ${formatDateLong(new Date())}`,
-    pageWidth - margin,
-    760,
-    { align: "right" },
-  );
+  drawDocumentFooter(doc);
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 113, 108);
+  doc.text(`Generated ${formatDateLong(new Date())}`, margin, 775);
 
-  return doc;
+  return finalizeDocument(doc);
 }
 
 export function downloadOfferingReceipt(r: OfferingReceipt) {
@@ -444,19 +508,12 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   const margin = 56;
   let y = margin;
 
-  // Header band (warm parchment)
-  doc.setFillColor(247, 241, 231);
-  doc.rect(0, 0, pageWidth, 96, "F");
-  doc.setTextColor(28, 25, 23);
-  doc.setFont("times", "bold");
-  doc.setFontSize(20);
-  doc.text(s.churchName, margin, 50);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.text(`Annual Giving Statement · ${s.year}`, margin, 72);
+  // Branded header
+  y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
 
   // Donor block
-  y = 130;
+  doc.setFont("helvetica", "normal");
+  y = 142;
   doc.setFontSize(10);
   doc.setTextColor(87, 83, 78);
   doc.text("Issued to", margin, y);
@@ -490,43 +547,59 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   doc.setFontSize(11);
   doc.setTextColor(28, 25, 23);
   doc.text(
-    `For the calendar year ${s.year}, ${s.donor.first_name} ${s.donor.last_name} contributed the following:`,
+    `Dear ${s.donor.first_name} ${s.donor.last_name},`,
+    margin,
+    y,
+  );
+  y += 18;
+  doc.text(
+    `Our records show that you have contributed to ${displayChurchName(s.churchName)} in the Year ${s.year}.`,
     margin,
     y,
     { maxWidth: pageWidth - margin * 2 },
   );
+  y += 18;
+  doc.text("Itemized contribution details are mentioned below.", margin, y);
   y += 26;
 
-  // Table header
-  doc.setFillColor(247, 241, 231);
-  doc.rect(margin, y - 14, pageWidth - margin * 2, 22, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("Date", margin + 8, y);
-  doc.text("Type", margin + 110, y);
-  doc.text("Method", margin + 200, y);
-  doc.text("Memo", margin + 290, y);
-  doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
-  y += 14;
+  const drawAnnualTableHeader = () => {
+    doc.setFillColor(247, 241, 231);
+    doc.rect(margin, y - 14, pageWidth - margin * 2, 22, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Date", margin + 8, y);
+    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(28, 25, 23);
+    doc.setFontSize(10);
+  };
 
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(28, 25, 23);
-  doc.setFontSize(10);
+  drawAnnualTableHeader();
+
   // Sort ascending by date for statement readability
   const sorted = [...s.donations].sort((a, b) =>
     a.donation_date.localeCompare(b.donation_date),
   );
   for (const d of sorted) {
-    if (y > 720) {
+    if (y > 700) {
+      drawDocumentFooter(doc);
       doc.addPage();
-      y = margin;
+      y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
+      y = 132;
+      drawAnnualTableHeader();
     }
     doc.text(formatDateLong(d.donation_date), margin + 8, y);
-    doc.text(d.donation_type, margin + 110, y);
-    doc.text(d.payment_method, margin + 200, y);
-    doc.text((d.notes ?? d.check_number ?? "").slice(0, 32), margin + 290, y);
     doc.text(formatCurrency(d.amount), pageWidth - margin - 8, y, { align: "right" });
     y += 16;
+  }
+
+  // Keep the letter body together instead of placing its closing text over the footer.
+  if (y > 650) {
+    drawDocumentFooter(doc);
+    doc.addPage();
+    y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
+    y = 142;
   }
 
   // Divider
@@ -543,29 +616,48 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   doc.text(formatCurrency(s.total), pageWidth - margin - 8, y, { align: "right" });
   y += 24;
 
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(9);
-  doc.setTextColor(120, 113, 108);
-  doc.text(
-    `${s.donations.length} gift${s.donations.length === 1 ? "" : "s"} recorded for ${s.year}. ` +
-      `No goods or services were provided in exchange for these contributions. ` +
-      `Please retain this statement for your records.`,
-    margin,
-    y,
-    { maxWidth: pageWidth - margin * 2 },
-  );
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(87, 83, 78);
+  const bodyWidth = pageWidth - margin * 2;
+  const statementNote =
+    `${s.donations.length} contribution${s.donations.length === 1 ? "" : "s"} recorded for ${s.year}. ` +
+    "No goods or services were provided in exchange for these contributions. " +
+    "Please retain this statement for your records.";
+  const noteLines = doc.splitTextToSize(statementNote, bodyWidth);
+  doc.text(noteLines, margin, y);
+  y += noteLines.length * 12 + 18;
+
+  doc.setFont("times", "normal");
+  doc.setFontSize(10);
+  const thankYou =
+    "Thank you for joining us to impact numerous lives and in expansion of God's kingdom through your donations. " +
+    "We praise and thank our Lord Jesus Christ for His provision and faithfulness.";
+  const thankYouLines = doc.splitTextToSize(thankYou, bodyWidth);
+  doc.text(thankYouLines, margin, y);
+  y += thankYouLines.length * 13 + 18;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  const taxLanguage =
+    `Your gift is a tax-deductible contribution through our nonprofit 501(c)(3) organization. ` +
+    `Our nonprofit Employer Identification Number (EIN): ${ALF_DOCUMENT_BRANDING.ein}.`;
+  const taxLines = doc.splitTextToSize(taxLanguage, bodyWidth);
+  doc.text(taxLines, margin, y);
+  y += taxLines.length * 12 + 18;
+  doc.text("God bless you!", margin, y);
+  y += 28;
+  doc.text("Sincerely yours,", margin, y);
+  y += 16;
+  doc.setFont("helvetica", "bold");
+  doc.text(ALF_DOCUMENT_BRANDING.treasurer, margin, y);
+  doc.setFont("helvetica", "normal");
+  doc.text("Treasurer", margin, y + 14);
 
   // Footer
-  doc.setFontSize(8);
-  doc.setTextColor(168, 162, 158);
-  doc.text(
-    `${s.churchName} · Generated ${formatDateLong(new Date())}`,
-    pageWidth - margin,
-    760,
-    { align: "right" },
-  );
+  drawDocumentFooter(doc);
 
-  return doc;
+  return finalizeDocument(doc);
 }
 
 export function downloadStatement(s: AnnualStatement) {
@@ -611,19 +703,11 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
   const margin = 56;
   let y = margin;
 
-  // Header band (warm parchment, matching the other documents)
-  doc.setFillColor(247, 241, 231);
-  doc.rect(0, 0, pageWidth, 96, "F");
-  doc.setTextColor(28, 25, 23);
-  doc.setFont("times", "bold");
-  doc.setFontSize(20);
-  doc.text(m.churchName, margin, 50);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.text(`Personal Report · ${m.periodLabel}`, margin, 72);
+  // Branded header
+  y = drawDocumentHeader(doc, m.churchName, `Personal giving & expense report · ${m.periodLabel}`);
 
   // Member block
-  y = 128;
+  y = 142;
   doc.setFontSize(10);
   doc.setTextColor(87, 83, 78);
   doc.text("Issued to", margin, y);
@@ -641,20 +725,25 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
   doc.text("Giving", margin, y);
   y += 20;
 
-  doc.setFillColor(247, 241, 231);
-  doc.rect(margin, y - 14, pageWidth - margin * 2, 22, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(120, 113, 108);
-  doc.text("Date", margin + 8, y);
-  doc.text("Type", margin + 110, y);
-  doc.text("Method", margin + 200, y);
-  doc.text("Memo", margin + 290, y);
-  doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
-  y += 14;
+  const drawMemberGivingHeader = () => {
+    doc.setFillColor(247, 241, 231);
+    doc.rect(margin, y - 14, pageWidth - margin * 2, 22, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text("Date", margin + 8, y);
+    doc.text("Type", margin + 110, y);
+    doc.text("Method", margin + 200, y);
+    doc.text("Memo", margin + 290, y);
+    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(28, 25, 23);
+    doc.setFontSize(10);
+  };
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  drawMemberGivingHeader();
+
   const sortedDon = [...m.donations].sort((a, b) => a.donation_date.localeCompare(b.donation_date));
   if (sortedDon.length === 0) {
     doc.setFont("helvetica", "italic");
@@ -664,9 +753,12 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
     doc.setFont("helvetica", "normal");
   } else {
     for (const d of sortedDon) {
-      if (y > 720) {
+      if (y > 700) {
+        drawDocumentFooter(doc);
         doc.addPage();
-        y = margin;
+        y = drawDocumentHeader(doc, m.churchName, `Personal giving & expense report · ${m.periodLabel}`);
+        y = 132;
+        drawMemberGivingHeader();
       }
       doc.setTextColor(28, 25, 23);
       doc.text(formatDateLong(d.donation_date), margin + 8, y);
@@ -691,8 +783,10 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
 
   // ── Expenses & reimbursements ────────────────────────────────────────
   if (y > 700) {
+    drawDocumentFooter(doc);
     doc.addPage();
-    y = margin;
+    y = drawDocumentHeader(doc, m.churchName, `Personal giving & expense report · ${m.periodLabel}`);
+    y = 142;
   }
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
@@ -722,9 +816,29 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
     doc.setFont("helvetica", "normal");
   } else {
     for (const e of m.expenses) {
-      if (y > 720) {
+      if (y > 700) {
+        drawDocumentFooter(doc);
         doc.addPage();
-        y = margin;
+        y = drawDocumentHeader(doc, m.churchName, `Personal giving & expense report · ${m.periodLabel}`);
+        y = 132;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(28, 25, 23);
+        doc.text("Expenses & reimbursements", margin, y);
+        y += 20;
+        doc.setFillColor(247, 241, 231);
+        doc.rect(margin, y - 14, pageWidth - margin * 2, 22, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(120, 113, 108);
+        doc.text("Date", margin + 8, y);
+        doc.text("Description", margin + 110, y);
+        doc.text("Category", margin + 260, y);
+        doc.text("Status", margin + 350, y);
+        doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+        y += 14;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
       }
       doc.setTextColor(28, 25, 23);
       doc.text(formatDateLong(e.date), margin + 8, y);
@@ -734,6 +848,13 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
       doc.text(formatCurrency(e.amount), pageWidth - margin - 8, y, { align: "right" });
       y += 16;
     }
+  }
+
+  if (y > 700) {
+    drawDocumentFooter(doc);
+    doc.addPage();
+    y = drawDocumentHeader(doc, m.churchName, `Personal giving & expense report · ${m.periodLabel}`);
+    y = 142;
   }
 
   y += 8;
@@ -759,22 +880,15 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
   doc.setFontSize(9);
   doc.setTextColor(120, 113, 108);
   doc.text(
-    "This personal report summarizes your recorded gifts and expense reimbursements. " +
-      "For tax purposes, use the official annual giving statement.",
+    "This personal report summarizes your recorded contributions and expense reimbursements. " +
+      "For tax purposes, use the official annual contribution statement.",
     margin,
-    Math.min(y + 6, 740),
+    Math.min(y + 6, 720),
     { maxWidth: pageWidth - margin * 2 },
   );
-  doc.setFontSize(8);
-  doc.setTextColor(168, 162, 158);
-  doc.text(
-    `${m.churchName} · Generated ${formatDateLong(new Date())}`,
-    pageWidth - margin,
-    760,
-    { align: "right" },
-  );
+  drawDocumentFooter(doc);
 
-  return doc;
+  return finalizeDocument(doc);
 }
 
 export function downloadMemberReport(m: MemberReportData) {
