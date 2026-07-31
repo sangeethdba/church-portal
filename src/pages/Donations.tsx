@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
-import { Plus, HandCoins, FileDown, Filter, Shield } from "lucide-react";
+import { useNavigate, useOutletContext } from "react-router-dom";
+import { Plus, HandCoins, FileDown, Filter, Shield, Church } from "lucide-react";
 import {
   Button,
   Card,
@@ -79,6 +79,7 @@ const sampleDonorsForPick: { id: string; label: string }[] = [
 ];
 
 export default function Donations() {
+  const navigate = useNavigate();
   const ctx = useOutletContext<{ profile: { id: string; role: string; is_counter?: boolean } | null; isCounter: boolean }>();
   const isAdmin = isAdminRole(ctx.profile?.role);
   const canAccess = isAdmin || ctx.isCounter;
@@ -251,6 +252,8 @@ export default function Donations() {
         subtitle="Every gift, recorded faithfully. Issue annual tax statements in one click."
         badge={`${formatCurrency(totalShown)} (${filtered.length} on screen)`}
         actions={
+          <>
+          <Button iconLeft={<Church className="h-4 w-4" />} variant="outline" onClick={() => navigate("/offerings")}>Record Sunday offering</Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>New donation</Button>
@@ -373,6 +376,7 @@ export default function Donations() {
               </div>
             </DialogContent>
           </Dialog>
+          </>
         }
       />
 
