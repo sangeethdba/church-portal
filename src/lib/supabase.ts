@@ -13,6 +13,7 @@ export type ExpenseStatus =
   | "rejected"
   | "paid"
   | "auto_paid";
+export type DepositStatus = "pending_deposit" | "deposited";
 export type ExpenseCategory =
   | "utilities"
   | "maintenance"

@@ -10,6 +10,7 @@ import Donations from "@/pages/Donations";
 import Expenses from "@/pages/Expenses";
 import TaxReport from "@/pages/TaxReport";
 import Offerings from "@/pages/Offerings";
+import Reports from "@/pages/Reports";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/expenses" element={<Expenses />} />
           <Route path="/tax-report" element={<TaxReport />} />
           <Route path="/offerings" element={<Offerings />} />
+          <Route path="/reports" element={<Reports />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
