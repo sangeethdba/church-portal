@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
   Shield, UserCheck, Lock, Banknote,
@@ -30,6 +30,7 @@ const FALLBACK_EXPENSES: Expense[] = [
 
 export default function Dashboard() {
   const { profile } = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
+  const navigate = useNavigate();
   const [kpis, setKpis] = useState<DashboardKpis>(zeroKpis);
   const [recentDonations, setRecentDonations] = useState<Donation[]>(FALLBACK_DONATIONS);
   const [recentExpenses, setRecentExpenses] = useState<Expense[]>(FALLBACK_EXPENSES);
@@ -199,7 +200,7 @@ export default function Dashboard() {
                 </DialogContent>
               </Dialog>
             )}
-            <Button iconLeft={<Plus className="h-4 w-4" />} variant="solid">New donation</Button>
+            <Button iconLeft={<Plus className="h-4 w-4" />} variant="solid" onClick={() => navigate("/offerings")}>New donation</Button>
           </div>
         }
       />
