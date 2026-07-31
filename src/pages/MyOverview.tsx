@@ -89,7 +89,7 @@ export function MemberOverview() {
     const reimbursedTotal = periodExpenses.filter((e) => e.status === "paid" || e.status === "auto_paid").reduce((s, e) => s + Number(e.amount ?? 0), 0);
     const outstandingTotal = periodExpenses.filter((e) => e.status === "pending" || e.status === "approved").reduce((s, e) => s + Number(e.amount ?? 0), 0);
     downloadMemberReport({
-      churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
+      churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Atlanta Little Flock Church",
       memberName: profile.full_name,
       periodLabel: range.label,
       donations,

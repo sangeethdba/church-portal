@@ -174,7 +174,7 @@ export default function Offerings() {
     const denomEntries: OfferingDenomEntry[] = DENOMS
       .map((d) => ({ denomination: d, count: Number(breakdown[d]) || 0, subtotal: (Number(breakdown[d]) || 0) * d }))
       .filter((e) => e.count > 0);
-    const churchName = (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church";
+    const churchName = (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Atlanta Little Flock Church";
     const checks = checksData.map((c) => ({ donorName: c.donor_name || "—", checkNumber: c.check_number ?? "", amount: Number(c.amount) || 0 }));
     const deductions = (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [];
     const counter1Name = counterName(o.counter_1_id);
@@ -324,7 +324,7 @@ export default function Offerings() {
     checks: checks.map((c) => ({ donorName: c.donorName || "—", checkNumber: c.checkNumber, amount: Number(c.amount) || 0 })),
     totalChecks,
     totalDeposit: depositTotal,
-    churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Grace Community Church",
+    churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Atlanta Little Flock Church",
     recordedBy: ctx.profile?.full_name ?? "Admin",
     counter1Name: ctx.profile?.full_name ?? "Counter 1",
     counter2Name: counterList.find((c) => c.id === counter2Id)?.full_name ?? "Counter 2",

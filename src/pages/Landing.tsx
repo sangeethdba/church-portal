@@ -1,17 +1,7 @@
 import { Link } from "react-router-dom";
 import {
-  HandCoins,
-  Receipt,
-  FileText,
-  Shield,
-  Sparkles,
-  ArrowRight,
-  Database,
-  Cloud,
-  Lock,
-  Heart,
-  Wallet,
-  ScrollText,
+  HandCoins, Receipt, FileText, Shield, Sparkles, ArrowRight, Banknote,
+  Heart, Wallet, PieChart, CalendarDays, Users, Globe,
 } from "lucide-react";
 import { Button, Badge } from "@/components/ui";
 import Logo from "@/components/Logo";
@@ -28,52 +18,52 @@ function useAuthedRedirect() {
 
 const features = [
   {
-    icon: <HandCoins className="h-5 w-5" />,
-    title: "Member-submitted reimbursements",
-    body: "Congregants drop a receipt, add an amount, and the treasurer sees it in a single queue.",
+    icon: <Banknote className="h-5 w-5" />,
+    title: "Sunday offerings, counted right",
+    body: "Cash by denomination, individual checks per donor, dual-counter sign-off, and a printable bank deposit slip for every service.",
   },
   {
-    icon: <Wallet className="h-5 w-5" />,
-    title: "Church-direct expense ledger",
-    body: "Pastors and treasurers log rent, utilities, and outreach costs the moment they happen.",
+    icon: <Receipt className="h-5 w-5" />,
+    title: "Member reimbursements with receipts",
+    body: "Members attach each bill, explain missing receipts, and reply to clarification — the treasurer reviews and settles with bank proof.",
+  },
+  {
+    icon: <CalendarDays className="h-5 w-5" />,
+    title: "Event-tagged expenses",
+    body: "Tag spend to VBS, the annual conference, Sunday snacks, youth meetings — and see each event's true cost.",
+  },
+  {
+    icon: <PieChart className="h-5 w-5" />,
+    title: "Category spend reports",
+    body: "Rent, salaries, missions, travel, supplies — one chart shows where the money goes, so the church can steward it better.",
   },
   {
     icon: <FileText className="h-5 w-5" />,
-    title: "Tax-ready statements in one click",
-    body: "Hand donors a clean, signed PDF of every gift in the calendar year — IRS-friendly.",
+    title: "Annual tax statements",
+    body: "The treasurer generates IRS-friendly giving statements and shares them with each member — one click per donor.",
   },
   {
-    icon: <Lock className="h-5 w-5" />,
-    title: "Row-level security on every table",
-    body: "Members see only their own giving. Treasurers see the church. Nobody sees both.",
-  },
-  {
-    icon: <ScrollText className="h-5 w-5" />,
-    title: "Auto-paid reimbursement flow",
-    body: "Approve a request, mark it auto-paid, and the audit log knows who did it and when.",
-  },
-  {
-    icon: <Heart className="h-5 w-5" />,
-    title: "Donor directory that grows with you",
-    body: "Family accounts, contact info, and a per-donor history without keeping a parallel spreadsheet.",
+    icon: <Shield className="h-5 w-5" />,
+    title: "Private by default",
+    body: "Members see only their own giving and bills. Treasurers see the church. Row-level security keeps it that way.",
   },
 ];
 
 const steps = [
   {
     n: "01",
-    title: "Set up Supabase in 5 minutes",
-    body: "Create a free project, paste two API keys into Freebuff — that's it. No credit card.",
+    title: "Sign in with your church account",
+    body: "Members and treasurers sign in with Google or email. New accounts land in the access list for approval.",
   },
   {
     n: "02",
-    title: "Invite treasurers and members",
-    body: "Sign-ups land in your invite list. Promote treasurers to admin/treasurer with one SQL update.",
+    title: "Record offerings & expenses",
+    body: "Count Sunday's offering with a second counter, log direct debits like rent and utilities, and approve member reimbursements.",
   },
   {
     n: "03",
-    title: "Start tracking faithfully",
-    body: "Donations, expenses, year-end statements. Everything stays in Postgres — query it however you like.",
+    title: "Review and share",
+    body: "Watch category charts, print deposit slips, settle reimbursements with bank proof, and issue year-end statements.",
   },
 ];
 
@@ -90,11 +80,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-parchment-50 text-stone-900 antialiased">
       {/* Top nav */}
-      <header
-        className={`sticky top-0 z-50 transition ${
-          scrolled ? "border-b border-stone-200/70 glass" : ""
-        }`}
-      >
+      <header className={`sticky top-0 z-50 transition ${scrolled ? "border-b border-stone-200/70 glass" : ""}`}>
         <div className="container mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="text-stone-900">
             <Logo size={32} />
@@ -102,18 +88,16 @@ export default function Landing() {
           <nav className="hidden items-center gap-8 text-sm text-stone-700 md:flex">
             <a href="#features" className="hover:text-stone-900">Features</a>
             <a href="#how" className="hover:text-stone-900">How it works</a>
-            <a href="#stack" className="hover:text-stone-900">Stack</a>
+            <a href="https://atlantalittleflock.org" target="_blank" rel="noreferrer" className="hover:text-stone-900">
+              Church website
+            </a>
           </nav>
           <div className="flex items-center gap-2">
             <Link to="/login">
-              <Button variant="outline" size="md">
-                Sign in
-              </Button>
+              <Button variant="outline" size="md">Sign in</Button>
             </Link>
             <Link to={configured ? "/login?provider=google" : "/login"}>
-              <Button size="md" iconRight={<ArrowRight className="h-4 w-4" />}>
-                Open the portal
-              </Button>
+              <Button size="md" iconRight={<ArrowRight className="h-4 w-4" />}>Open the portal</Button>
             </Link>
           </div>
         </div>
@@ -126,14 +110,14 @@ export default function Landing() {
           aria-hidden="true"
           style={{
             background:
-              "radial-gradient(70% 50% at 30% 10%, rgba(79,70,229,0.10), transparent 60%), radial-gradient(50% 40% at 80% 30%, rgba(245,158,11,0.10), transparent 60%)",
+              "radial-gradient(70% 50% at 30% 10%, rgba(79,70,229,0.10), transparent 60%), radial-gradient(50% 40% at 80% 30%, rgba(180,83,9,0.12), transparent 60%)",
           }}
         />
         <div className="container mx-auto max-w-6xl px-6 py-24 sm:py-28">
           <div className="flex flex-col items-center text-center">
             <Badge tone="indigo" className="mb-6">
               <Sparkles className="h-3 w-3" />
-              For local churches · Powered by Supabase + Vercel
+              Atlanta Little Flock Church · Stewardship Portal
             </Badge>
             <h1 className="font-serif text-balance text-4xl font-semibold leading-tight text-stone-900 sm:text-6xl">
               Faithful stewardship,
@@ -141,37 +125,36 @@ export default function Landing() {
               <span className="gradient-text-serif">beautifully tracked.</span>
             </h1>
             <p className="mt-6 max-w-2xl text-balance text-lg leading-relaxed text-stone-600">
-              GraceLedger is the free, secure cloud home for your church's
-              giving, expenses, and year-end giving statements. Built for the
-              treasurer who wants clarity without spreadsheets.
+              The secure cloud home for our church's offerings, expenses, and year-end giving
+              statements — from Sunday's counting table to the annual review of where every
+              dollar was stewarded.
             </p>
             <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
               <Link to="/login">
-                <Button size="lg" iconLeft={<Receipt className="h-4 w-4" />}>
+                <Button size="lg" iconLeft={<HandCoins className="h-4 w-4" />}>
                   Sign in with Google
                 </Button>
               </Link>
               <Link to="/login">
-                <Button size="lg" variant="outline">
-                  Continue with email
-                </Button>
+                <Button size="lg" variant="outline">Continue with email</Button>
               </Link>
             </div>
-            <p className="mt-4 text-sm text-stone-500">
-              No credit card. Free forever for local congregations.
+            <p className="mt-6 flex items-center gap-2 font-serif text-lg italic text-stone-500">
+              <Heart className="h-4 w-4 text-amber-600" />
+              “Fear not, little flock…” — Luke 12:32
             </p>
           </div>
         </div>
       </section>
 
       {/* Trust strip */}
-      <section id="stack" className="border-y border-stone-200/70 bg-white/60 backdrop-blur">
+      <section className="border-y border-stone-200/70 bg-white/60 backdrop-blur">
         <div className="container mx-auto grid max-w-6xl grid-cols-2 items-center gap-6 px-6 py-6 sm:grid-cols-4">
           {[
-            { icon: <Database className="h-4 w-4" />, label: "Postgres + RLS" },
-            { icon: <Cloud className="h-4 w-4" />, label: "Vercel free tier" },
-            { icon: <Shield className="h-4 w-4" />, label: "Encrypted receipts" },
-            { icon: <Lock className="h-4 w-4" />, label: "1–2 super admins" },
+            { icon: <Banknote className="h-4 w-4" />, label: "Weekly deposit slips" },
+            { icon: <Users className="h-4 w-4" />, label: "Dual-counter sign-off" },
+            { icon: <PieChart className="h-4 w-4" />, label: "Category spend charts" },
+            { icon: <Shield className="h-4 w-4" />, label: "Members see only their own" },
           ].map((t) => (
             <div key={t.label} className="flex items-center justify-center gap-2 text-sm text-stone-600">
               <span className="text-accent">{t.icon}</span>
@@ -185,11 +168,11 @@ export default function Landing() {
       <section id="features" className="container mx-auto max-w-6xl px-6 py-20">
         <div className="max-w-2xl">
           <h2 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">
-            Everything a modern treasurer needs — nothing they don't.
+            Everything a faithful treasurer needs — nothing they don't.
           </h2>
           <p className="mt-4 text-stone-600">
-            Six careful flows replace the binder full of spreadsheets. Audit
-            trails, role-based access, and printable PDFs are first-class citizens.
+            From the offering plate to the bank deposit, from a member's receipt to the yearly
+            review — every flow is recorded, verifiable, and reportable.
           </p>
         </div>
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -212,15 +195,13 @@ export default function Landing() {
       <section id="how" className="border-t border-stone-200/70 bg-parchment-100/40">
         <div className="container mx-auto max-w-6xl px-6 py-20">
           <h2 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">
-            Up and running before lunch.
+            From Sunday to year-end, in three steps.
           </h2>
           <div className="mt-12 grid gap-6 md:grid-cols-3">
             {steps.map((s) => (
               <div key={s.n} className="rounded-xl border border-stone-200 bg-white p-6">
                 <div className="font-serif text-3xl font-semibold text-accent">{s.n}</div>
-                <div className="mt-3 font-serif text-lg font-semibold text-stone-900">
-                  {s.title}
-                </div>
+                <div className="mt-3 font-serif text-lg font-semibold text-stone-900">{s.title}</div>
                 <p className="mt-1.5 text-sm leading-relaxed text-stone-600">{s.body}</p>
               </div>
             ))}
@@ -233,27 +214,22 @@ export default function Landing() {
         <div
           className="pointer-events-none absolute inset-0 -z-10"
           aria-hidden="true"
-          style={{
-            background:
-              "linear-gradient(180deg, transparent 0%, rgba(79,70,229,0.08) 50%, transparent 100%)",
-          }}
+          style={{ background: "linear-gradient(180deg, transparent 0%, rgba(79,70,229,0.08) 50%, transparent 100%)" }}
         />
         <div className="container mx-auto max-w-4xl px-6 py-24 text-center">
           <h2 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">
-            Ready to bring clarity to your church finances?
+            Ready to bring clarity to our church finances?
           </h2>
           <p className="mt-3 text-stone-600">
-            Spin up a Supabase project, paste your keys into Freebuff, and ship.
+            Sign in with your church account and let the portal handle the faithful details.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link to="/login">
-              <Button size="lg" iconRight={<ArrowRight className="h-4 w-4" />}>
-                Open the portal
-              </Button>
+              <Button size="lg" iconRight={<ArrowRight className="h-4 w-4" />}>Open the portal</Button>
             </Link>
-            <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer">
-              <Button size="lg" variant="outline">
-                Create a free Supabase project
+            <a href="https://atlantalittleflock.org" target="_blank" rel="noreferrer">
+              <Button size="lg" variant="outline" iconLeft={<Globe className="h-4 w-4" />}>
+                Visit our church website
               </Button>
             </a>
           </div>
@@ -265,14 +241,11 @@ export default function Landing() {
         <div className="container mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-stone-500 sm:flex-row">
           <div className="flex items-center gap-2">
             <Logo size={24} />
-            <span>© {new Date().getFullYear()} GraceLedger</span>
+            <span>© {new Date().getFullYear()} Atlanta Little Flock Church</span>
           </div>
           <div className="flex items-center gap-4">
-            <a href="https://supabase.com" target="_blank" rel="noreferrer" className="hover:text-stone-700">
-              Supabase
-            </a>
-            <a href="https://vercel.com" target="_blank" rel="noreferrer" className="hover:text-stone-700">
-              Vercel
+            <a href="https://atlantalittleflock.org" target="_blank" rel="noreferrer" className="hover:text-stone-700">
+              atlantalittleflock.org
             </a>
             <a href="https://github.com/sangeethdba/church-portal" target="_blank" rel="noreferrer" className="hover:text-stone-700">
               GitHub

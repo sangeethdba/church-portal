@@ -106,7 +106,7 @@ export default function TaxReport() {
       total: totalAmount,
       churchName:
         (typeof window !== "undefined" && localStorage.getItem("church_name")) ||
-        "Grace Community Church",
+        "Atlanta Little Flock Church",
     };
     downloadStatement(stmt);
   };

@@ -230,7 +230,7 @@ export default function Donations() {
       total: donorDonations.reduce((s, d) => s + Number(d.amount), 0),
       churchName:
         (typeof window !== "undefined" && localStorage.getItem("church_name")) ||
-        "Grace Community Church",
+        "Atlanta Little Flock Church",
     };
     downloadStatement(statement);
   };

@@ -105,7 +105,7 @@ export default function AppShell() {
           <div className="mt-8 rounded-xl border border-stone-200 bg-parchment-100/60 p-4">
             <div className="flex items-center gap-2 font-serif font-semibold text-stone-900">
               <Church className="h-4 w-4 text-accent" />
-              {ctx.profile?.church_name ?? "Your church"}
+              {ctx.profile?.church_name ?? "Atlanta Little Flock Church"}
             </div>
             <div className="mt-2 flex items-center gap-2">
               <Badge tone={isAdmin ? "indigo" : ctx.isCounter ? "amber" : "neutral"}>

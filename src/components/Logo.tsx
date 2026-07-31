@@ -9,31 +9,26 @@ interface LogoProps {
 export default function Logo({ className, showWordmark = true, size = 36 }: LogoProps) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
-      <svg
-        viewBox="0 0 64 64"
-        width={size}
-        height={size}
-        aria-hidden="true"
-        className="text-current"
-      >
+      <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true" className="text-current">
         <defs>
-          <linearGradient id="gllogo" x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id="alfgrad" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#4f46e5" />
-            <stop offset="100%" stopColor="#f59e0b" />
+            <stop offset="100%" stopColor="#b45309" />
           </linearGradient>
         </defs>
-        <rect x="6" y="6" width="52" height="52" rx="14" fill="url(#gllogo)" />
-        <path
-          d="M32 14 L40 30 H36 L36 50 H28 L28 30 H24 Z"
-          fill="#fdfaf6"
-          strokeWidth="1.5"
-          stroke="#fdfaf6"
-        />
-        <circle cx="32" cy="34" r="2" fill="#4f46e5" />
+        <rect x="5" y="5" width="54" height="54" rx="16" fill="url(#alfgrad)" />
+        {/* The little flock — three birds above the cross */}
+        <g fill="#fdfaf6">
+          <path d="M15 15 q4 -5 8 0 q-4 -2 -8 0" />
+          <path d="M25 10 q4 -5 8 0 q-4 -2 -8 0" />
+          <path d="M35 15 q4 -5 8 0 q-4 -2 -8 0" />
+        </g>
+        {/* Cross */}
+        <path d="M32 26 V47 M23 34.5 H41" stroke="#fdfaf6" strokeWidth="5" strokeLinecap="round" />
       </svg>
       {showWordmark && (
-        <span className="font-serif text-xl font-semibold tracking-tight text-stone-900">
-          GraceLedger
+        <span className="font-serif text-lg font-semibold leading-tight tracking-tight text-stone-900">
+          Atlanta Little Flock
         </span>
       )}
     </div>
