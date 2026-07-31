@@ -117,6 +117,7 @@ export default function Offerings() {
   const [deductions, setDeductions] = useState<Deduction[]>([]);
   const [checks, setChecks] = useState<CheckEntry[]>([]);
   const [notes, setNotes] = useState("");
+  const [activeSuggestKey, setActiveSuggestKey] = useState<string | null>(null);
 
   // ── Counter sign-off state ────────────────────────────────────────────
   const ctx = useOutletContext<{ profile: { id: string; full_name?: string | null } | null; isCounter: boolean }>();
@@ -198,6 +199,20 @@ export default function Offerings() {
 
   const updateCheck = (key: string, patch: Partial<CheckEntry>) => {
     setChecks((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  };
+
+  // Live member suggestions as the counter types a donor name
+  const suggestionsFor = (query: string) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return donorList
+      .filter((d) => `${d.first_name} ${d.last_name}`.toLowerCase().includes(q))
+      .slice(0, 8);
+  };
+
+  const pickDonor = (key: string, d: Donor) => {
+    updateCheck(key, { donorId: d.id, donorName: `${d.first_name} ${d.last_name}` });
+    setActiveSuggestKey(null);
   };
 
   const addDeduction = () => {
@@ -486,26 +501,51 @@ export default function Offerings() {
                   <div key={ch.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-100 bg-white p-2">
                     <div className="flex-1 min-w-[160px]">
                       <Label className="text-xs">Donor</Label>
-                      <input
-                        list={`donors-${ch.key}`}
-                        value={ch.donorName}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          updateCheck(ch.key, { donorName: val });
-                          const match = donorList.find(
-                            (d) => `${d.first_name} ${d.last_name}`.toLowerCase() === val.toLowerCase()
-                          );
-                          if (match) updateCheck(ch.key, { donorId: match.id, donorName: `${match.first_name} ${match.last_name}` });
-                          else updateCheck(ch.key, { donorId: "" });
-                        }}
-                        placeholder="Type donor name..."
-                        className="mt-1 w-full rounded-md border border-stone-200 px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                      />
-                      <datalist id={`donors-${ch.key}`}>
-                        {donorList.map((d) => (
-                          <option key={d.id} value={`${d.first_name} ${d.last_name}`} />
-                        ))}
-                      </datalist>
+                      <div className="relative">
+                        <input
+                          value={ch.donorName}
+                          onChange={(e) => {
+                            updateCheck(ch.key, { donorName: e.target.value, donorId: "" });
+                            setActiveSuggestKey(ch.key);
+                          }}
+                          onFocus={() => setActiveSuggestKey(ch.key)}
+                          onBlur={() => setActiveSuggestKey(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const first = suggestionsFor(ch.donorName)[0];
+                              if (first) { e.preventDefault(); pickDonor(ch.key, first); }
+                            } else if (e.key === "Escape") {
+                              setActiveSuggestKey(null);
+                            }
+                          }}
+                          placeholder="Type member name…"
+                          className="mt-1 w-full rounded-md border border-stone-200 px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                        />
+                        {activeSuggestKey === ch.key && ch.donorName.trim() !== "" && (
+                          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 shadow-lg">
+                            {suggestionsFor(ch.donorName).length === 0 ? (
+                              <li className="px-3 py-2 text-xs text-amber-600">
+                                No match — new member will be created on save
+                              </li>
+                            ) : (
+                              suggestionsFor(ch.donorName).map((d) => (
+                                <li
+                                  key={d.id}
+                                  onMouseDown={(e) => { e.preventDefault(); pickDonor(ch.key, d); }}
+                                  className="cursor-pointer px-3 py-2 text-sm text-stone-700 hover:bg-accent-soft hover:text-accent"
+                                >
+                                  {d.first_name} {d.last_name}
+                                </li>
+                              ))
+                            )}
+                          </ul>
+                        )}
+                      </div>
+                      {ch.donorName.trim() !== "" && !ch.donorId && (
+                        <p className="mt-1 text-[11px] font-medium text-amber-600">
+                          New member — auto-created on save. Add details later in Donors.
+                        </p>
+                      )}
                     </div>
                     <div className="w-24">
                       <Label className="text-xs">Check #</Label>
