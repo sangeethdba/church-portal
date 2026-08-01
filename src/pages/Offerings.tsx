@@ -364,101 +364,48 @@ export default function Offerings() {
     };
 
     if (supabase) {
-      // 1. Insert offering
-      const { data: offData, error: offErr } = await supabase
-        .from("offerings")
-        .insert(payload)
-        .select()
-        .maybeSingle();
-
-      if (offErr) {
-        console.warn("Insert offering failed:", offErr);
-        setSignOffError(offErr.message || "Could not save the offering. Please try again.");
-        setSaving(false);
-        return;
-      }
-      const offeringId = (offData as Offering).id;
-
-      // 2. Create check donations
-      // A new member can give two or more checks (one per family member) — the
-      // same typed name on multiple rows must resolve to ONE donor record.
-      const createdNewDonors = new Map<string, string>(); // normalized name -> donor id
-      for (const ch of checks) {
-        const amt = Number(ch.amount);
-        if (!amt || amt <= 0) continue;
-
-        let donorId = ch.donorId;
-        if (!donorId && ch.donorName.trim()) {
-          const key = normName(ch.donorName);
-          const existing = createdNewDonors.get(key);
-          if (existing) {
-            donorId = existing;
-          } else {
-            const [firstName, ...lastParts] = ch.donorName.trim().split(" ");
-            const lastName = lastParts.join(" ") || firstName;
-            const { data: newDonor } = await supabase
-              .from("donors")
-              .insert({ first_name: firstName, last_name: lastName })
-              .select("id")
-              .maybeSingle();
-            if (newDonor) {
-              donorId = newDonor.id;
-              createdNewDonors.set(key, newDonor.id);
-            }
-          }
-        }
-
-        const { data: donData, error: donErr } = await supabase
-          .from("donations")
-          .insert({
-            donor_id: donorId || null,
-            donor_name: ch.donorName.trim() || "Anonymous",
-            amount: amt,
-            donation_type: "offering",
-            payment_method: "check",
-            check_number: ch.checkNumber || null,
-            donation_date: svcDate,
-            entered_by: recordedBy,
-            offering_id: offeringId,
-          })
-          .select("id")
-          .maybeSingle();
-        if (donErr) console.warn("Donation insert failed:", donErr);
-
-        await supabase.from("offering_checks").insert({
-          offering_id: offeringId,
-          donor_id: donorId || null,
+      // Build the p_checks array from local state
+      const p_checks = checks
+        .filter((ch) => Number(ch.amount) > 0)
+        .map((ch) => ({
           donor_name: ch.donorName.trim() || "Anonymous",
+          donor_id: ch.donorId || null,
           check_number: ch.checkNumber || null,
-          amount: amt,
-          donation_id: donData?.id || null,
-        });
-      }
+          amount: Number(ch.amount),
+        }));
 
-      // 3. Counter sign-off via RPC
-      const { error: signErr } = await supabase.rpc("sign_offering", {
-        p_offering_id: offeringId,
+      // Atomic: insert offering + checks + PIN verify in one transaction.
+      // If PIN is wrong the DB raises an exception and nothing is persisted.
+      const { error: rpcErr } = await supabase.rpc("record_offering", {
+        p_service_date: svcDate,
+        p_service_name: svcName,
+        p_cash_breakdown: denoms,
+        p_cash_deductions: deductions,
+        p_cash_net: netCash,
+        p_check_amount: totalChecks,
+        p_check_count: checks.length,
+        p_total_amount: depositTotal,
+        p_notes: notes || null,
+        p_checks,
         p_counter_1_id: counter1Id,
         p_pin_1: counter1Pin,
         p_counter_2_id: counter2Id,
         p_pin_2: counter2Pin,
       });
 
-      if (signErr) {
-        console.warn("Sign-off failed:", signErr);
-        setSignOffError(signErr.message || "PIN verification failed. Check PINs and try again.");
+      if (rpcErr) {
+        console.warn("Offering recording failed:", rpcErr);
+        setSignOffError(rpcErr.message || "PIN verification failed. Check PINs and try again.");
         setSaving(false);
         return;
       }
 
-      // 4. Refresh
+      // Refresh & show ledger
       const { data: fresh } = await supabase
         .from("offerings")
         .select("*")
         .order("service_date", { ascending: false });
       if (fresh) setOfferings(fresh as Offering[]);
-
-      // Show the deposit slip / ledger in-app (replaces silent auto-download)
       openLedgerPreview(buildSummary());
     } else {
       // Demo mode
