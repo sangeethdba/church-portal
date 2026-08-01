@@ -86,11 +86,6 @@ function makeOffering(date: string, name: string, cash: number, checks: number, 
   };
 }
 
-const SAMPLE_OFFERINGS: Offering[] = [
-  makeOffering(new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10), "Sunday Service", 342.5, 1280, 4),
-  makeOffering(new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10), "Sunday Service", 275, 950, 3),
-  makeOffering(new Date(Date.now() - 17 * 86400000).toISOString().slice(0, 10), "Christmas Eve", 610, 2100, 7),
-];
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function emptyDenoms(): DenomCounts {
@@ -101,7 +96,7 @@ function emptyDenoms(): DenomCounts {
 
 // ── Component ──────────────────────────────────────────────────────────────
 export default function Offerings() {
-  const [offerings, setOfferings] = useState<Offering[]>(SAMPLE_OFFERINGS);
+  const [offerings, setOfferings] = useState<Offering[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
