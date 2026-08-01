@@ -63,13 +63,14 @@ export default function Dashboard() {
 
   const loadProfiles = async () => {
     if (!supabase) return;
-    const [profilesRes, donorsRes] = await Promise.all([
-      supabase.from("profiles").select("id, email, full_name, role, is_counter, portal_access, linked_donor_id").order("full_name"),
-      supabase.from("donors").select("id, first_name, last_name").order("last_name"),
-    ]);
-    if (profilesRes.data) { setAllProfiles(profilesRes.data as Profile[]); setPinInputs({}); }
-    if (donorsRes.data) {
-      setDonorOptions((donorsRes.data as { id: string; first_name: string; last_name: string }[]).map((d) => ({ id: d.id, label: `${d.first_name} ${d.last_name}` })));
+    // Use security-definer RPC to bypass fragile profiles RLS chain
+    const { data, error } = await supabase.rpc("get_all_profiles");
+    if (error) { console.warn("loadProfiles failed:", error); return; }
+    const result = data as { profiles: Array<{ id: string; email: string; full_name: string; role: string; is_counter: boolean; portal_access: boolean; linked_donor_id: string | null }>; donorOptions: Array<{ id: string; label: string }> };
+    if (result) {
+      setAllProfiles(result.profiles as Profile[]);
+      setPinInputs({});
+      setDonorOptions(result.donorOptions ?? []);
     }
   };
 
