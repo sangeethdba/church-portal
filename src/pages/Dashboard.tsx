@@ -54,85 +54,106 @@ export default function Dashboard() {
   const isAdmin = isAdminRole(profile?.role);
   const [counterOpen, setCounterOpen] = useState(false);
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+  const [draftProfiles, setDraftProfiles] = useState<Profile[]>([]);
   const [donorOptions, setDonorOptions] = useState<{ id: string; label: string }[]>([]);
   const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<"" | "saved" | "error">("");
   const [quickCreateFor, setQuickCreateFor] = useState<string | null>(null);
   const [quickCreateName, setQuickCreateName] = useState("");
   const [quickCreateSaving, setQuickCreateSaving] = useState(false);
 
   const loadProfiles = async () => {
     if (!supabase) return;
-    // Use security-definer RPC to bypass fragile profiles RLS chain
     const { data, error } = await supabase.rpc("get_all_profiles");
     if (error) { console.warn("loadProfiles failed:", error); return; }
-    const result = data as { profiles: Array<{ id: string; email: string; full_name: string; role: string; is_counter: boolean; portal_access: boolean; linked_donor_id: string | null }>; donorOptions: Array<{ id: string; label: string }> };
+    const result = data as { profiles: Profile[]; donorOptions: { id: string; label: string }[] };
     if (result) {
-      setAllProfiles(result.profiles as Profile[]);
+      setAllProfiles(result.profiles);
+      setDraftProfiles(result.profiles.map((p) => ({ ...p })));
       setPinInputs({});
       setDonorOptions(result.donorOptions ?? []);
+      setSaveMessage("");
     }
   };
 
-  const togglePortalAccess = async (userId: string, newVal: boolean) => {
-    if (!supabase) return;
-    setSavingId(userId);
-    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "toggle_portal", new_val: newVal });
-    if (error) { console.warn("togglePortalAccess failed:", error); setSavingId(null); return; }
-    setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, portal_access: newVal } : p)));
-    setSavingId(null);
+  const hasUnsavedChanges = draftProfiles.some((dp) => {
+    const orig = allProfiles.find((op) => op.id === dp.id);
+    if (!orig) return false;
+    return dp.portal_access !== orig.portal_access || dp.is_counter !== orig.is_counter || dp.linked_donor_id !== orig.linked_donor_id;
+  });
+
+  const draftTogglePortal = (userId: string) => {
+    setSaveMessage("");
+    setDraftProfiles((prev) => prev.map((p) => (p.id === userId && !isAdminRole(p.role) ? { ...p, portal_access: !p.portal_access } : p)));
   };
 
-  const linkDonor = async (userId: string, donorId: string) => {
-    if (!supabase) return;
-    setSavingId(userId);
-    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "link_donor", donor_id: donorId });
-    if (error) { console.warn("linkDonor failed:", error); setSavingId(null); return; }
-    setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: donorId } : p)));
-    setSavingId(null);
+  const draftToggleCounter = (userId: string) => {
+    setSaveMessage("");
+    setDraftProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, is_counter: !p.is_counter } : p)));
   };
 
-  const createAndLinkDonor = async (userId: string) => {
+  const draftLinkDonor = (userId: string, donorId: string) => {
+    setSaveMessage("");
+    setDraftProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: donorId } : p)));
+  };
+
+  const draftCreateAndLink = async (userId: string) => {
     if (!supabase || !quickCreateName.trim()) return;
     const parts = quickCreateName.trim().split(/\s+/);
     const firstName = parts[0];
     const lastName = parts.slice(1).join(" ") || firstName;
     setQuickCreateSaving(true);
     const { data, error } = await supabase.rpc("admin_manage_profile", {
-      target_user_id: userId,
-      action: "create_link_donor",
-      donor_first: firstName,
-      donor_last: lastName,
+      target_user_id: userId, action: "create_link_donor",
+      donor_first: firstName, donor_last: lastName,
     });
     if (error) { console.warn("Create donor failed:", error); setQuickCreateSaving(false); return; }
     const result = data as { ok: boolean; id: string; label: string } | null;
     if (result?.ok) {
       setDonorOptions((prev) => [...prev, { id: result.id, label: result.label }]);
-      setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: result.id } : p)));
+      setDraftProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: result.id } : p)));
     }
     setQuickCreateName("");
     setQuickCreateFor(null);
     setQuickCreateSaving(false);
   };
 
-  const toggleCounter = async (userId: string, newVal: boolean) => {
-    if (!supabase) return;
-    setSavingId(userId);
-    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "toggle_counter", new_val: newVal });
-    if (error) { console.warn("toggleCounter failed:", error); setSavingId(null); return; }
-    setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, is_counter: newVal } : p)));
-    setSavingId(null);
-  };
-
-  const setPin = async (userId: string) => {
-    if (!supabase) return;
+  const draftSetPin = (userId: string) => {
     const pin = pinInputs[userId];
     if (!pin || pin.length < 3) return;
-    setSavingId(userId);
-    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "set_pin", pin_plain: pin });
-    if (error) { console.warn("setPin failed:", error); setSavingId(null); return; }
+    supabase?.rpc("admin_manage_profile", { target_user_id: userId, action: "set_pin", pin_plain: pin });
     setPinInputs((prev) => ({ ...prev, [userId]: "" }));
-    setSavingId(null);
+  };
+
+  const saveAllChanges = async () => {
+    if (!supabase || savingAll) return;
+    setSavingAll(true);
+    setSaveMessage("");
+    let anyError = false;
+    for (const dp of draftProfiles) {
+      const orig = allProfiles.find((op) => op.id === dp.id);
+      if (!orig) continue;
+      if (dp.portal_access !== orig.portal_access) {
+        const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: dp.id, action: "toggle_portal", new_val: dp.portal_access });
+        if (error) anyError = true;
+      }
+      if (dp.is_counter !== orig.is_counter) {
+        const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: dp.id, action: "toggle_counter", new_val: dp.is_counter });
+        if (error) anyError = true;
+      }
+      if (dp.linked_donor_id !== orig.linked_donor_id && dp.linked_donor_id) {
+        const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: dp.id, action: "link_donor", donor_id: dp.linked_donor_id });
+        if (error) anyError = true;
+      }
+    }
+    if (!anyError) {
+      setAllProfiles(draftProfiles.map((p) => ({ ...p })));
+      setSaveMessage("saved");
+    } else {
+      setSaveMessage("error");
+    }
+    setSavingAll(false);
   };
 
   useEffect(() => {
@@ -219,22 +240,28 @@ export default function Dashboard() {
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Manage members & access</DialogTitle><DialogDescription>Approve who can use the portal, link members to donor records, and designate counters with sign-off PINs.</DialogDescription></DialogHeader>
                   <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600"><Shield className="mb-1 inline h-4 w-4 text-amber-500" /> Anyone with a Google account can sign in — but only members with <strong>Portal access</strong> approved here can view data or submit expenses.</div>
+                  {hasUnsavedChanges && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                      ⚠ You have unsaved changes. Scroll down and click <strong>Save changes</strong> to apply them.
+                    </div>
+                  )}
                   <div className="mt-3 space-y-2">
-                    {allProfiles.map((p) => (
+                    {draftProfiles.map((p) => (
                       <div key={p.id} className="rounded-lg border border-stone-100 px-3 py-2.5 hover:bg-stone-50/50">
                         <div className="flex items-center gap-3">
                           {/* Portal access toggle */}
                           <div className="flex items-center gap-1.5">
-                            <button type="button" onClick={() => togglePortalAccess(p.id, !p.portal_access)} disabled={savingId === p.id || isAdminRole(p.role)}
-                              title={isAdminRole(p.role) ? "Admins always have access" : "Toggle portal access"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-indigo-500" : "bg-stone-300"} ${savingId === p.id ? "opacity-50" : ""}`}>
+                            <button type="button" onClick={() => draftTogglePortal(p.id)} disabled={isAdminRole(p.role)}
+                              title={isAdminRole(p.role) ? "Admins always have access" : p.portal_access ? "Click to revoke access" : "Click to grant access"}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-indigo-500" : "bg-stone-300"}`}>
                               <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || isAdminRole(p.role) ? "translate-x-6" : "translate-x-1"}`}/>
                             </button>
                             <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Access</span>
                           </div>
                           {/* Counter toggle */}
                           <div className="flex items-center gap-1.5">
-                            <button type="button" onClick={() => toggleCounter(p.id, !p.is_counter)} disabled={savingId === p.id}
+                            <button type="button" onClick={() => draftToggleCounter(p.id)}
+                              title={p.is_counter ? "Click to remove counter role" : "Click to make counter"}
                               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.is_counter ? "bg-emerald-500" : "bg-stone-300"}`}>
                               <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.is_counter ? "translate-x-6" : "translate-x-1"}`}/>
                             </button>
@@ -251,7 +278,7 @@ export default function Dashboard() {
                             <div className="flex-1 min-w-[180px]">
                               <Label className="text-[10px]">Link to donor record</Label>
                               <div className="mt-1 flex items-center gap-1.5">
-                                <Select value={p.linked_donor_id ?? ""} onChange={(e) => e.target.value && linkDonor(p.id, e.target.value)}
+                                <Select value={p.linked_donor_id ?? ""} onChange={(e) => e.target.value && draftLinkDonor(p.id, e.target.value)}
                                   className="h-8 flex-1 text-xs">
                                   <option value="">{donorOptions.length === 0 ? "— No donors yet —" : "— Link donor —"}</option>
                                   {donorOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
@@ -259,9 +286,9 @@ export default function Dashboard() {
                                 {quickCreateFor === p.id ? (
                                   <div className="flex items-center gap-1.5">
                                     <Input autoFocus value={quickCreateName} onChange={(e) => setQuickCreateName(e.target.value)}
-                                      onKeyDown={(e) => { if (e.key === "Enter") createAndLinkDonor(p.id); if (e.key === "Escape") { setQuickCreateFor(null); setQuickCreateName(""); } }}
+                                      onKeyDown={(e) => { if (e.key === "Enter") draftCreateAndLink(p.id); if (e.key === "Escape") { setQuickCreateFor(null); setQuickCreateName(""); } }}
                                       placeholder="First Last" className="h-8 w-32 text-xs" />
-                                    <Button size="sm" variant="solid" disabled={!quickCreateName.trim() || quickCreateSaving} onClick={() => createAndLinkDonor(p.id)}>{quickCreateSaving ? "…" : "Save"}</Button>
+                                    <Button size="sm" variant="solid" disabled={!quickCreateName.trim() || quickCreateSaving} onClick={() => draftCreateAndLink(p.id)}>{quickCreateSaving ? "…" : "Save"}</Button>
                                     <Button size="sm" variant="ghost" onClick={() => { setQuickCreateFor(null); setQuickCreateName(""); }}>✕</Button>
                                   </div>
                                 ) : (
@@ -279,18 +306,34 @@ export default function Dashboard() {
                             {p.is_counter && (
                               <div className="flex items-end gap-2">
                                 <div className="relative"><Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400"/><Input type="password" maxLength={6} placeholder="New PIN" value={pinInputs[p.id] ?? ""} onChange={(e) => setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))} className="h-8 w-24 pl-7 text-xs"/></div>
-                                <Button size="sm" variant="outline" disabled={savingId === p.id || !pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3} onClick={() => setPin(p.id)}>{savingId === p.id ? "…" : "Set"}</Button>
+                                <Button size="sm" variant="outline" disabled={!pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3} onClick={() => draftSetPin(p.id)}>Set</Button>
                               </div>
                             )}
                           </div>
                         )}
                       </div>
                     ))}
-                    {allProfiles.length <= 1 && (
+                    {draftProfiles.length <= 1 && (
                       <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">
                         Only your account is on file so far. Anyone who signs in with Google appears here for approval — then you can grant access, link them to a donor record, or designate them as a counter.
                       </p>
                     )}
+                  </div>
+                  {/* Save button */}
+                  <div className="sticky bottom-0 -mx-6 -mb-6 mt-4 flex items-center justify-between gap-3 rounded-b-xl border-t border-stone-200 bg-white px-6 py-4">
+                    <div className="text-xs text-stone-500">
+                      {saveMessage === "saved" && <span className="text-emerald-600">✓ Changes saved successfully</span>}
+                      {saveMessage === "error" && <span className="text-rose-600">✗ Some changes failed — try again</span>}
+                      {saveMessage === "" && hasUnsavedChanges && <span>You have unsaved changes</span>}
+                      {saveMessage === "" && !hasUnsavedChanges && <span>No changes to save</span>}
+                    </div>
+                    <Button
+                      variant="solid"
+                      disabled={!hasUnsavedChanges || savingAll}
+                      onClick={saveAllChanges}
+                    >
+                      {savingAll ? "Saving…" : "Save changes"}
+                    </Button>
                   </div>
                 </DialogContent>
               </Dialog>
