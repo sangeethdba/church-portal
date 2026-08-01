@@ -247,13 +247,16 @@ export default function Offerings() {
     Promise.all([
       supabase.from("offerings").select("*").order("service_date", { ascending: false }),
       supabase.from("donors").select("id, first_name, last_name").order("last_name"),
-      supabase.from("profiles").select("id, full_name, email").eq("is_counter", true).order("full_name"),
-      supabase.from("profiles").select("id, full_name, email").order("full_name"),
-    ]).then(([{ data: oData }, { data: dData }, { data: cData }, { data: nData }]) => {
+      supabase.rpc("get_all_profiles"),
+    ]).then(([{ data: oData }, { data: dData }, { data: profilesData }]) => {
       if (oData) setOfferings(oData as Offering[]);
       if (dData) setDonorList(dData as Donor[]);
-      if (cData) setCounterList(cData as CounterInfo[]);
-      if (nData) setNameProfiles(nData as CounterInfo[]);
+      if (profilesData) {
+        const pr = profilesData as { profiles: { id: string; full_name?: string | null; email: string; is_counter?: boolean }[] };
+        const allP = pr.profiles ?? [];
+        setCounterList(allP.filter((p) => p.is_counter).map((p) => ({ id: p.id, full_name: p.full_name || p.email || "Unknown", email: p.email })));
+        setNameProfiles(allP.map((p) => ({ id: p.id, full_name: p.full_name || p.email || "Unknown", email: p.email })));
+      }
       setLoading(false);
     });
   }, []);

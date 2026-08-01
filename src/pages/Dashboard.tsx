@@ -4,7 +4,7 @@ import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
   Shield, UserCheck, Lock, Banknote, UserPlus,
 } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select } from "@/components/ui";
+import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { MemberOverview } from "@/pages/MyOverview";
@@ -38,6 +38,89 @@ const FALLBACK_RECENT: RecentItem[] = FALLBACK_DONATIONS.map((d) => ({
   amount: Number(d.amount ?? 0),
 }));
 
+// Shared profile card component to avoid duplicating the entire card in each tab
+function ProfileCard({ p, draftTogglePortal, draftToggleCounter, draftLinkDonor, donorOptions, quickCreateFor, setQuickCreateFor, quickCreateName, setQuickCreateName, quickCreateSaving, draftCreateAndLink, pinInputs, setPinInputs, draftSetPin }: {
+  p: Profile;
+  draftTogglePortal: (id: string) => void;
+  draftToggleCounter: (id: string) => void;
+  draftLinkDonor: (id: string, donorId: string) => void;
+  donorOptions: { id: string; label: string }[];
+  quickCreateFor: string | null;
+  setQuickCreateFor: (v: string | null) => void;
+  quickCreateName: string;
+  setQuickCreateName: (v: string) => void;
+  quickCreateSaving: boolean;
+  draftCreateAndLink: (id: string) => Promise<void>;
+  pinInputs: Record<string, string>;
+  setPinInputs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  draftSetPin: (id: string) => void;
+}) {
+  return (
+    <div key={p.id} className="rounded-lg border border-stone-100 px-3 py-2.5 hover:bg-stone-50/50">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => draftTogglePortal(p.id)} disabled={isAdminRole(p.role)}
+            title={isAdminRole(p.role) ? "Admins always have access" : p.portal_access ? "Click to revoke access" : "Click to grant access"}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-indigo-500" : "bg-stone-300"}`}>
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || isAdminRole(p.role) ? "translate-x-6" : "translate-x-1"}`}/>
+          </button>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Access</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => draftToggleCounter(p.id)}
+            title={p.is_counter ? "Click to remove counter role" : "Click to make counter"}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.is_counter ? "bg-emerald-500" : "bg-stone-300"}`}>
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.is_counter ? "translate-x-6" : "translate-x-1"}`}/>
+          </button>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Counter</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2"><span className="text-sm font-medium text-stone-900">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{isAdminRole(p.role) && <Badge tone="indigo">Admin</Badge>}{p.portal_access && !isAdminRole(p.role) && <Badge tone="indigo">Access</Badge>}</div>
+          <div className="truncate text-xs text-stone-400">{p.email}</div>
+        </div>
+      </div>
+      {(p.portal_access || isAdminRole(p.role) || p.is_counter) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2">
+          <div className="flex-1 min-w-[180px]">
+            <Label className="text-[10px]">Link to donor record</Label>
+            <div className="mt-1 flex items-center gap-1.5">
+              <Select value={p.linked_donor_id ?? ""} onChange={(e) => e.target.value && draftLinkDonor(p.id, e.target.value)}
+                className="h-8 flex-1 text-xs">
+                <option value="">{donorOptions.length === 0 ? "— No donors yet —" : "— Link donor —"}</option>
+                {donorOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+              </Select>
+              {quickCreateFor === p.id ? (
+                <div className="flex items-center gap-1.5">
+                  <Input autoFocus value={quickCreateName} onChange={(e) => setQuickCreateName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") draftCreateAndLink(p.id); if (e.key === "Escape") { setQuickCreateFor(null); setQuickCreateName(""); } }}
+                    placeholder="First Last" className="h-8 w-32 text-xs" />
+                  <Button size="sm" variant="solid" disabled={!quickCreateName.trim() || quickCreateSaving} onClick={() => draftCreateAndLink(p.id)}>{quickCreateSaving ? "…" : "Save"}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setQuickCreateFor(null); setQuickCreateName(""); }}>✕</Button>
+                </div>
+              ) : (
+                <Button size="sm" variant="outline" className="h-8 px-2" title="Create a new donor record and link it to this member" onClick={() => setQuickCreateFor(p.id)}>
+                  <UserPlus className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+            {donorOptions.length === 0 && (
+              <p className="mt-1 text-[10px] leading-snug text-stone-400">
+                No donor records yet. Add members in the <strong>Donors</strong> page, or create one here with the ＋ button.
+              </p>
+            )}
+          </div>
+          {p.is_counter && (
+            <div className="flex items-end gap-2">
+              <div className="relative"><Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400"/><Input type="password" maxLength={6} placeholder="New PIN" value={pinInputs[p.id] ?? ""} onChange={(e) => setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))} className="h-8 w-24 pl-7 text-xs"/></div>
+              <Button size="sm" variant="outline" disabled={!pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3} onClick={() => draftSetPin(p.id)}>Set</Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { profile } = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
   const navigate = useNavigate();
@@ -62,6 +145,7 @@ export default function Dashboard() {
   const [quickCreateFor, setQuickCreateFor] = useState<string | null>(null);
   const [quickCreateName, setQuickCreateName] = useState("");
   const [quickCreateSaving, setQuickCreateSaving] = useState(false);
+  const [manageTab, setManageTab] = useState("pending");
 
   const loadProfiles = async () => {
     if (!supabase) return;
@@ -162,7 +246,6 @@ export default function Dashboard() {
       if (!supabase) { setLoading(false); return; }
       try {
         const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
-        // Use a security-definer RPC that bypasses RLS entirely — bulletproof.
         const { data: kpiData, error } = await supabase.rpc("get_dashboard_kpis", { year_start: yearStart });
         if (error) throw error;
         if (!cancelled) {
@@ -173,17 +256,15 @@ export default function Dashboard() {
             ytdGiving,
             donors: Number(d.donors ?? 0),
             pendingExpenses: Number(d.pendingExpenses ?? 0),
-            monthNet: ytdGiving - expTotal, // approximate month-net from YTD
+            monthNet: ytdGiving - expTotal,
           });
           setYtdExpenses(expTotal);
           setYtdNet(ytdGiving - expTotal);
           setPendingApprovals(Number(d.pendingApprovals ?? 0));
           setPendingDeposits(Number(d.pendingDeposits ?? 0));
           setPendingDepositTotal(Number(d.pendingDepositTotal ?? 0));
-          // Recent giving
           const giving = (d.recentGiving as Array<{ id: string; date: string; name: string; meta: string; amount: number }>) ?? [];
           setRecentItems(giving);
-          // Recent expenses
           const exp = (d.recentExpenses as Array<Record<string, unknown>>) ?? [];
           setRecentExpenses(exp.map((e) => ({
             id: e.id as string,
@@ -221,6 +302,13 @@ export default function Dashboard() {
     );
   }
 
+  // Pre-compute tab counts
+  const pendingProfiles = draftProfiles.filter((p) => !p.portal_access && !isAdminRole(p.role));
+  const approvedProfiles = draftProfiles.filter((p) => p.portal_access && !isAdminRole(p.role));
+  const adminProfiles = draftProfiles.filter((p) => isAdminRole(p.role));
+
+  const cardProps = { draftTogglePortal, draftToggleCounter, draftLinkDonor, donorOptions, quickCreateFor, setQuickCreateFor, quickCreateName, setQuickCreateName, quickCreateSaving, draftCreateAndLink, pinInputs, setPinInputs, draftSetPin };
+
   return (
     <div>
       <PageHeader
@@ -245,80 +333,46 @@ export default function Dashboard() {
                       ⚠ You have unsaved changes. Scroll down and click <strong>Save changes</strong> to apply them.
                     </div>
                   )}
-                  <div className="mt-3 space-y-2">
-                    {draftProfiles.map((p) => (
-                      <div key={p.id} className="rounded-lg border border-stone-100 px-3 py-2.5 hover:bg-stone-50/50">
-                        <div className="flex items-center gap-3">
-                          {/* Portal access toggle */}
-                          <div className="flex items-center gap-1.5">
-                            <button type="button" onClick={() => draftTogglePortal(p.id)} disabled={isAdminRole(p.role)}
-                              title={isAdminRole(p.role) ? "Admins always have access" : p.portal_access ? "Click to revoke access" : "Click to grant access"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-indigo-500" : "bg-stone-300"}`}>
-                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || isAdminRole(p.role) ? "translate-x-6" : "translate-x-1"}`}/>
-                            </button>
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Access</span>
-                          </div>
-                          {/* Counter toggle */}
-                          <div className="flex items-center gap-1.5">
-                            <button type="button" onClick={() => draftToggleCounter(p.id)}
-                              title={p.is_counter ? "Click to remove counter role" : "Click to make counter"}
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.is_counter ? "bg-emerald-500" : "bg-stone-300"}`}>
-                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.is_counter ? "translate-x-6" : "translate-x-1"}`}/>
-                            </button>
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Counter</span>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2"><span className="text-sm font-medium text-stone-900">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{isAdminRole(p.role) && <Badge tone="indigo">Admin</Badge>}{p.portal_access && !isAdminRole(p.role) && <Badge tone="indigo">Access</Badge>}</div>
-                            <div className="truncate text-xs text-stone-400">{p.email}</div>
-                          </div>
-                        </div>
-                        {/* Link donor + PIN for counters */}
-                        {(p.portal_access || isAdminRole(p.role) || p.is_counter) && (
-                          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2">
-                            <div className="flex-1 min-w-[180px]">
-                              <Label className="text-[10px]">Link to donor record</Label>
-                              <div className="mt-1 flex items-center gap-1.5">
-                                <Select value={p.linked_donor_id ?? ""} onChange={(e) => e.target.value && draftLinkDonor(p.id, e.target.value)}
-                                  className="h-8 flex-1 text-xs">
-                                  <option value="">{donorOptions.length === 0 ? "— No donors yet —" : "— Link donor —"}</option>
-                                  {donorOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-                                </Select>
-                                {quickCreateFor === p.id ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <Input autoFocus value={quickCreateName} onChange={(e) => setQuickCreateName(e.target.value)}
-                                      onKeyDown={(e) => { if (e.key === "Enter") draftCreateAndLink(p.id); if (e.key === "Escape") { setQuickCreateFor(null); setQuickCreateName(""); } }}
-                                      placeholder="First Last" className="h-8 w-32 text-xs" />
-                                    <Button size="sm" variant="solid" disabled={!quickCreateName.trim() || quickCreateSaving} onClick={() => draftCreateAndLink(p.id)}>{quickCreateSaving ? "…" : "Save"}</Button>
-                                    <Button size="sm" variant="ghost" onClick={() => { setQuickCreateFor(null); setQuickCreateName(""); }}>✕</Button>
-                                  </div>
-                                ) : (
-                                  <Button size="sm" variant="outline" className="h-8 px-2" title="Create a new donor record and link it to this member" onClick={() => setQuickCreateFor(p.id)}>
-                                    <UserPlus className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
-                              </div>
-                              {donorOptions.length === 0 && (
-                                <p className="mt-1 text-[10px] leading-snug text-stone-400">
-                                  No donor records yet. Add members in the <strong>Donors</strong> page, or create one here with the ＋ button.
-                                </p>
-                              )}
-                            </div>
-                            {p.is_counter && (
-                              <div className="flex items-end gap-2">
-                                <div className="relative"><Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400"/><Input type="password" maxLength={6} placeholder="New PIN" value={pinInputs[p.id] ?? ""} onChange={(e) => setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))} className="h-8 w-24 pl-7 text-xs"/></div>
-                                <Button size="sm" variant="outline" disabled={!pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3} onClick={() => draftSetPin(p.id)}>Set</Button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {draftProfiles.length <= 1 && (
-                      <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">
-                        Only your account is on file so far. Anyone who signs in with Google appears here for approval — then you can grant access, link them to a donor record, or designate them as a counter.
-                      </p>
-                    )}
-                  </div>
+
+                  {/* ====== Tabbed member list ====== */}
+                  <Tabs value={manageTab} onValueChange={setManageTab} className="mt-3">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="pending" className="text-xs">
+                        Pending <Badge tone="amber" className="ml-1 text-[10px]">{pendingProfiles.length}</Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="approved" className="text-xs">
+                        Approved <Badge tone="indigo" className="ml-1 text-[10px]">{approvedProfiles.length}</Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="admins" className="text-xs">
+                        Admins <Badge tone="indigo" className="ml-1 text-[10px]">{adminProfiles.length}</Badge>
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="pending" className="mt-3 space-y-2">
+                      {pendingProfiles.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">No pending approvals — everyone who signed in has been approved.</p>
+                      ) : (
+                        pendingProfiles.map((p) => <ProfileCard key={p.id} p={p} {...cardProps} />)
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="approved" className="mt-3 space-y-2">
+                      {approvedProfiles.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">No approved members yet — approve members from the Pending tab.</p>
+                      ) : (
+                        approvedProfiles.map((p) => <ProfileCard key={p.id} p={p} {...cardProps} />)
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="admins" className="mt-3 space-y-2">
+                      {adminProfiles.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">No admin accounts found.</p>
+                      ) : (
+                        adminProfiles.map((p) => <ProfileCard key={p.id} p={p} {...cardProps} />)
+                      )}
+                    </TabsContent>
+                  </Tabs>
+
                   {/* Save button */}
                   <div className="sticky bottom-0 -mx-6 -mb-6 mt-4 flex items-center justify-between gap-3 rounded-b-xl border-t border-stone-200 bg-white px-6 py-4">
                     <div className="text-xs text-stone-500">
