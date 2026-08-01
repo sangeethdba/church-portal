@@ -13,15 +13,15 @@ create or replace function public.record_offering(
   -- Offering fields
   p_service_date     date,
   p_service_name     text,
-  p_cash_breakdown   jsonb default null,
-  p_cash_deductions  jsonb default null,
-  p_cash_net         numeric default 0,
-  p_check_amount     numeric default 0,
-  p_check_count      int default 0,
-  p_total_amount     numeric default 0,
-  p_notes            text default null,
+  p_cash_breakdown   jsonb,
+  p_cash_deductions  jsonb,
+  p_cash_net         numeric,
+  p_check_amount     numeric,
+  p_check_count      int,
+  p_total_amount     numeric,
+  p_notes            text,
   -- Check entries as JSON array: [{donor_name, donor_id, check_number, amount}]
-  p_checks           jsonb default '[]'::jsonb,
+  p_checks           jsonb,
   -- Counter sign-off
   p_counter_1_id     uuid,
   p_pin_1            text,
