@@ -77,7 +77,8 @@ export default function Dashboard() {
   const togglePortalAccess = async (userId: string, newVal: boolean) => {
     if (!supabase) return;
     setSavingId(userId);
-    await supabase.from("profiles").update({ portal_access: newVal }).eq("id", userId);
+    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "toggle_portal", new_val: newVal });
+    if (error) { console.warn("togglePortalAccess failed:", error); setSavingId(null); return; }
     setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, portal_access: newVal } : p)));
     setSavingId(null);
   };
@@ -85,9 +86,8 @@ export default function Dashboard() {
   const linkDonor = async (userId: string, donorId: string) => {
     if (!supabase) return;
     setSavingId(userId);
-    // Clear any previous link for this donor, then link the profile (both sides so it survives reopen)
-    await supabase.from("donors").update({ linked_user_id: userId }).eq("id", donorId);
-    await supabase.from("profiles").update({ linked_donor_id: donorId }).eq("id", userId);
+    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "link_donor", donor_id: donorId });
+    if (error) { console.warn("linkDonor failed:", error); setSavingId(null); return; }
     setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: donorId } : p)));
     setSavingId(null);
   };
@@ -98,16 +98,17 @@ export default function Dashboard() {
     const firstName = parts[0];
     const lastName = parts.slice(1).join(" ") || firstName;
     setQuickCreateSaving(true);
-    const { data, error } = await supabase
-      .from("donors")
-      .insert({ first_name: firstName, last_name: lastName, linked_user_id: userId })
-      .select("id, first_name, last_name")
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("admin_manage_profile", {
+      target_user_id: userId,
+      action: "create_link_donor",
+      donor_first: firstName,
+      donor_last: lastName,
+    });
     if (error) { console.warn("Create donor failed:", error); setQuickCreateSaving(false); return; }
-    if (data) {
-      await supabase.from("profiles").update({ linked_donor_id: data.id }).eq("id", userId);
-      setDonorOptions((prev) => [...prev, { id: data.id, label: `${data.first_name} ${data.last_name}` }]);
-      setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: data.id } : p)));
+    const result = data as { ok: boolean; id: string; label: string } | null;
+    if (result?.ok) {
+      setDonorOptions((prev) => [...prev, { id: result.id, label: result.label }]);
+      setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, linked_donor_id: result.id } : p)));
     }
     setQuickCreateName("");
     setQuickCreateFor(null);
@@ -117,7 +118,8 @@ export default function Dashboard() {
   const toggleCounter = async (userId: string, newVal: boolean) => {
     if (!supabase) return;
     setSavingId(userId);
-    await supabase.from("profiles").update({ is_counter: newVal }).eq("id", userId);
+    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "toggle_counter", new_val: newVal });
+    if (error) { console.warn("toggleCounter failed:", error); setSavingId(null); return; }
     setAllProfiles((prev) => prev.map((p) => (p.id === userId ? { ...p, is_counter: newVal } : p)));
     setSavingId(null);
   };
@@ -127,8 +129,8 @@ export default function Dashboard() {
     const pin = pinInputs[userId];
     if (!pin || pin.length < 3) return;
     setSavingId(userId);
-    const { data: hash } = await supabase.rpc("hash_pin", { pin });
-    if (hash) await supabase.from("profiles").update({ pin_hash: hash }).eq("id", userId);
+    const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: userId, action: "set_pin", pin_plain: pin });
+    if (error) { console.warn("setPin failed:", error); setSavingId(null); return; }
     setPinInputs((prev) => ({ ...prev, [userId]: "" }));
     setSavingId(null);
   };
