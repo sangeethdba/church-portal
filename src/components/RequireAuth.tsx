@@ -22,7 +22,10 @@ export default function RequireAuth() {
       }
       let profile = await getMyProfile();
       if (!profile) {
-        setState({ kind: "signed-in", profile: null });
+        // No profile exists for this user — probably a failed trigger.
+        // Force re-auth via Google to retry profile creation.
+        await supabase.auth.signOut();
+        window.location.href = "/login";
         return;
       }
 
@@ -53,7 +56,7 @@ export default function RequireAuth() {
       <div className="grid min-h-screen place-items-center bg-parchment-50">
         <div className="text-center">
           <div className="text-sm text-stone-500">Loading…</div>
-          <div className="mt-1 text-[10px] text-stone-300">v250801i</div>
+          <div className="mt-1 text-[10px] text-stone-300">v250801j</div>
         </div>
       </div>
     );
