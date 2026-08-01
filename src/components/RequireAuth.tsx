@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
+import { AlertTriangle } from "lucide-react";
 import { Shield, Clock, LogOut } from "lucide-react";
 import { supabase, isAdminRole } from "@/lib/supabase";
 import { getMyProfile, signOut } from "@/lib/auth";
@@ -22,10 +23,9 @@ export default function RequireAuth() {
       }
       let profile = await getMyProfile();
       if (!profile) {
-        // No profile exists for this user — probably a failed trigger.
-        // Force re-auth via Google to retry profile creation.
-        await supabase.auth.signOut();
-        window.location.href = "/login";
+        // Profile missing — trigger may have failed. Show a recovery page
+        // instead of an infinite redirect loop.
+        setState({ kind: "signed-in", profile: null });
         return;
       }
 
@@ -56,7 +56,7 @@ export default function RequireAuth() {
       <div className="grid min-h-screen place-items-center bg-parchment-50">
         <div className="text-center">
           <div className="text-sm text-stone-500">Loading…</div>
-          <div className="mt-1 text-[10px] text-stone-300">v250801j</div>
+          <div className="mt-1 text-[10px] text-stone-300">v250801k</div>
         </div>
       </div>
     );
@@ -64,6 +64,46 @@ export default function RequireAuth() {
 
   if (state.kind === "signed-out") {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  // ── Missing profile screen (trigger failed or account needs setup) ────
+  if (state.kind === "signed-in" && !state.profile) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-parchment-50 p-6">
+        <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-8 text-center shadow-soft">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+            <AlertTriangle className="h-7 w-7" />
+          </div>
+          <h1 className="mt-4 font-serif text-2xl font-semibold text-stone-900">
+            Account setup needed
+          </h1>
+          <p className="mt-2 text-sm text-stone-600">
+            Your Google account was authenticated, but your member profile hasn't been
+            created yet. This usually means the church administrator needs to configure
+            the account system.
+          </p>
+          <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3 text-left text-xs text-stone-500">
+            <Shield className="mr-1 inline h-3.5 w-3.5" />
+            Please ask your church administrator to verify that the latest database
+            migration has been applied in the Supabase SQL Editor.
+          </div>
+          <div className="mt-6 flex justify-center gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              Retry
+            </button>
+            <button
+              onClick={async () => { await signOut(); window.location.href = "/"; }}
+              className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            >
+              <LogOut className="h-4 w-4" /> Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // ── Pending approval screen ───────────────────────────────────────────
