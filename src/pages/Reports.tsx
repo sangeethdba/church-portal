@@ -120,14 +120,31 @@ export default function Reports() {
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
-    Promise.all([
-      supabase.from("donations").select("*").order("donation_date", { ascending: false }),
-      supabase.from("expenses").select("*").order("submitted_at", { ascending: false }),
-      supabase.from("offerings").select("*").order("service_date", { ascending: false }),
-    ]).then(([{ data: dData }, { data: eData }, { data: oData }]) => {
-      if (dData) setDonations(dData as Donation[]);
-      if (eData) setExpenses(eData as Expense[]);
-      if (oData) setOfferings(oData as OfferingRow[]);
+    // Use security-definer RPC to bypass fragile RLS chain
+    supabase.rpc("get_reports_data").then(({ data, error }) => {
+      if (error) { console.warn("Reports query failed:", error); setLoading(false); return; }
+      const result = data as { donations: Array<Record<string, unknown>>; expenses: Array<Record<string, unknown>>; offerings: Array<Record<string, unknown>> };
+      if (result) {
+        setDonations((result.donations ?? []).map(r => ({
+          id: r.id, donor_id: r.donor_id, donor_name: r.donor_name, donor_email: r.donor_email,
+          amount: Number(r.amount ?? 0), donation_type: r.donation_type, payment_method: r.payment_method,
+          check_number: r.check_number, donation_date: r.donation_date, entered_by: r.entered_by,
+          notes: r.notes, created_at: r.created_at, offering_id: r.offering_id,
+        })) as Donation[]);
+        setExpenses((result.expenses ?? []).map(r => ({
+          id: r.id, source: r.source, title: r.title, amount: Number(r.amount ?? 0),
+          category: r.category, description: r.description, receipt_paths: r.receipt_paths,
+          transfer_receipt_path: r.transfer_receipt_path, user_id: r.user_id, status: r.status,
+          submitted_at: r.submitted_at, approved_by: r.approved_by, approved_at: r.approved_at,
+          paid_at: r.paid_at, paid_by: r.paid_by, notes: r.notes, created_at: r.created_at,
+        })) as Expense[]);
+        setOfferings((result.offerings ?? []).map(r => ({
+          id: r.id, service_date: r.service_date, service_name: r.service_name,
+          cash_amount: Number(r.cash_amount ?? 0), check_amount: Number(r.check_amount ?? 0),
+          total_amount: Number(r.total_amount ?? 0), check_count: r.check_count,
+          deposit_status: r.deposit_status,
+        })) as OfferingRow[]);
+      }
       setLoading(false);
     });
   }, []);
