@@ -116,7 +116,7 @@ export default function Reports() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<Period>("this_month");
+  const [period, setPeriod] = useState<Period>("this_year");
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
