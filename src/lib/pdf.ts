@@ -13,6 +13,14 @@ export const ALF_DOCUMENT_BRANDING = {
   treasurer: "Sangeeth Talluri",
 } as const;
 
+/** Capitalize each word in a string (e.g. "offering" → "Offering"). */
+function capitalizeWords(str: string): string {
+  return str
+    .split(/[\s_]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 const displayChurchName = (churchName?: string | null) =>
   !churchName || churchName === "Grace Community Church" || churchName === "GraceLedger"
     ? ALF_DOCUMENT_BRANDING.name
@@ -501,158 +509,141 @@ export function offeringReceiptDataUrl(r: OfferingReceipt): string {
   return generateOfferingReceipt(r).output("datauristring");
 }
 
-/** Generate a one-page annual donor statement PDF in the browser. */
+/** Generate a professional letterhead annual donor statement PDF. */
 export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 56;
+  const bodyWidth = pageWidth - margin * 2;
+  const churchName = displayChurchName(s.churchName);
+  const donorFull = `${s.donor.first_name} ${s.donor.last_name}`;
   let y = margin;
 
-  // Branded header
-  y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
-
-  // Donor block
-  doc.setFont("helvetica", "normal");
-  y = 142;
-  doc.setFontSize(10);
-  doc.setTextColor(87, 83, 78);
-  doc.text("Issued to", margin, y);
-  y += 14;
-  doc.setFontSize(13);
-  doc.setTextColor(28, 25, 23);
-  doc.setFont("helvetica", "bold");
-  doc.text(`${s.donor.first_name} ${s.donor.last_name}`, margin, y);
-  y += 16;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(87, 83, 78);
-  if (s.donor.address) {
-    doc.text(s.donor.address, margin, y);
-    y += 12;
-  }
-  const cityLine = [s.donor.city, s.donor.state, s.donor.zip_code]
-    .filter(Boolean)
-    .join(", ");
-  if (cityLine) {
-    doc.text(cityLine, margin, y);
-    y += 12;
-  }
-  if (s.donor.email) {
-    doc.text(s.donor.email, margin, y);
-    y += 12;
-  }
-
-  // Statement body
-  y += 16;
-  doc.setFontSize(11);
-  doc.setTextColor(28, 25, 23);
-  doc.text(
-    `Dear ${s.donor.first_name} ${s.donor.last_name},`,
-    margin,
-    y,
-  );
-  y += 18;
-  doc.text(
-    `Our records show that you have contributed to ${displayChurchName(s.churchName)} in the Year ${s.year}.`,
-    margin,
-    y,
-    { maxWidth: pageWidth - margin * 2 },
-  );
-  y += 18;
-  doc.text("Itemized contribution details are mentioned below.", margin, y);
-  y += 26;
-
-  const drawAnnualTableHeader = () => {
-    doc.setFillColor(247, 241, 231);
-    doc.rect(margin, y - 14, pageWidth - margin * 2, 22, "F");
+  // Helper: draw the statement table header
+  const drawTableHeader = () => {
+    doc.setFillColor(245, 243, 240);
+    doc.rect(margin, y - 14, bodyWidth, 24, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("Date", margin + 8, y);
-    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    doc.setFontSize(9);
+    doc.setTextColor(87, 83, 78);
+    doc.text("Date", margin + 10, y);
+    doc.text("Type", margin + 140, y);
+    doc.text("Amount", pageWidth - margin - 10, y, { align: "right" });
     y += 14;
     doc.setFont("helvetica", "normal");
     doc.setTextColor(28, 25, 23);
     doc.setFontSize(10);
   };
 
-  drawAnnualTableHeader();
+  // Helper: new page with letterhead + table header
+  const newPage = () => {
+    drawDocumentFooter(doc);
+    doc.addPage();
+    y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
+    y += 10;
+    drawTableHeader();
+  };
 
-  // Sort ascending by date for statement readability
+  // Page 1: Letterhead + letter body
+  y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
+  y += 10;
+
+  // Salutation
+  doc.setFont("times", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(28, 25, 23);
+  doc.text(`Dear ${donorFull},`, margin, y);
+  y += 22;
+
+  // Body intro
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(68, 64, 60);
+  doc.text(
+    `Our records show that you have contributed to ${churchName} in the Year ${s.year}.`,
+    margin,
+    y,
+    { maxWidth: bodyWidth },
+  );
+  y += 18;
+  doc.text("Itemized contribution details are mentioned below.", margin, y);
+  y += 24;
+
+  // Table
+  drawTableHeader();
+
   const sorted = [...s.donations].sort((a, b) =>
     a.donation_date.localeCompare(b.donation_date),
   );
   for (const d of sorted) {
-    if (y > 700) {
-      drawDocumentFooter(doc);
-      doc.addPage();
-      y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
-      y = 132;
-      drawAnnualTableHeader();
-    }
-    doc.text(formatDateLong(d.donation_date), margin + 8, y);
-    doc.text(formatCurrency(d.amount), pageWidth - margin - 8, y, { align: "right" });
-    y += 16;
+    if (y > 680) newPage();
+    doc.text(formatDateLong(d.donation_date), margin + 10, y);
+    doc.text(capitalizeWords(d.donation_type), margin + 140, y);
+    doc.text(formatCurrency(d.amount), pageWidth - margin - 10, y, { align: "right" });
+    y += 18;
   }
-
-  // Keep the letter body together instead of placing its closing text over the footer.
-  if (y > 650) {
-    drawDocumentFooter(doc);
-    doc.addPage();
-    y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
-    y = 142;
-  }
-
-  // Divider
-  y += 8;
-  doc.setDrawColor(231, 229, 228);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 20;
 
   // Total
+  if (y > 640) newPage();
+  y += 6;
+  doc.setDrawColor(79, 70, 229);
+  doc.setLineWidth(1.2);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 18;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
+  doc.setFontSize(12);
   doc.setTextColor(28, 25, 23);
-  doc.text("Total contributions", margin + 8, y);
-  doc.text(formatCurrency(s.total), pageWidth - margin - 8, y, { align: "right" });
-  y += 24;
+  doc.text("Total contributions", margin + 10, y);
+  doc.setFontSize(14);
+  doc.text(formatCurrency(s.total), pageWidth - margin - 10, y, { align: "right" });
+  y += 28;
+
+  // Closing text
+  if (y > 620) newPage();
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(87, 83, 78);
-  const bodyWidth = pageWidth - margin * 2;
-  const statementNote =
-    `${s.donations.length} contribution${s.donations.length === 1 ? "" : "s"} recorded for ${s.year}. ` +
-    "No goods or services were provided in exchange for these contributions. " +
-    "Please retain this statement for your records.";
-  const noteLines = doc.splitTextToSize(statementNote, bodyWidth);
-  doc.text(noteLines, margin, y);
-  y += noteLines.length * 12 + 18;
 
-  doc.setFont("times", "normal");
-  doc.setFontSize(10);
   const thankYou =
     "Thank you for joining us to impact numerous lives and in expansion of God's kingdom through your donations. " +
     "We praise and thank our Lord Jesus Christ for His provision and faithfulness.";
   const thankYouLines = doc.splitTextToSize(thankYou, bodyWidth);
   doc.text(thankYouLines, margin, y);
-  y += thankYouLines.length * 13 + 18;
+  y += thankYouLines.length * 13 + 16;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
+  if (y > 630) newPage();
+
   const taxLanguage =
     `Your gift is a tax-deductible contribution through our nonprofit 501(c)(3) organization. ` +
     `Our nonprofit Employer Identification Number (EIN): ${ALF_DOCUMENT_BRANDING.ein}.`;
   const taxLines = doc.splitTextToSize(taxLanguage, bodyWidth);
   doc.text(taxLines, margin, y);
-  y += taxLines.length * 12 + 18;
+  y += taxLines.length * 13 + 16;
+
+  if (y > 650) newPage();
+
+  doc.setFont("times", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(28, 25, 23);
   doc.text("God bless you!", margin, y);
   y += 28;
-  doc.text("Sincerely yours,", margin, y);
-  y += 16;
-  doc.setFont("helvetica", "bold");
-  doc.text(ALF_DOCUMENT_BRANDING.treasurer, margin, y);
+
   doc.setFont("helvetica", "normal");
-  doc.text("Treasurer", margin, y + 14);
+  doc.setFontSize(10);
+  doc.text("Sincerely yours,", margin, y);
+  y += 18;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text(ALF_DOCUMENT_BRANDING.treasurer, margin, y);
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(87, 83, 78);
+  doc.text("Treasurer", margin, y);
+  y += 14;
+  doc.setFontSize(9);
+  doc.text(churchName, margin, y);
 
   // Footer
   drawDocumentFooter(doc);
