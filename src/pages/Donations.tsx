@@ -169,7 +169,6 @@ export default function Donations() {
     };
     if (supabase) {
       const { data: donationId, error } = await supabase.rpc("submit_donation", {
-        p_donor_id: baseRow.donor_id,
         p_donor_name: baseRow.donor_name,
         p_amount: baseRow.amount,
         p_donation_type: baseRow.donation_type,
@@ -177,6 +176,7 @@ export default function Donations() {
         p_check_number: baseRow.check_number,
         p_donation_date: baseRow.donation_date,
         p_notes: baseRow.notes,
+        p_donor_id: baseRow.donor_id,
       });
       if (!error && donationId) {
         // Fetch back the full record

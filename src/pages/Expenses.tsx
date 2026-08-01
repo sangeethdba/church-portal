@@ -237,7 +237,7 @@ export default function Expenses() {
     // Upload transfer receipt if provided
     if (transferFile && supabase) {
       const safeName = transferFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `transfers/${payExpenseId}/${Date.now()}-${safeName}`;
+      const path = `${ctx.profile?.id ?? "admin"}/transfers/${payExpenseId}/${Date.now()}-${safeName}`;
       const { error } = await supabase.storage
         .from("receipts")
         .upload(path, transferFile, { cacheControl: "3600", upsert: false });
@@ -258,6 +258,7 @@ export default function Expenses() {
       await supabase.rpc("admin_update_expense", {
         p_expense_id: payExpenseId,
         p_status: "paid",
+        p_transfer_receipt_path: transferPath,
       });
       // Best-effort email notification
       notifyMember(payExpenseId);
