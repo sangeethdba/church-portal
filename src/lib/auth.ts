@@ -46,10 +46,10 @@ export async function signOut() {
 export async function getMyProfile(): Promise<Profile | null> {
   const { data: session } = await supabase.auth.getSession();
   const userId = session.session?.user?.id;
-  const userEmail = session.session?.user?.email;
   if (!userId) return null;
 
-  // Primary: lookup by auth UUID
+  // The handle_new_user trigger (migration 0026) handles UUID re-linking
+  // for Google re-auth, so a simple UUID lookup always finds the right row.
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
@@ -57,29 +57,7 @@ export async function getMyProfile(): Promise<Profile | null> {
     .maybeSingle();
 
   if (data) return data as Profile;
-  if (error) console.warn("Could not load profile by id:", error.message);
-
-  // Fallback: Google re-auth can mint a new UUID. Look up by email.
-  if (userEmail) {
-    const { data: byEmail } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("email", userEmail)
-      .maybeSingle();
-
-    if (byEmail) {
-      // Repair the UUID link so future lookups hit on the first query.
-      if (byEmail.id !== userId) {
-        await supabase
-          .from("profiles")
-          .update({ id: userId })
-          .eq("id", byEmail.id);
-        byEmail.id = userId;
-      }
-      return byEmail as Profile;
-    }
-  }
-
+  if (error) console.warn("Could not load profile:", error.message);
   return null;
 }
 
