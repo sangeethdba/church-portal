@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { Plus, HandCoins, FileDown, Filter, Shield, Church } from "lucide-react";
+import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange } from "lucide-react";
 import {
   Button,
   Card,
@@ -91,6 +91,8 @@ export default function Donations() {
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>("all");
   const [filterYear, setFilterYear] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // New donation dialog
   const [open, setOpen] = useState(false);
@@ -138,9 +140,11 @@ export default function Donations() {
       donations.filter(
         (d) =>
           (filterType === "all" || d.donation_type === filterType) &&
-          (filterYear === "all" || d.donation_date.startsWith(filterYear)),
+          (filterYear === "all" || d.donation_date.startsWith(filterYear)) &&
+          (!dateFrom || d.donation_date >= dateFrom) &&
+          (!dateTo || d.donation_date <= dateTo),
       ),
-    [donations, filterType, filterYear],
+    [donations, filterType, filterYear, dateFrom, dateTo],
   );
 
   const totalShown = filtered.reduce((s, d) => s + Number(d.amount || 0), 0);
@@ -424,6 +428,20 @@ export default function Donations() {
               ))}
             </Select>
           </div>
+          <div className="h-6 w-px bg-stone-200" />
+          <div>
+            <Label className="text-xs text-stone-500">From</Label>
+            <Input type="date" value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)} className="mt-1 h-9 w-40 text-sm" />
+          </div>
+          <div>
+            <Label className="text-xs text-stone-500">To</Label>
+            <Input type="date" value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)} className="mt-1 h-9 w-40 text-sm" />
+          </div>
+          {(dateFrom || dateTo) && (
+            <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }}>Clear</Button>
+          )}
         </CardBody>
       </Card>
 

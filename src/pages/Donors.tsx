@@ -8,6 +8,9 @@ import {
   Mail,
   Phone,
   MapPin,
+  HandCoins,
+  TrendingUp,
+  UserCheck,
 } from "lucide-react";
 import {
   Button,
@@ -176,6 +179,13 @@ export default function Donors() {
         (d.phone ?? "").toLowerCase().includes(q),
     );
   }, [donors, search]);
+
+  // Quick stats from live donation data
+  const donorQuickStats = useMemo(() => {
+    const totalGiving = donations.reduce((s, d) => s + Number(d.amount ?? 0), 0);
+    const activeGivers = new Set(donations.filter((d) => Number(d.amount) > 0).map((d) => d.donor_id ?? d.donor_name)).size;
+    return { totalGiving, activeGivers, totalDonors: donors.length };
+  }, [donations, donors]);
 
   const handleCreate = async () => {
     setSaving(true);
@@ -462,6 +472,43 @@ export default function Donors() {
           </Dialog>
         }
       />
+
+      {/* Quick stats cards */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardBody className="flex items-center gap-4 py-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+              <UsersIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Donors</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{donorQuickStats.totalDonors}</div>
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="flex items-center gap-4 py-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+              <UserCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Active givers</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{donorQuickStats.activeGivers}</div>
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="flex items-center gap-4 py-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <HandCoins className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Total given</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(donorQuickStats.totalGiving)}</div>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
 
       <Card className="mb-4">
         <CardBody className="flex items-center gap-3">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, TrendingUp, CircleDollarSign, Receipt, PieChart, CalendarDays } from "lucide-react";
+import { BarChart3, TrendingUp, CircleDollarSign, Receipt, PieChart, CalendarDays, Download } from "lucide-react";
 import {
-  Card, CardBody, CardHeader, Select,
+  Button, Card, CardBody, CardHeader, Select,
   Badge, EmptyState, TableWrap, THead, Tr, Th, Td, Tabs, TabsList, TabsTrigger, TabsContent,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
@@ -542,10 +542,26 @@ export default function Reports() {
 
         {/* ── Weekly detail tab ─────────────────────────────────────────── */}
         <TabsContent value="weekly">
+          {weeklyOff.length > 0 && (
+            <WeeklyBarChart data={weeklyOff} maxBars={period === "all" ? 26 : 12} />
+          )}
           <Card>
             <CardHeader>
-              <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly offering collections</h2>
-              <p className="text-xs text-stone-500">Cash + checks per service week, plus any standalone gifts</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly offering collections</h2>
+                  <p className="text-xs text-stone-500">Cash + checks per service week, plus any standalone gifts</p>
+                </div>
+                {weeklyOff.length > 0 && (
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const csv = ["Week,Cash,Check,Other,Total", ...weeklyOff.map(([week, v]) => `${week},${v.cash},${v.check},${v.other},${v.cash + v.check + v.other}`)].join("\n");
+                    const blob = new Blob([csv], { type: "text/csv" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = `weekly-offerings-${range.label.replace(/\s/g, "-").toLowerCase()}.csv`; a.click();
+                    URL.revokeObjectURL(url);
+                  }} iconLeft={<Download className="h-3.5 w-3.5" />}>Export CSV</Button>
+                )}
+              </div>
             </CardHeader>
             <CardBody className="px-0 pb-0">
               {weeklyOff.length === 0 ? (
@@ -665,6 +681,83 @@ export default function Reports() {
           <strong>Demo mode.</strong> Connect Supabase to see live reports.
         </div>
       )}
+
+      {loading && (
+        <div className="mt-8 space-y-4">
+          {[1, 2, 3].map((i) => <div key={i} className="h-16 animate-pulse rounded-xl bg-stone-100" />)}
+        </div>
+      )}
     </div>
+  );
+}
+
+/* ── Stacked bar chart for weekly offerings ────────────────────────── */
+function WeeklyBarChart({ data, maxBars }: { data: readonly (readonly [string, { cash: number; check: number; other: number }])[]; maxBars: number }) {
+  const display = data.slice(-maxBars);
+  const maxVal = Math.max(...display.map(([, v]) => v.cash + v.check + v.other), 1);
+  const h = 200;
+  const w = Math.max(display.length * 44, 300);
+  const pad = { top: 20, right: 10, bottom: 50, left: 10 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+  const barW = Math.min((chartW / display.length) * 0.65, 28);
+  const gap = chartW / display.length;
+
+  return (
+    <Card className="mb-6 overflow-hidden">
+      <CardHeader>
+        <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly trend</h2>
+        <p className="text-xs text-stone-500">Stacked cash · checks · other gifts — hover for details</p>
+      </CardHeader>
+      <CardBody>
+        <div className="overflow-x-auto">
+          <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Weekly offering trend" className="mx-auto">
+            {/* Grid lines */}
+            {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+              const y = pad.top + chartH * (1 - pct);
+              return (
+                <g key={pct}>
+                  <line x1={pad.left} y1={y} x2={w - pad.right} y2={y} stroke="#e7e5e4" strokeWidth={pct === 0 ? 1 : 0.5} strokeDasharray={pct === 0 ? "" : "3 3"} />
+                  <text x={pad.left - 4} y={y + 3} textAnchor="end" style={{ fontSize: 9 }} fill="#a8a29e">{formatCurrency(maxVal * pct)}</text>
+                </g>
+              );
+            })}
+            {/* Bars */}
+            {display.map(([week, v], i) => {
+              const x = pad.left + i * gap + (gap - barW) / 2;
+              const total = v.cash + v.check + v.other;
+              const barH = total > 0 ? (total / maxVal) * chartH : 0;
+              const y = pad.top + chartH - barH;
+              // Stack proportions
+              const cashH = total > 0 ? (v.cash / total) * barH : 0;
+              const checkH = total > 0 ? (v.check / total) * barH : 0;
+              const otherH = total > 0 ? (v.other / total) * barH : 0;
+              // Only show every Nth label
+              const step = Math.max(1, Math.floor(display.length / 8));
+              const showLabel = i % step === 0 || i === display.length - 1;
+              const label = new Date(week + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              return (
+                <g key={week} className="group">
+                  <title>{`${label}: Cash ${formatCurrency(v.cash)} · Checks ${formatCurrency(v.check)} · Other ${formatCurrency(v.other)} · Total ${formatCurrency(total)}`}</title>
+                  {otherH > 0 && <rect x={x} y={y} width={barW} height={otherH} rx={2} fill="#6366f1" opacity={0.85} />}
+                  {checkH > 0 && <rect x={x} y={y + otherH} width={barW} height={checkH} fill="#f59e0b" opacity={0.85} />}
+                  {cashH > 0 && <rect x={x} y={y + otherH + checkH} width={barW} height={cashH} rx={otherH + checkH === 0 ? 2 : 0} fill="#10b981" opacity={0.85} />}
+                  {showLabel && <text x={x + barW / 2} y={h - pad.bottom + 14} textAnchor="middle" style={{ fontSize: 9 }} fill="#78716c" transform={`rotate(-35 ${x + barW / 2} ${h - pad.bottom + 14})`}>{label}</text>}
+                </g>
+              );
+            })}
+            {/* Legend */}
+            <g transform={`translate(${pad.left}, ${h - 4})`}>
+              {[{ label: "Cash", color: "#10b981" }, { label: "Check", color: "#f59e0b" }, { label: "Other", color: "#6366f1" }].map((item, i) => (
+                <g key={item.label} transform={`translate(${i * 64}, 0)`}>
+                  <rect x={0} y={-8} width={10} height={10} rx={2} fill={item.color} opacity={0.85} />
+                  <text x={14} y={0} style={{ fontSize: 10 }} fill="#78716c">{item.label}</text>
+                </g>
+              ))}
+            </g>
+          </svg>
+        </div>
+      </CardBody>
+    </Card>
   );
 }

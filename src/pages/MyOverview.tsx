@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote, CalendarRange, FileDown } from "lucide-react";
+import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote, CalendarRange, FileDown, BarChart3, Download } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Tile, Badge, Label, Select, EmptyState } from "@/components/ui";
 import { downloadMemberReport } from "@/lib/pdf";
 import { PageHeader } from "@/components/Layout";
@@ -82,6 +82,26 @@ export function MemberOverview() {
   const reimbursed = expenses.filter((e) => e.status === "paid" || e.status === "auto_paid").reduce((s, e) => s + Number(e.amount ?? 0), 0);
   const openBills = expenses.filter((e) => e.status === "pending").length;
   const periodGiving = donations.reduce((s, d) => s + Number(d.amount ?? 0), 0);
+
+  // Monthly giving trend for bar chart
+  const monthlyGiving = useMemo(() => {
+    const months: Record<string, number> = {};
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = d.toISOString().slice(0, 7);
+      months[key] = 0;
+    }
+    donations.forEach((d) => {
+      const key = d.donation_date.slice(0, 7);
+      if (months[key] !== undefined) months[key] += Number(d.amount ?? 0);
+    });
+    return Object.entries(months).map(([month, amt]) => ({
+      month,
+      amount: amt,
+      label: new Date(month + "-01").toLocaleDateString("en-US", { month: "short" }),
+    }));
+  }, [donations]);
 
   const handleDownloadReport = () => {
     if (!profile?.full_name) return;
@@ -220,7 +240,16 @@ export function MemberOverview() {
               </div>
             </div>
           </CardHeader>
-          <CardBody className="space-y-3">
+          <CardBody className="space-y-4">
+            {/* Monthly giving trend */}
+            {monthlyGiving.some((m) => m.amount > 0) && (
+              <div className="rounded-lg border border-stone-100 bg-stone-50/50 p-3">
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-stone-500">
+                  <BarChart3 className="h-3.5 w-3.5" /> Monthly giving trend (12 months)
+                </div>
+                <GivingBarChart data={monthlyGiving} />
+              </div>
+            )}
             {!profile?.linked_donor_id ? (
               <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="Not linked to a donor record yet" description="Ask your treasurer to link your account to your donor record so your giving history appears here." />
             ) : donations.length === 0 ? (
@@ -256,6 +285,41 @@ export default function MyOverview() {
         badge="Personal"
       />
       <MemberOverview />
+    </div>
+  );
+}
+
+/* ── Monthly giving bar chart ──────────────────────────────────────── */
+function GivingBarChart({ data }: { data: { month: string; amount: number; label: string }[] }) {
+  const maxVal = Math.max(...data.map((d) => d.amount), 1);
+  const h = 120;
+  const w = Math.max(data.length * 40, 280);
+  const pad = { top: 10, right: 10, bottom: 28, left: 10 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+  const barW = Math.min((chartW / data.length) * 0.7, 22);
+  const gap = chartW / data.length;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Monthly giving trend" className="mx-auto">
+        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + chartH} stroke="#d6d3d1" strokeWidth={1} />
+        <line x1={pad.left} y1={pad.top + chartH} x2={w - pad.right} y2={pad.top + chartH} stroke="#d6d3d1" strokeWidth={1} />
+        {data.map((d, i) => {
+          const barH = d.amount > 0 ? (d.amount / maxVal) * chartH : 0;
+          const x = pad.left + i * gap + (gap - barW) / 2;
+          const y = pad.top + chartH - barH;
+          const step = Math.max(1, Math.floor(data.length / 7));
+          const showLabel = i % step === 0 || i === data.length - 1;
+          return (
+            <g key={d.month}>
+              <title>{`${d.label}: ${formatCurrency(d.amount)}`}</title>
+              <rect x={x} y={y} width={barW} height={Math.max(barH, d.amount > 0 ? 2 : 0)} rx={3} fill={d.amount > 0 ? "#6366f1" : "#e7e5e4"} opacity={d.amount > 0 ? 0.85 : 0.5} />
+              {showLabel && <text x={x + barW / 2} y={h - pad.bottom + 13} textAnchor="middle" style={{ fontSize: 9 }} fill="#78716c">{d.label}</text>}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
