@@ -13,6 +13,33 @@ export const ALF_DOCUMENT_BRANDING = {
   treasurer: "Sangeeth Talluri",
 } as const;
 
+// ---- Logo preloading (fetched once at startup, used synchronously in PDFs) ----
+let logoDataUrl: string | null = null;
+let logoPromise: Promise<void> | null = null;
+
+/** Call once at app startup to preload the church logo as a data URL.
+ *  After this resolves, all PDF headers will use the real logo image. */
+export async function initPdfLogo(): Promise<void> {
+  if (logoDataUrl) return;
+  if (logoPromise) return logoPromise;
+  logoPromise = (async () => {
+    try {
+      const resp = await fetch("/alf-logo.png");
+      if (!resp.ok) return;
+      const blob = await resp.blob();
+      logoDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      // Silently fall back to the SVG mark if the image cannot load
+    }
+  })();
+  return logoPromise;
+}
+
 /** Capitalize each word in a string (e.g. "offering" → "Offering"). */
 function capitalizeWords(str: string): string {
   return str
@@ -40,7 +67,7 @@ function drawBrandMark(doc: jsPDF, x: number, y: number, scale = 1) {
   }
 }
 
-/** Shared branded header. Returns the first safe content baseline. */
+/** Shared branded letterhead header. Returns the first safe content baseline. */
 function drawDocumentHeader(
   doc: jsPDF,
   churchName: string | null | undefined,
@@ -49,25 +76,61 @@ function drawDocumentHeader(
 ) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 50;
-  doc.setFillColor(247, 241, 231);
-  doc.rect(0, 0, pageWidth, 112, "F");
-  drawBrandMark(doc, margin, 22, 1.05);
+  const logoX = margin;
+  const logoY = 24;
+
+  // Logo — real image when preloaded, otherwise the drawn SVG mark
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, "PNG", logoX, logoY, 64, 42); } catch { drawBrandMark(doc, logoX, logoY, 1.0); }
+  } else {
+    drawBrandMark(doc, logoX, logoY, 1.0);
+  }
+
+  // Church name next to logo
   doc.setTextColor(28, 25, 23);
   doc.setFont("times", "bold");
-  doc.setFontSize(18);
-  doc.text(displayChurchName(churchName), margin + 46, 43);
+  doc.setFontSize(16);
+  doc.text(displayChurchName(churchName), logoX + 74, logoY + 24);
+
+  // Contact info — centered across full page width
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setTextColor(87, 83, 78);
-  doc.text(title, margin + 46, 61);
-  doc.setFontSize(7.5);
-  doc.text(`${ALF_DOCUMENT_BRANDING.address} · Tel: ${ALF_DOCUMENT_BRANDING.phones}`, margin + 46, 76);
-  doc.text(`${ALF_DOCUMENT_BRANDING.website} · ${ALF_DOCUMENT_BRANDING.email}`, margin + 46, 89);
-  doc.setFontSize(8.5);
+  doc.text(
+    `${ALF_DOCUMENT_BRANDING.address}  \u00b7  Tel: ${ALF_DOCUMENT_BRANDING.phones}`,
+    pageWidth / 2,
+    logoY + 38,
+    { align: "center" },
+  );
+  doc.text(
+    `${ALF_DOCUMENT_BRANDING.website}  \u00b7  ${ALF_DOCUMENT_BRANDING.email}`,
+    pageWidth / 2,
+    logoY + 52,
+    { align: "center" },
+  );
+
+  // Thin separator with brand-color accent line
+  doc.setDrawColor(79, 70, 229);
+  doc.setLineWidth(1.2);
+  doc.line(margin, logoY + 66, pageWidth - margin, logoY + 66);
+  doc.setDrawColor(214, 211, 209);
+  doc.setLineWidth(0.5);
+  doc.line(margin, logoY + 68, pageWidth - margin, logoY + 68);
+
+  // Title — left-aligned below separator
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(120, 113, 108);
+  doc.text(title, margin, logoY + 84);
+
+  // Meta lines — right-aligned near the top
+  doc.setFontSize(8);
+  doc.setTextColor(120, 113, 108);
   meta.forEach((line, index) => {
-    if (line) doc.text(line, pageWidth - margin, 42 + index * 14, { align: "right" });
+    if (line) doc.text(line, pageWidth - margin, 33 + index * 14, { align: "right" });
   });
-  return 132;
+
+  return logoY + 104; // content start baseline
 }
 
 const TOTAL_PAGES_TOKEN = "{total_pages_count_string}";
@@ -75,27 +138,40 @@ const TOTAL_PAGES_TOKEN = "{total_pages_count_string}";
 function drawDocumentFooter(doc: jsPDF) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 50;
-  doc.setDrawColor(231, 229, 228);
-  doc.line(margin, 737, pageWidth - margin, 737);
+  const center = pageWidth / 2;
+
+  // Separator line
+  doc.setDrawColor(214, 211, 209);
+  doc.setLineWidth(0.5);
+  doc.line(margin, 720, pageWidth - margin, 720);
+
+  // All footer text centered
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
   doc.setTextColor(120, 113, 108);
-  doc.text(
-    `${ALF_DOCUMENT_BRANDING.address} · Tel: ${ALF_DOCUMENT_BRANDING.phones}`,
-    margin,
-    750,
-  );
-  doc.text(
-    `${ALF_DOCUMENT_BRANDING.website} · ${ALF_DOCUMENT_BRANDING.email} · EIN ${ALF_DOCUMENT_BRANDING.ein}`,
-    margin,
-    762,
-  );
+
+  doc.setFontSize(8);
+  doc.text(ALF_DOCUMENT_BRANDING.name, center, 738, { align: "center" });
+
   doc.setFontSize(7);
   doc.text(
-    `Atlanta Little Flock Church · Page ${doc.getCurrentPageInfo().pageNumber} of ${TOTAL_PAGES_TOKEN}`,
-    pageWidth - margin,
+    `Page ${doc.getCurrentPageInfo().pageNumber} of ${TOTAL_PAGES_TOKEN}`,
+    center,
+    750,
+    { align: "center" },
+  );
+
+  doc.setFontSize(7);
+  doc.text(
+    `${ALF_DOCUMENT_BRANDING.address}  ·  Tel: ${ALF_DOCUMENT_BRANDING.phones}`,
+    center,
     762,
-    { align: "right" },
+    { align: "center" },
+  );
+  doc.text(
+    `${ALF_DOCUMENT_BRANDING.website}  ·  ${ALF_DOCUMENT_BRANDING.email}`,
+    center,
+    774,
+    { align: "center" },
   );
 }
 
