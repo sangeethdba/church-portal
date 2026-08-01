@@ -5,14 +5,7 @@
 -- 3. Clean up any existing duplicates
 -- ============================================================================
 
--- 1. Delete any duplicate member profiles (keep the admin one for each email)
-delete from public.profiles
-where id not in (
-  select min(id) from public.profiles group by email
-)
-and role::text = 'member';
-
--- If there are orphan profiles (auth.users deleted), clean them too
+-- 1. Clean up any orphan profiles (auth.users deleted)
 delete from public.profiles p
 where not exists (select 1 from auth.users u where u.id = p.id);
 
