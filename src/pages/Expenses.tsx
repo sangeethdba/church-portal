@@ -164,7 +164,10 @@ export default function Expenses() {
     const patch = { admin_note: clarifyNote.trim(), admin_note_at: new Date().toISOString() };
     setExpenses((rows) => rows.map((r) => (r.id === clarifyExpense.id ? { ...r, ...patch } : r)));
     if (supabase) {
-      const { error } = await supabase.from("expenses").update(patch).eq("id", clarifyExpense.id);
+      const { error } = await supabase.rpc("admin_update_expense", {
+        p_expense_id: clarifyExpense.id,
+        p_admin_note: clarifyNote.trim(),
+      });
       if (error) console.warn("Clarification update failed:", error);
     }
     setClarifySaving(false);
@@ -185,9 +188,7 @@ export default function Expenses() {
       return;
     }
     supabase
-      .from("expenses")
-      .select("*")
-      .order("submitted_at", { ascending: false })
+      .rpc("list_expenses")
       .then(({ data, error }) => {
         if (!error && data) setExpenses(data as Expense[]);
         setLoading(false);
@@ -219,7 +220,10 @@ export default function Expenses() {
     }
     setExpenses((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     if (supabase) {
-      const { error } = await supabase.from("expenses").update(patch).eq("id", id);
+      const { error } = await supabase.rpc("admin_update_expense", {
+        p_expense_id: id,
+        p_status: status,
+      });
       if (error) console.warn("Update expense failed:", error);
     }
   };
@@ -251,7 +255,10 @@ export default function Expenses() {
     );
 
     if (supabase) {
-      await supabase.from("expenses").update(patch).eq("id", payExpenseId);
+      await supabase.rpc("admin_update_expense", {
+        p_expense_id: payExpenseId,
+        p_status: "paid",
+      });
       // Best-effort email notification
       notifyMember(payExpenseId);
     }
@@ -345,37 +352,64 @@ export default function Expenses() {
       line_items: lineItemsData.length > 0 ? lineItemsData : null,
     };
     if (supabase) {
-      const insertPayload: Record<string, unknown> = {
-        source: baseRow.source, title: baseRow.title, amount: baseRow.amount, category: baseRow.category,
-        event_name: baseRow.event_name, description: baseRow.description, notes: baseRow.notes, status: baseRow.status,
-        payment_method: paymentMethod, check_number: checkNumber || null,
-      };
-      // RLS requires member-submitted expenses to carry the submitter's profile id
-      if (form.source === "member_submitted") insertPayload.user_id = ctx.profile?.id ?? null;
-      // jsonb column — insert the array directly (JSON.stringify here produced a
-      // jsonb *string*, which crashed every reader: .some/.map on a string)
-      if (lineItemsData.length > 0) { insertPayload.line_items = lineItemsData; }
-      const { data, error } = await supabase.from("expenses").insert(insertPayload).select().maybeSingle();
-      if (data) {
-        const expense = data as Expense;
-        // Attach check image to receipt_paths if uploaded
-        if (checkImagePath) {
-          await supabase.from("expenses").update({ receipt_paths: [checkImagePath] }).eq("id", expense.id);
-          expense.receipt_paths = [checkImagePath];
-        }
-        if (receiptFiles.length > 0) {
-          setUploading(true);
-          const paths = await uploadReceipts(expense.id);
-          if (paths.length > 0) {
-            await supabase
-              .from("expenses")
-              .update({ receipt_paths: paths })
-              .eq("id", expense.id);
-            expense.receipt_paths = paths;
+      let expenseId: string | null = null;
+      let error: unknown = null;
+
+      if (form.source === "member_submitted") {
+        const rpcResult = await supabase.rpc("submit_expense", {
+          p_title: baseRow.title ?? null,
+          p_amount: baseRow.amount,
+          p_category: baseRow.category,
+          p_description: baseRow.description ?? null,
+          p_notes: baseRow.notes ?? null,
+          p_event_name: baseRow.event_name ?? null,
+          p_line_items: lineItemsData.length > 0 ? lineItemsData : null,
+        });
+        expenseId = rpcResult.data as string | null;
+        error = rpcResult.error;
+      } else {
+        const rpcResult = await supabase.rpc("admin_insert_expense", {
+          p_title: baseRow.title ?? null,
+          p_amount: baseRow.amount,
+          p_category: baseRow.category,
+          p_description: baseRow.description ?? null,
+          p_notes: baseRow.notes ?? null,
+          p_event_name: baseRow.event_name ?? null,
+          p_payment_method: paymentMethod ?? null,
+          p_check_number: checkNumber || null,
+        });
+        expenseId = rpcResult.data as string | null;
+        error = rpcResult.error;
+      }
+
+      if (!error && expenseId) {
+        // Fetch the full expense record back (member expenses_self_read or admin can read)
+        const { data: inserted } = await supabase
+          .from("expenses")
+          .select()
+          .eq("id", expenseId)
+          .maybeSingle();
+        if (inserted) {
+          const expense = inserted as Expense;
+          // Attach check image to receipt_paths if uploaded
+          if (checkImagePath) {
+            await supabase.from("expenses").update({ receipt_paths: [checkImagePath] }).eq("id", expense.id);
+            expense.receipt_paths = [checkImagePath];
           }
-          setUploading(false);
+          if (receiptFiles.length > 0) {
+            setUploading(true);
+            const paths = await uploadReceipts(expense.id);
+            if (paths.length > 0) {
+              await supabase
+                .from("expenses")
+                .update({ receipt_paths: paths })
+                .eq("id", expense.id);
+              expense.receipt_paths = paths;
+            }
+            setUploading(false);
+          }
+          setExpenses((rows) => [expense, ...rows]);
         }
-        setExpenses((rows) => [expense, ...rows]);
       }
       if (error) console.warn("Insert expense failed:", error);
     } else {
