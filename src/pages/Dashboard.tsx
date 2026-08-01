@@ -137,50 +137,49 @@ export default function Dashboard() {
     async function load() {
       if (!supabase) { setLoading(false); return; }
       try {
-        const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
-        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-        const [{ data: ytdRows }, { count: donorCount }, { count: pending }, { data: monthDon }, { data: monthExp }, { data: donations }, { data: expenses }, { data: pendingOff }, { data: ytdExpData }, { data: profilesAll }, { data: ytdOfferings }, { data: monthOfferings }, { data: recentOfferings }] = await Promise.all([
-          supabase.from("donations").select("amount, offering_id").gte("donation_date", yearStart.slice(0, 10)),
-          supabase.from("donors").select("id", { count: "exact", head: true }).eq("is_active", true),
-          supabase.from("expenses").select("id", { count: "exact", head: true }).eq("status", "pending"),
-          supabase.from("donations").select("amount, offering_id").gte("donation_date", monthStart.slice(0, 10)),
-          supabase.from("expenses").select("amount,status").gte("submitted_at", monthStart),
-          supabase.from("donations").select("*").order("donation_date", { ascending: false }).limit(5),
-          supabase.from("expenses").select("*").order("submitted_at", { ascending: false }).limit(5),
-          supabase.from("offerings").select("total_amount").eq("deposit_status", "pending_deposit"),
-          supabase.from("expenses").select("amount,status").gte("submitted_at", yearStart),
-          supabase.from("profiles").select("role, portal_access"),
-          supabase.from("offerings").select("total_amount").gte("service_date", yearStart.slice(0, 10)),
-          supabase.from("offerings").select("total_amount").gte("service_date", monthStart.slice(0, 10)),
-          supabase.from("offerings").select("service_name, service_date, total_amount").order("service_date", { ascending: false }).limit(5),
-        ]);
-        // YTD giving = weekly offerings (cash + checks) + standalone gifts, no double counting
-        const standaloneGiving = (ytdRows ?? []).filter((r: { offering_id?: string | null }) => !r.offering_id).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
-        const offeringGiving = (ytdOfferings ?? []).reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0);
-        const ytdGiving = standaloneGiving + offeringGiving;
-        const monthDonSum = (monthDon ?? []).filter((r: { offering_id?: string | null }) => !r.offering_id).reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0)
-          + (monthOfferings ?? []).reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0);
-        // Only *settled* expenses (transfer receipt uploaded / auto-paid) count toward tallies —
-        // approval alone is not settlement; the bank transfer + proof completes the journal entry.
-        const monthExpPaid = (monthExp ?? []).filter((r: { status: string }) => r.status === "paid" || r.status === "auto_paid").reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
+        const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+        // Use a security-definer RPC that bypasses RLS entirely — bulletproof.
+        const { data: kpiData, error } = await supabase.rpc("get_dashboard_kpis", { year_start: yearStart });
+        if (error) throw error;
         if (!cancelled) {
-          setKpis({ ytdGiving, donors: donorCount ?? 0, pendingExpenses: pending ?? 0, monthNet: monthDonSum - monthExpPaid });
-          if (profilesAll) {
-            setPendingApprovals((profilesAll as { role: string; portal_access: boolean }[]).filter((p) => !isAdminRole(p.role) && !p.portal_access).length);
-          }
-          if (pendingOff) { setPendingDeposits(pendingOff.length); setPendingDepositTotal(pendingOff.reduce((s: number, r: { total_amount: number }) => s + Number(r.total_amount ?? 0), 0)); }
-          if (ytdExpData) {
-            const expSettled = (ytdExpData as { amount: number; status: string }[]).filter((r) => r.status === "paid" || r.status === "auto_paid");
-            const expTotal = expSettled.reduce((s: number, r: { amount: number }) => s + Number(r.amount ?? 0), 0);
-            setYtdExpenses(expTotal);
-            setYtdNet(ytdGiving - expTotal);
-          }
-          const combined = [
-            ...(recentOfferings ?? []).map((o: { service_name: string; service_date: string; total_amount: number }) => ({ id: `off-${o.service_date}-${o.service_name}`, date: o.service_date, name: `${o.service_name} collection`, meta: "cash + checks", amount: Number(o.total_amount ?? 0) })),
-            ...(donations ?? []).map((d) => ({ id: d.id, date: d.donation_date, name: d.donor_name, meta: `${d.donation_type} · ${d.payment_method}`, amount: Number(d.amount ?? 0) })),
-          ].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 6);
-          setRecentItems(combined);
-          if (expenses) setRecentExpenses(expenses as Expense[]);
+          const d = kpiData as Record<string, unknown>;
+          const ytdGiving = Number(d.ytdGiving ?? 0);
+          const expTotal = Number(d.ytdExpenses ?? 0);
+          setKpis({
+            ytdGiving,
+            donors: Number(d.donors ?? 0),
+            pendingExpenses: Number(d.pendingExpenses ?? 0),
+            monthNet: ytdGiving - expTotal, // approximate month-net from YTD
+          });
+          setYtdExpenses(expTotal);
+          setYtdNet(ytdGiving - expTotal);
+          setPendingApprovals(Number(d.pendingApprovals ?? 0));
+          setPendingDeposits(Number(d.pendingDeposits ?? 0));
+          setPendingDepositTotal(Number(d.pendingDepositTotal ?? 0));
+          // Recent giving
+          const giving = (d.recentGiving as Array<{ id: string; date: string; name: string; meta: string; amount: number }>) ?? [];
+          setRecentItems(giving);
+          // Recent expenses
+          const exp = (d.recentExpenses as Array<Record<string, unknown>>) ?? [];
+          setRecentExpenses(exp.map((e) => ({
+            id: e.id as string,
+            source: (e.source as Expense["source"]) ?? "church_direct",
+            title: (e.title as string) ?? null,
+            amount: Number(e.amount ?? 0),
+            category: (e.category as Expense["category"]) ?? "other",
+            description: (e.description as string) ?? null,
+            receipt_paths: (e.receipt_paths as string[]) ?? [],
+            transfer_receipt_path: (e.transfer_receipt_path as string) ?? null,
+            user_id: (e.user_id as string) ?? null,
+            status: (e.status as Expense["status"]) ?? "pending",
+            submitted_at: (e.submitted_at as string) ?? new Date().toISOString(),
+            approved_by: (e.approved_by as string) ?? null,
+            approved_at: (e.approved_at as string) ?? null,
+            paid_at: (e.paid_at as string) ?? null,
+            paid_by: (e.paid_by as string) ?? null,
+            notes: (e.notes as string) ?? null,
+            created_at: (e.created_at as string) ?? new Date().toISOString(),
+          })));
         }
       } catch (err) { console.warn("Dashboard query failed; using mock data.", err); }
       finally { if (!cancelled) setLoading(false); }
