@@ -11,11 +11,12 @@
 -- so the admin-read policy can use the freshly recreated is_admin_or_treasurer.
 
 -- ── 1. Recreate current_role with set search_path = '' ──────────────────
+--    NOTE: returns app_role (NOT text) — the original return type.
 create or replace function public.current_role()
-returns text
+returns public.app_role
 language sql stable security definer set search_path = ''
 as $$
-  select role::text from public.profiles where id = auth.uid();
+  select role from public.profiles where id = auth.uid();
 $$;
 
 -- ── 2. Recreate is_admin_or_treasurer ───────────────────────────────────
