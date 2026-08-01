@@ -44,21 +44,12 @@ export async function signOut() {
 }
 
 export async function getMyProfile(): Promise<Profile | null> {
-  const { data: session } = await supabase.auth.getSession();
-  const userId = session.session?.user?.id;
-  if (!userId) return null;
-
-  // The handle_new_user trigger (migration 0026) handles UUID re-linking
-  // for Google re-auth, so a simple UUID lookup always finds the right row.
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (data) return data as Profile;
-  if (error) console.warn("Could not load profile:", error.message);
-  return null;
+  const { data, error } = await supabase.rpc("get_my_profile");
+  if (error) {
+    console.warn("get_my_profile RPC failed:", error.message);
+    return null;
+  }
+  return (data as Profile | null) ?? null;
 }
 
 export async function getCurrentSession(): Promise<AuthSessionState> {
