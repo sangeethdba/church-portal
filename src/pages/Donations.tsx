@@ -112,10 +112,10 @@ export default function Donations() {
       return;
     }
     Promise.all([
-      supabase.from("donations").select("*").order("donation_date", { ascending: false }),
+      supabase.rpc("list_donations"),
       supabase.from("donors").select("id, first_name, last_name").eq("is_active", true),
-    ]).then(([{ data: dData }, { data: ddData }]) => {
-      if (dData) setDonations(dData as Donation[]);
+    ]).then(([{ data: dData, error }, { data: ddData }]) => {
+      if (!error && dData) setDonations(dData as Donation[]);
       if (ddData)
         setDonors(
           (ddData as Pick<Donor, "id" | "first_name" | "last_name">[]).map((d) => ({
@@ -168,21 +168,25 @@ export default function Donations() {
       created_at: new Date().toISOString(),
     };
     if (supabase) {
-      const { data, error } = await supabase
-        .from("donations")
-        .insert({
-          donor_id: baseRow.donor_id,
-          donor_name: baseRow.donor_name,
-          amount: baseRow.amount,
-          donation_type: baseRow.donation_type,
-          payment_method: baseRow.payment_method,
-          check_number: baseRow.check_number,
-          donation_date: baseRow.donation_date,
-          notes: baseRow.notes,
-        })
-        .select()
-        .maybeSingle();
-      if (data) setDonations((rows) => [data as Donation, ...rows]);
+      const { data: donationId, error } = await supabase.rpc("submit_donation", {
+        p_donor_id: baseRow.donor_id,
+        p_donor_name: baseRow.donor_name,
+        p_amount: baseRow.amount,
+        p_donation_type: baseRow.donation_type,
+        p_payment_method: baseRow.payment_method,
+        p_check_number: baseRow.check_number,
+        p_donation_date: baseRow.donation_date,
+        p_notes: baseRow.notes,
+      });
+      if (!error && donationId) {
+        // Fetch back the full record
+        const { data: inserted } = await supabase
+          .from("donations")
+          .select()
+          .eq("id", donationId)
+          .maybeSingle();
+        if (inserted) setDonations((rows) => [inserted as Donation, ...rows]);
+      }
       if (error) console.warn("Insert donation failed:", error);
     } else {
       setDonations((rows) => [baseRow, ...rows]);

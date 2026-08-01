@@ -8,7 +8,6 @@ import {
   Mail,
   Phone,
   MapPin,
-  HandCoins,
 } from "lucide-react";
 import {
   Button,
@@ -133,17 +132,7 @@ export default function Donors() {
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // record-donation dialog state (admin adds a gift for a member directly)
-  const [recDonor, setRecDonor] = useState<Donor | null>(null);
-  const [recForm, setRecForm] = useState({
-    amount: "",
-    donation_type: "tithe",
-    payment_method: "check",
-    check_number: "",
-    donation_date: new Date().toISOString().slice(0, 10),
-    notes: "",
-  });
-  const [recSaving, setRecSaving] = useState(false);
+
 
   useEffect(() => {
     if (!supabase) {
@@ -313,47 +302,7 @@ export default function Donors() {
     setSavingEdit(false);
   };
 
-  const openRecordDonation = (d: Donor) => {
-    setRecDonor(d);
-    setRecForm({
-      amount: "",
-      donation_type: "tithe",
-      payment_method: "check",
-      check_number: "",
-      donation_date: new Date().toISOString().slice(0, 10),
-      notes: "",
-    });
-  };
 
-  const handleRecordDonation = async () => {
-    if (!recDonor) return;
-    const value = Number(recForm.amount);
-    if (!value || value <= 0) return;
-    setRecSaving(true);
-    const row = {
-      donor_id: recDonor.id,
-      donor_name: `${recDonor.first_name} ${recDonor.last_name}`.trim(),
-      amount: value,
-      donation_type: recForm.donation_type,
-      payment_method: recForm.payment_method,
-      check_number: recForm.check_number || null,
-      donation_date: recForm.donation_date,
-      entered_by: ctx.profile?.id ?? null,
-      notes: recForm.notes || null,
-    };
-    if (supabase) {
-      const { data, error } = await supabase.from("donations").insert(row).select().maybeSingle();
-      if (data) {
-        setDonations((rows) => [
-          ...rows,
-          { donor_id: recDonor.id, donor_name: row.donor_name, amount: value, donation_date: recForm.donation_date },
-        ]);
-        setRecDonor(null);
-      }
-      if (error) console.warn("Insert donation failed:", error);
-    }
-    setRecSaving(false);
-  };
 
   const donorFields = (v: typeof editForm, set: (f: typeof editForm) => void, prefix: string) => (
     <div className="grid grid-cols-2 gap-3">
@@ -597,24 +546,14 @@ export default function Donors() {
                     {formatCurrency(st.total)}
                   </Td>
                   <Td className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        iconLeft={<HandCoins className="h-3.5 w-3.5" />}
-                        onClick={() => openRecordDonation(d)}
-                      >
-                        Record donation
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        iconLeft={<Pencil className="h-3.5 w-3.5" />}
-                        onClick={() => openEdit(d)}
-                      >
-                        Edit
-                      </Button>
-                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      iconLeft={<Pencil className="h-3.5 w-3.5" />}
+                      onClick={() => openEdit(d)}
+                    >
+                      Edit
+                    </Button>
                   </Td>
                 </Tr>
               );
@@ -645,68 +584,7 @@ export default function Donors() {
         </DialogContent>
       </Dialog>
 
-      {/* Record donation dialog */}
-      <Dialog open={recDonor !== null} onOpenChange={(o) => !o && setRecDonor(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Record a donation</DialogTitle>
-            <DialogDescription>
-              Add a gift for {recDonor ? `${recDonor.first_name} ${recDonor.last_name}` : "this member"}. It will appear on their giving record and tax statement.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="rec-amount">Amount (USD)</Label>
-              <Input id="rec-amount" type="number" min="0.01" step="0.01" value={recForm.amount}
-                onChange={(e) => setRecForm({ ...recForm, amount: e.target.value })} className="mt-1.5" required />
-            </div>
-            <div>
-              <Label htmlFor="rec-date">Date</Label>
-              <Input id="rec-date" type="date" value={recForm.donation_date}
-                onChange={(e) => setRecForm({ ...recForm, donation_date: e.target.value })} className="mt-1.5" required />
-            </div>
-            <div>
-              <Label htmlFor="rec-type">Type</Label>
-              <Select id="rec-type" value={recForm.donation_type}
-                onChange={(e) => setRecForm({ ...recForm, donation_type: e.target.value })} className="mt-1.5">
-                <option value="tithe">Tithe</option>
-                <option value="offering">Offering</option>
-                <option value="building">Building fund</option>
-                <option value="missions">Missions</option>
-                <option value="other">Other</option>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="rec-method">Method</Label>
-              <Select id="rec-method" value={recForm.payment_method}
-                onChange={(e) => setRecForm({ ...recForm, payment_method: e.target.value })} className="mt-1.5">
-                <option value="cash">Cash</option>
-                <option value="check">Check</option>
-                <option value="online">Online</option>
-                <option value="card">Card</option>
-              </Select>
-            </div>
-            {recForm.payment_method === "check" && (
-              <div className="col-span-2">
-                <Label htmlFor="rec-check">Check number</Label>
-                <Input id="rec-check" value={recForm.check_number}
-                  onChange={(e) => setRecForm({ ...recForm, check_number: e.target.value })} className="mt-1.5" />
-              </div>
-            )}
-            <div className="col-span-2">
-              <Label htmlFor="rec-notes">Notes</Label>
-              <Input id="rec-notes" value={recForm.notes}
-                onChange={(e) => setRecForm({ ...recForm, notes: e.target.value })} className="mt-1.5" />
-            </div>
-          </div>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setRecDonor(null)}>Cancel</Button>
-            <Button onClick={handleRecordDonation} disabled={recSaving || !recForm.amount || Number(recForm.amount) <= 0}>
-              {recSaving ? "Saving…" : "Record gift"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+
       </>
       )}
     </div>
