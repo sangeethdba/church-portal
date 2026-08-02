@@ -26,18 +26,12 @@ interface Deduction {
   amount: string;
 }
 
-interface CheckEntry {
+interface IndividualDonation {
   key: string;
   donorName: string;
   donorId: string;
+  method: "check" | "cash";
   checkNumber: string;
-  amount: string;
-}
-
-interface CashGift {
-  key: string;
-  donorName: string;
-  donorId: string;
   amount: string;
 }
 
@@ -118,8 +112,7 @@ export default function Offerings() {
   const [svcName, setSvcName] = useState("Sunday Service");
   const [denoms, setDenoms] = useState<DenomCounts>(emptyDenoms());
   const [deductions, setDeductions] = useState<Deduction[]>([]);
-  const [checks, setChecks] = useState<CheckEntry[]>([]);
-  const [cashGifts, setCashGifts] = useState<CashGift[]>([]);
+  const [donations, setDonations] = useState<IndividualDonation[]>([]);
   const [notes, setNotes] = useState("");
   const [activeSuggestKey, setActiveSuggestKey] = useState<string | null>(null);
 
@@ -193,7 +186,7 @@ export default function Offerings() {
       totalChecks: checksTotal,
       cashGifts: [],
       totalCashGifts: 0,
-      totalDeposit: net + checksTotal,
+      totalDeposit: net + checksTotal,  // checksTotal from DB, not local state
       churchName,
       recordedBy: "Admin",
       counter1Name,
@@ -216,9 +209,10 @@ export default function Offerings() {
   const grossCash = computeCashFromDenoms(denoms);
   const totalDeductions = deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0);
   const netCash = grossCash - totalDeductions;
-  const totalChecks = checks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-  const totalCashGifts = cashGifts.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-  const depositTotal = netCash + totalChecks;
+  const totalChecks = donations.filter((d) => d.method === "check").reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const totalCashGifts = donations.filter((d) => d.method === "cash").reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const totalDonations = donations.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const depositTotal = netCash + totalDonations;
 
   const filtered = useMemo(() => {
     return offerings.filter((o) => {
@@ -278,8 +272,7 @@ export default function Offerings() {
     setSvcName("Sunday Service");
     setDenoms(emptyDenoms());
     setDeductions([]);
-    setChecks([]);
-    setCashGifts([]);
+    setDonations([]);
     setNotes("");
     setCounter1Pin("");
     setCounter2Id("");
@@ -287,24 +280,14 @@ export default function Offerings() {
     setSignOffError("");
   };
 
-  const addCheck = () => {
-    setChecks((prev) => [...prev, { key: `c${Date.now()}`, donorName: "", donorId: "", checkNumber: "", amount: "" }]);
+  const addDonation = (method: "check" | "cash") => {
+    setDonations((prev) => [...prev, { key: `d${Date.now()}`, donorName: "", donorId: "", method, checkNumber: "", amount: "" }]);
   };
 
-  const removeCheck = (key: string) => setChecks((prev) => prev.filter((c) => c.key !== key));
+  const removeDonation = (key: string) => setDonations((prev) => prev.filter((d) => d.key !== key));
 
-  const updateCheck = (key: string, patch: Partial<CheckEntry>) => {
-    setChecks((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
-  };
-
-  const addCashGift = () => {
-    setCashGifts((prev) => [...prev, { key: `g${Date.now()}`, donorName: "", donorId: "", amount: "" }]);
-  };
-
-  const removeCashGift = (key: string) => setCashGifts((prev) => prev.filter((c) => c.key !== key));
-
-  const updateCashGift = (key: string, patch: Partial<CashGift>) => {
-    setCashGifts((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  const updateDonation = (key: string, patch: Partial<IndividualDonation>) => {
+    setDonations((prev) => prev.map((d) => (d.key === key ? { ...d, ...patch } : d)));
   };
 
   // Live member suggestions as the counter types a donor name
@@ -317,7 +300,7 @@ export default function Offerings() {
   };
 
   const pickDonor = (key: string, d: Donor) => {
-    updateCheck(key, { donorId: d.id, donorName: `${d.first_name} ${d.last_name}` });
+    updateDonation(key, { donorId: d.id, donorName: `${d.first_name} ${d.last_name}` });
     setActiveSuggestKey(null);
   };
 
@@ -341,9 +324,9 @@ export default function Offerings() {
     grossCash,
     deductions: deductions.map((d) => ({ reason: d.reason, amount: Number(d.amount) || 0 })),
     netCash,
-    checks: checks.map((c) => ({ donorName: c.donorName || "—", checkNumber: c.checkNumber, amount: Number(c.amount) || 0 })),
+    checks: donations.filter((d) => d.method === "check").map((d) => ({ donorName: d.donorName || "—", checkNumber: d.checkNumber, amount: Number(d.amount) || 0 })),
     totalChecks,
-    cashGifts: cashGifts.map((g) => ({ donorName: g.donorName || "—", checkNumber: "", amount: Number(g.amount) || 0 })),
+    cashGifts: donations.filter((d) => d.method === "cash").map((d) => ({ donorName: d.donorName || "—", checkNumber: "", amount: Number(d.amount) || 0 })),
     totalCashGifts,
     totalDeposit: depositTotal,
     churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Atlanta Little Flock Church",
@@ -381,7 +364,7 @@ export default function Offerings() {
       cash_deductions: deductions,
       cash_net: netCash,
       check_amount: totalChecks,
-      check_count: checks.length,
+      check_count: donations.filter((d) => d.method === "check").length,
       total_amount: depositTotal,
       recorded_by: recordedBy,
       notes: notes || null,
@@ -389,22 +372,22 @@ export default function Offerings() {
 
     if (supabase) {
       // Build the p_checks array from local state
-      const p_checks = checks
-        .filter((ch) => Number(ch.amount) > 0)
-        .map((ch) => ({
-          donor_name: ch.donorName.trim() || "Anonymous",
-          donor_id: ch.donorId || null,
-          check_number: ch.checkNumber || null,
-          amount: Number(ch.amount),
+      const p_checks = donations
+        .filter((d) => d.method === "check" && Number(d.amount) > 0)
+        .map((d) => ({
+          donor_name: d.donorName.trim() || "Anonymous",
+          donor_id: d.donorId || null,
+          check_number: d.checkNumber || null,
+          amount: Number(d.amount),
         }));
 
-      // Build named cash gifts from local state
-      const p_cash_gifts = cashGifts
-        .filter((g) => Number(g.amount) > 0)
-        .map((g) => ({
-          donor_name: g.donorName.trim() || "Anonymous",
-          donor_id: g.donorId || null,
-          amount: Number(g.amount),
+      // Build named cash gifts from unified donations
+      const p_cash_gifts = donations
+        .filter((d) => d.method === "cash" && Number(d.amount) > 0)
+        .map((d) => ({
+          donor_name: d.donorName.trim() || "Anonymous",
+          donor_id: d.donorId || null,
+          amount: Number(d.amount),
         }));
 
       // Atomic: insert offering + checks + cash gifts + PIN verify in one transaction.
@@ -416,7 +399,7 @@ export default function Offerings() {
         p_cash_deductions: deductions,
         p_cash_net: netCash,
         p_check_amount: totalChecks,
-        p_check_count: checks.length,
+        p_check_count: donations.filter((d) => d.method === "check").length,
         p_total_amount: depositTotal,
         p_notes: notes || null,
         p_checks,
@@ -632,155 +615,84 @@ export default function Offerings() {
                 </div>
               </div>
 
-              {/* Checks per donor */}
+              {/* Individual donations (checks + named cash) */}
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-4">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
-                    <ScrollText className="h-4 w-4 text-amber-600" /> Individual checks
+                    <ScrollText className="h-4 w-4 text-amber-600" /> Individual donations
                   </span>
-                  <Button size="sm" variant="outline" onClick={addCheck}>+ Add check</Button>
-                </div>
-                {checks.length === 0 && (
-                  <p className="text-xs text-stone-400">No checks yet. Add checks with donor names for tax receipts.</p>
-                )}
-                {checks.map((ch) => (
-                  <div key={ch.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-100 bg-white p-2">
-                    <div className="flex-1 min-w-[160px]">
-                      <Label className="text-xs">Donor</Label>
-                      <div className="relative">
-                        <input
-                          value={ch.donorName}
-                          onChange={(e) => {
-                            updateCheck(ch.key, { donorName: e.target.value, donorId: "" });
-                            setActiveSuggestKey(ch.key);
-                          }}
-                          onFocus={() => setActiveSuggestKey(ch.key)}
-                          onBlur={() => setActiveSuggestKey(null)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              const first = suggestionsFor(ch.donorName)[0];
-                              if (first) { e.preventDefault(); pickDonor(ch.key, first); }
-                            } else if (e.key === "Escape") {
-                              setActiveSuggestKey(null);
-                            }
-                          }}
-                          placeholder="Type member name…"
-                          className="mt-1 w-full rounded-md border border-stone-200 px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-                        />
-                        {activeSuggestKey === ch.key && ch.donorName.trim() !== "" && (
-                          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 shadow-lg">
-                            {suggestionsFor(ch.donorName).length === 0 ? (
-                              <li className="px-3 py-2 text-xs text-amber-600">
-                                No match — new member will be created on save
-                              </li>
-                            ) : (
-                              suggestionsFor(ch.donorName).map((d) => (
-                                <li
-                                  key={d.id}
-                                  onMouseDown={(e) => { e.preventDefault(); pickDonor(ch.key, d); }}
-                                  className="cursor-pointer px-3 py-2 text-sm text-stone-700 hover:bg-accent-soft hover:text-accent"
-                                >
-                                  {d.first_name} {d.last_name}
-                                </li>
-                              ))
-                            )}
-                          </ul>
-                        )}
-                      </div>
-                      {ch.donorName.trim() !== "" && !ch.donorId && (
-                        (() => {
-                          // Same name typed on another check row? Then this is the same new member — one record on save.
-                          const sameNameOnOtherRow = checks.some(
-                            (c) => c.key !== ch.key && !c.donorId && normName(c.donorName) === normName(ch.donorName) && normName(ch.donorName) !== "",
-                          );
-                          return (
-                            <p className="mt-1 text-[11px] font-medium text-amber-600">
-                              New member — auto-created on save. Add details later in Donors.
-                              {sameNameOnOtherRow && (
-                                <span className="block text-emerald-700">
-                                  ✓ {checks.filter((c) => !c.donorId && normName(c.donorName) === normName(ch.donorName)).length} checks — one member record will be created for {ch.donorName.trim()}.
-                                </span>
-                              )}
-                            </p>
-                          );
-                        })()
-                      )}
-                    </div>
-                    <div className="w-24">
-                      <Label className="text-xs">Check #</Label>
-                      <Input
-                        placeholder="#"
-                        value={ch.checkNumber}
-                        onChange={(e) => updateCheck(ch.key, { checkNumber: e.target.value })}
-                        className="mt-1 h-9 text-sm"
-                      />
-                    </div>
-                    <div className="w-28">
-                      <Label className="text-xs">Amount</Label>
-                      <Input
-                        type="number" min="0" step="0.01" placeholder="0.00"
-                        value={ch.amount}
-                        onChange={(e) => updateCheck(ch.key, { amount: e.target.value })}
-                        className="mt-1 h-9 text-sm"
-                      />
-                    </div>
-                    <button onClick={() => removeCheck(ch.key)}
-                      className="mt-4 rounded p-1 text-stone-400 hover:bg-rose-100 hover:text-rose-600">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  <div className="flex items-center gap-1.5">
+                    <Button size="sm" variant="outline" onClick={() => addDonation("check")}>+ Add check</Button>
+                    <Button size="sm" variant="outline" onClick={() => addDonation("cash")}>+ Add cash</Button>
                   </div>
-                ))}
-                {checks.length > 0 && (
-                  <div className="mt-2 text-right text-sm text-stone-600">
-                    Checks total: <span className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(totalChecks)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Named cash gifts (envelopes) */}
-              <div className="mt-4 rounded-lg border border-green-200 bg-green-50/40 p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
-                    <Banknote className="h-4 w-4 text-green-600" /> Named cash gifts (envelopes)
-                  </span>
-                  <Button size="sm" variant="outline" onClick={addCashGift}>+ Add cash gift</Button>
                 </div>
-                {cashGifts.length === 0 && (
-                  <p className="text-xs text-stone-400">No named envelopes yet. Add cash gifts with donor names — these will appear on their tax statements.</p>
+                {donations.length === 0 && (
+                  <p className="text-xs text-stone-400">No donations yet. Add checks with donor names + check numbers, or cash envelopes for named givers.</p>
                 )}
-                {cashGifts.map((g) => (
-                  <div key={g.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-green-100 bg-white p-2">
+                {donations.map((d) => (
+                  <div key={d.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-100 bg-white p-2">
                     <div className="flex-1 min-w-[160px]">
                       <Label className="text-xs">Donor</Label>
                       <Input
                         placeholder="Donor name"
-                        value={g.donorName}
-                        onChange={(e) => updateCashGift(g.key, { donorName: e.target.value, donorId: "" })}
+                        value={d.donorName}
+                        onChange={(e) => updateDonation(d.key, { donorName: e.target.value, donorId: "" })}
                         className="mt-1 h-9 text-sm"
                       />
                     </div>
+                    <div className="w-24">
+                      <Label className="text-xs">Type</Label>
+                      <Select
+                        value={d.method}
+                        onChange={(e) => updateDonation(d.key, { method: e.target.value as "check" | "cash", checkNumber: e.target.value === "cash" ? "" : d.checkNumber })}
+                        className="mt-1 h-9 text-sm"
+                      >
+                        <option value="check">Check</option>
+                        <option value="cash">Cash</option>
+                      </Select>
+                    </div>
+                    {d.method === "check" && (
+                      <div className="w-24">
+                        <Label className="text-xs">Check #</Label>
+                        <Input
+                          placeholder="#"
+                          value={d.checkNumber}
+                          onChange={(e) => updateDonation(d.key, { checkNumber: e.target.value })}
+                          className="mt-1 h-9 text-sm"
+                        />
+                      </div>
+                    )}
                     <div className="w-28">
                       <Label className="text-xs">Amount</Label>
                       <Input
                         type="number" min="0" step="0.01" placeholder="0.00"
-                        value={g.amount}
-                        onChange={(e) => updateCashGift(g.key, { amount: e.target.value })}
+                        value={d.amount}
+                        onChange={(e) => updateDonation(d.key, { amount: e.target.value })}
                         className="mt-1 h-9 text-sm"
                       />
                     </div>
-                    <button onClick={() => removeCashGift(g.key)}
+                    <button onClick={() => removeDonation(d.key)}
                       className="mt-4 rounded p-1 text-stone-400 hover:bg-rose-100 hover:text-rose-600">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 ))}
-                {cashGifts.length > 0 && (
-                  <div className="mt-2 text-right text-sm text-stone-600">
-                    Named cash total: <span className="font-serif text-lg font-semibold text-green-700">{formatCurrency(totalCashGifts)}</span>
-                    <p className="text-xs text-stone-400 mt-0.5">These amounts are part of the net cash deposit — tracked to donors for tax statements.</p>
+                {donations.length > 0 && (
+                  <div className="mt-2 text-right text-sm text-stone-600 space-y-0.5">
+                    {totalChecks > 0 && (
+                      <div>Checks: <span className="font-serif font-semibold text-amber-700">{formatCurrency(totalChecks)}</span> ({donations.filter((d) => d.method === "check").length})</div>
+                    )}
+                    {totalCashGifts > 0 && (
+                      <div>Named cash: <span className="font-serif font-semibold text-green-700">{formatCurrency(totalCashGifts)}</span> ({donations.filter((d) => d.method === "cash").length})</div>
+                    )}
+                    <div className="font-serif text-lg font-semibold text-stone-900">
+                      Total donations: {formatCurrency(totalDonations)}
+                    </div>
                   </div>
                 )}
               </div>
+
+              {/* Deposit total */}
 
 
               {/* Deposit total */}
