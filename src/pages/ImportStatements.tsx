@@ -328,6 +328,24 @@ export default function ImportStatements() {
     if (!first || !last) return;
     setCreatingDonor(true);
     if (supabase) {
+      // ── Check for duplicate donor first ──────────────────────────
+      const { data: dupCheck } = await supabase
+        .rpc("check_duplicate_donor", { p_first: first, p_last: last });
+
+      if (dupCheck && !(dupCheck as any).ok) {
+        toast((dupCheck as any).error || "A donor with this name already exists", "error");
+        // If there's an existing donor, auto-select it on the row
+        const existingId = (dupCheck as any).existing_id;
+        if (existingId && createDonorForId) {
+          updateTx(createDonorForId, { donorId: existingId });
+        }
+        setNewFirst("");
+        setNewLast("");
+        setCreateDonorForId(null);
+        setCreatingDonor(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("donors")
         .insert({ first_name: first, last_name: last })
@@ -342,7 +360,11 @@ export default function ImportStatements() {
         }
         toast(`${first} ${last} added as donor`, "success");
       } else if (error) {
-        toast(error.message || "Failed to create donor", "error");
+        // Postgres unique violation fallback message
+        const msg = error.message?.includes("duplicate") || error.message?.includes("unique")
+          ? `A donor named "${first} ${last}" already exists`
+          : (error.message || "Failed to create donor");
+        toast(msg, "error");
       }
     } else {
       const fallback: Donor = {

@@ -194,6 +194,16 @@ export default function Donors() {
       .map((s) => s.trim())
       .filter(Boolean);
     if (supabase) {
+      // ── Check for duplicate donor first ──────────────────────────
+      const { data: dupCheck } = await supabase
+        .rpc("check_duplicate_donor", { p_first: form.first_name, p_last: form.last_name });
+
+      if (dupCheck && !(dupCheck as any).ok) {
+        alert((dupCheck as any).error || "A donor with this name already exists");
+        setSaving(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("donors")
         .insert({
@@ -212,7 +222,13 @@ export default function Donors() {
         .select()
         .maybeSingle();
       if (data) setDonors((d) => [...d, data as Donor]);
-      if (error) console.warn("Insert donor failed:", error);
+      if (error) {
+        const msg = error.message?.includes("duplicate") || error.message?.includes("unique")
+          ? `A donor named "${form.first_name} ${form.last_name}" already exists`
+          : (error.message || "Insert donor failed");
+        console.warn("Insert donor failed:", error);
+        alert(msg);
+      }
     } else {
       setDonors((d) => [
         ...d,
