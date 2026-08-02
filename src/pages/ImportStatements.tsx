@@ -7,6 +7,7 @@ import {
   FileText,
   Trash2,
   CheckCircle2,
+  Circle,
   XCircle,
   Banknote,
   Receipt,
@@ -15,6 +16,7 @@ import {
   AlertTriangle,
   Download,
   Shield,
+  CheckCheck,
 } from "lucide-react";
 import { PageHeader } from "@/components/Layout";
 import { Button, Card, CardBody, CardHeader, Badge, EmptyState, Select, Input, toast } from "@/components/ui";
@@ -35,6 +37,7 @@ interface ParsedTransaction {
   paymentMethod: string;
   checkNumber: string;
   raw: string;                    // original line for debugging
+  approved: boolean;              // user has reviewed and approved this row for import
 }
 
 const DONATION_TYPES: { value: DonationKind; label: string }[] = [
@@ -144,7 +147,7 @@ function normalizeDate(raw: string): string {
  *  Supports Bank of America (Date,Description,Amount,Running Bal.),
  *  Chase, Wells Fargo, and generic CSV formats.
  *  Auto-detects expense vs donation from the sign of the Amount column. */
-function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[] {
+function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[] {
   let lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
 
@@ -179,7 +182,7 @@ function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "c
     : { name: "No header", dateCol: 0, descCol: 1, amtCol: 2, balanceCol: 3 };
 
   // ── Step 3: Parse each data line using column indices ───────────────
-  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[] = [];
+  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[] = [];
 
   for (const line of dataLines) {
     const cols = line.split(delim).map((c) => c.trim().replace(/^"|"$/g, ""));
@@ -221,7 +224,7 @@ function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "c
 }
 
 /** Parse PDF text via pdfjs-dist and try to extract tabular transaction data. */
-async function parsePDF(file: File): Promise<Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[]> {
+async function parsePDF(file: File): Promise<Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[]> {
   // Dynamic import to avoid bundling pdfjs for users who only use CSV
   const pdfjsLib = await import("pdfjs-dist");
   // Use the bundled worker
@@ -258,7 +261,7 @@ async function parsePDF(file: File): Promise<Omit<ParsedTransaction, "id" | "dir
   }
 
   // Parse each line to extract date, description, amount
-  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[] = [];
+  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[] = [];
   for (const line of txLines) {
     const dateM = line.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
     const dateStr = dateM ? dateM[1] : "";
@@ -319,7 +322,7 @@ export default function ImportStatements() {
 
     try {
       const ext = file.name.split(".").pop()?.toLowerCase();
-      let raw: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[];
+      let raw: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[];
 
       if (ext === "csv" || ext === "txt") {
         const text = await file.text();
@@ -355,6 +358,7 @@ export default function ImportStatements() {
           paymentMethod: "online",
           checkNumber: "",
           raw: r.raw,
+          approved: true,           // all parsed rows start approved
         };
       });
 
@@ -421,15 +425,27 @@ export default function ImportStatements() {
     );
   }
 
+  function toggleApproved(id: string) {
+    setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, approved: !t.approved } : t)));
+  }
+
+  function setAllApproved(val: boolean) {
+    setTransactions((prev) => prev.map((t) => ({ ...t, approved: val })));
+  }
+
+  function removeSkipped() {
+    setTransactions((prev) => prev.filter((t) => t.approved));
+  }
+
   // ── Import ─────────────────────────────────────────────────────────
 
   async function handleImport() {
-    if (transactions.length === 0) return;
+    if (approved.length === 0) return;
     setImporting(true);
     setImportResult(null);
 
     try {
-      const payload = transactions.map((t) => ({
+      const payload = approved.map((t) => ({
         type: t.direction,
         amount: t.amount,
         description: t.description,
@@ -445,23 +461,28 @@ export default function ImportStatements() {
 
       if (error) throw error;
 
-      setImportResult({ imported: transactions.length, errors: 0 });
-      setTransactions([]);
-      toast(`${transactions.length} transactions imported successfully!`, "success");
+      const count = approved.length;
+      setImportResult({ imported: count, errors: 0 });
+      // Only remove approved rows — skipped rows stay for further review
+      setTransactions((prev) => prev.filter((t) => !t.approved));
+      toast(`${count} transaction${count !== 1 ? "s" : ""} imported successfully!`, "success");
     } catch (e: any) {
-      setImportResult({ imported: 0, errors: transactions.length });
+      setImportResult({ imported: 0, errors: approved.length });
       toast(e?.message || "Import failed", "error");
     } finally {
       setImporting(false);
     }
   }
 
-  // ── Totals ─────────────────────────────────────────────────────────
+  // ── Totals (approved rows only) ───────────────────────────────────
 
-  const expenseTotal = transactions
+  const approved = transactions.filter((t) => t.approved);
+  const skippedCount = transactions.length - approved.length;
+
+  const expenseTotal = approved
     .filter((t) => t.direction === "expense")
     .reduce((s, t) => s + t.amount, 0);
-  const donationTotal = transactions
+  const donationTotal = approved
     .filter((t) => t.direction === "donation")
     .reduce((s, t) => s + t.amount, 0);
 
@@ -569,7 +590,7 @@ export default function ImportStatements() {
               animate={{ opacity: 1, y: 0 }}
               className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-[#EDE4D8] bg-white px-4 py-3"
             >
-              <span className="text-sm font-medium text-[#3C2A1E]">Set all as:</span>
+              <span className="text-sm font-medium text-[#3C2A1E]">Set all:</span>
               <Button variant="outline" size="sm" onClick={() => setAllDirection("expense")}>
                 <Receipt className="h-3.5 w-3.5" />
                 All expenses
@@ -578,12 +599,30 @@ export default function ImportStatements() {
                 <Banknote className="h-3.5 w-3.5" />
                 All donations
               </Button>
+              <span className="mx-1 text-[#EDE4D8]">|</span>
+              <Button variant="outline" size="sm" onClick={() => setAllApproved(true)}>
+                <CheckCheck className="h-3.5 w-3.5" />
+                Approve all
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setAllApproved(false)}>
+                <XCircle className="h-3.5 w-3.5" />
+                Skip all
+              </Button>
+              {skippedCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={removeSkipped} className="text-[#78716C]">
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remove {skippedCount} skipped
+                </Button>
+              )}
               <div className="ml-auto flex items-center gap-4 text-sm">
                 <span className="text-[#78716C]">
-                  <span className="font-medium text-rose-600">{formatCurrency(expenseTotal)}</span> expenses
+                  <span className="font-semibold text-rose-600">{formatCurrency(expenseTotal)}</span> expenses
                 </span>
                 <span className="text-[#78716C]">
-                  <span className="font-medium text-emerald-600">{formatCurrency(donationTotal)}</span> donations
+                  <span className="font-semibold text-emerald-600">{formatCurrency(donationTotal)}</span> donations
+                </span>
+                <span className="text-xs text-[#C4A77D]">
+                  {approved.length}/{transactions.length} approved
                 </span>
                 <Button
                   variant="outline"
@@ -604,6 +643,7 @@ export default function ImportStatements() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[#EDE4D8] bg-[#FDF8F2]">
+                    <th className="w-10 px-2 py-2.5 text-center font-medium text-[#78716C]" title="Approve for import">✓</th>
                     <th className="px-3 py-2.5 text-left font-medium text-[#78716C]">Date</th>
                     <th className="px-3 py-2.5 text-left font-medium text-[#78716C]">Description</th>
                     <th className="px-3 py-2.5 text-right font-medium text-[#78716C]">Amount</th>
@@ -619,14 +659,33 @@ export default function ImportStatements() {
                       initial={{ opacity: 0, x: -12 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: idx * 0.02, duration: 0.2 }}
-                      className="border-b border-[#F5F0E8] transition hover:bg-[#FDF2E9]/40"
+                      className={`border-b border-[#F5F0E8] transition ${
+                        tx.approved
+                          ? "hover:bg-[#FDF2E9]/40"
+                          : "bg-stone-50/50 opacity-60 hover:opacity-80"
+                      }`}
                     >
+                      {/* Approve / skip toggle */}
+                      <td className="px-2 py-2.5 text-center">
+                        <button
+                          onClick={() => toggleApproved(tx.id)}
+                          title={tx.approved ? "Click to skip this row" : "Click to approve for import"}
+                          className="transition"
+                        >
+                          {tx.approved ? (
+                            <CheckCircle2 className="h-5 w-5 text-emerald-600 hover:text-emerald-700" />
+                          ) : (
+                            <Circle className="h-5 w-5 text-[#C4A77D] hover:text-[#78716C]" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-3 py-2.5">
                         <Input
                           type="date"
                           value={tx.date}
                           onChange={(e) => updateTx(tx.id, { date: e.target.value })}
                           className="h-8 w-36 text-xs"
+                          disabled={!tx.approved}
                         />
                       </td>
                       <td className="px-3 py-2.5">
@@ -635,6 +694,7 @@ export default function ImportStatements() {
                           onChange={(e) => updateTx(tx.id, { description: e.target.value })}
                           className="h-8 text-xs"
                           placeholder="Description"
+                          disabled={!tx.approved}
                         />
                       </td>
                       <td className="px-3 py-2.5 text-right">
@@ -645,16 +705,18 @@ export default function ImportStatements() {
                           value={tx.amount || ""}
                           onChange={(e) => updateTx(tx.id, { amount: parseFloat(e.target.value) || 0 })}
                           className="h-8 w-28 text-right text-xs"
+                          disabled={!tx.approved}
                         />
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         <button
                           onClick={() => toggleDirection(tx.id)}
+                          disabled={!tx.approved}
                           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
                             tx.direction === "expense"
                               ? "bg-rose-100 text-rose-700 hover:bg-rose-200"
                               : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                          }`}
+                          } ${!tx.approved ? "opacity-50 cursor-not-allowed" : ""}`}
                         >
                           <ArrowDownUp className="h-3 w-3" />
                           {tx.direction === "expense" ? "Expense" : "Donation"}
@@ -665,6 +727,7 @@ export default function ImportStatements() {
                           value={tx.category}
                           onChange={(e) => updateTx(tx.id, { category: e.target.value })}
                           className="h-8 text-xs"
+                          disabled={!tx.approved}
                         >
                           {tx.direction === "expense"
                             ? EXPENSE_CATEGORIES.map((c) => (
@@ -718,14 +781,16 @@ export default function ImportStatements() {
               <Button
                 variant="solid"
                 onClick={handleImport}
-                disabled={importing || transactions.length === 0 || transactions.some((t) => t.amount <= 0)}
+                disabled={importing || approved.length === 0 || approved.some((t) => t.amount <= 0)}
               >
                 {importing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Upload className="h-4 w-4" />
                 )}
-                {importing ? "Importing…" : `Import ${transactions.length} transaction${transactions.length !== 1 ? "s" : ""}`}
+                {importing
+                  ? "Importing…"
+                  : `Import ${approved.length} approved`}
               </Button>
             </motion.div>
           </>
