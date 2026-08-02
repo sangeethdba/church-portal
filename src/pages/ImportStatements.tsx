@@ -17,6 +17,7 @@ import {
   Download,
   Shield,
   CheckCheck,
+  Plus,
 } from "lucide-react";
 import { PageHeader } from "@/components/Layout";
 import { Button, Card, CardBody, CardHeader, Badge, EmptyState, Select, Input, toast } from "@/components/ui";
@@ -314,6 +315,56 @@ export default function ImportStatements() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [fileMode, setFileMode] = useState<"csv" | "pdf">("csv");
+
+  // ── Quick-create donor inline form state ──────────────────────────
+  const [createDonorForId, setCreateDonorForId] = useState<string | null>(null);
+  const [newFirst, setNewFirst] = useState("");
+  const [newLast, setNewLast] = useState("");
+  const [creatingDonor, setCreatingDonor] = useState(false);
+
+  async function handleCreateDonor() {
+    const first = newFirst.trim();
+    const last = newLast.trim();
+    if (!first || !last) return;
+    setCreatingDonor(true);
+    if (supabase) {
+      const { data, error } = await supabase
+        .from("donors")
+        .insert({ first_name: first, last_name: last })
+        .select("id, first_name, last_name")
+        .maybeSingle();
+      if (data) {
+        const newDonor = data as Donor;
+        setDonors((prev) => [...prev, newDonor]);
+        // Auto-select the new donor on the row that triggered creation
+        if (createDonorForId) {
+          updateTx(createDonorForId, { donorId: newDonor.id });
+        }
+        toast(`${first} ${last} added as donor`, "success");
+      } else if (error) {
+        toast(error.message || "Failed to create donor", "error");
+      }
+    } else {
+      const fallback: Donor = {
+        id: `local-${Date.now()}`,
+        first_name: first,
+        last_name: last,
+        email: null, phone: null, address: null, city: null, state: null, zip_code: null,
+        is_family: false, family_members: [], notes: null, is_active: true,
+        total_donations: 0, last_donation_date: null,
+        linked_user_id: null, created_by: null, created_at: new Date().toISOString(),
+      };
+      setDonors((prev) => [...prev, fallback]);
+      if (createDonorForId) {
+        updateTx(createDonorForId, { donorId: fallback.id });
+      }
+      toast(`${first} ${last} added (local)`, "success");
+    }
+    setNewFirst("");
+    setNewLast("");
+    setCreateDonorForId(null);
+    setCreatingDonor(false);
+  }
 
   // ── Fetch donors for donation-row attribution ──────────────────────
 
@@ -763,19 +814,66 @@ export default function ImportStatements() {
                       {/* Donor selector — donation rows only */}
                       <td className="px-3 py-2.5">
                         {tx.direction === "donation" ? (
-                          <Select
-                            value={tx.donorId || ""}
-                            onChange={(e) => updateTx(tx.id, { donorId: e.target.value || null })}
-                            className="h-8 min-w-[160px] text-xs"
-                            disabled={!tx.approved}
-                          >
-                            <option value="">Unlinked (name only)</option>
-                            {donors.map((d) => (
-                              <option key={d.id} value={d.id}>
-                                {d.first_name} {d.last_name}
-                              </option>
-                            ))}
-                          </Select>
+                          <div className="flex flex-col gap-1">
+                            <Select
+                              value={tx.donorId || ""}
+                              onChange={(e) => updateTx(tx.id, { donorId: e.target.value || null })}
+                              className="h-8 min-w-[160px] text-xs"
+                              disabled={!tx.approved}
+                            >
+                              <option value="">Unlinked (name only)</option>
+                              {donors.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.first_name} {d.last_name}
+                                </option>
+                              ))}
+                            </Select>
+                            {createDonorForId === tx.id ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  placeholder="First"
+                                  value={newFirst}
+                                  onChange={(e) => setNewFirst(e.target.value)}
+                                  className="h-7 w-20 text-xs"
+                                  autoFocus
+                                />
+                                <Input
+                                  placeholder="Last"
+                                  value={newLast}
+                                  onChange={(e) => setNewLast(e.target.value)}
+                                  className="h-7 w-20 text-xs"
+                                />
+                                <Button
+                                  variant="solid"
+                                  size="sm"
+                                  onClick={handleCreateDonor}
+                                  disabled={creatingDonor || !newFirst.trim() || !newLast.trim()}
+                                  className="h-7 text-xs"
+                                >
+                                  {creatingDonor ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    "Create"
+                                  )}
+                                </Button>
+                                <button
+                                  onClick={() => { setCreateDonorForId(null); setNewFirst(""); setNewLast(""); }}
+                                  className="ml-1 p-1 text-[#C4A77D] hover:text-[#78716C]"
+                                >
+                                  <XCircle className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setCreateDonorForId(tx.id)}
+                                disabled={!tx.approved}
+                                className="inline-flex items-center gap-1 text-xs text-[#C67B5C] hover:text-[#B5651D] disabled:opacity-40"
+                              >
+                                <Plus className="h-3 w-3" />
+                                New donor
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-xs text-[#C4A77D]">—</span>
                         )}
