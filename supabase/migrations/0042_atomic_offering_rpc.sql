@@ -71,14 +71,14 @@ begin
   -- ── 2. Insert offering ────────────────────────────────────────────────
   insert into public.offerings (
     service_date, service_name,
-    cash_breakdown, cash_deductions, cash_net,
+    cash_amount, cash_breakdown, cash_deductions, cash_net,
     check_amount, check_count, total_amount,
     recorded_by, notes,
     counter_1_id, counter_1_signed_at,
     counter_2_id, counter_2_signed_at
   ) values (
     p_service_date, p_service_name,
-    p_cash_breakdown, p_cash_deductions, p_cash_net,
+    p_cash_net, p_cash_breakdown, p_cash_deductions, p_cash_net,
     p_check_amount, p_check_count, p_total_amount,
     v_recorded_by, p_notes,
     p_counter_1_id, now(),
