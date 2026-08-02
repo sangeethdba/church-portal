@@ -213,6 +213,8 @@ export interface OfferingSummary {
   netCash: number;
   checks: OfferingCheckEntry[];
   totalChecks: number;
+  cashGifts: OfferingCheckEntry[];
+  totalCashGifts: number;
   totalDeposit: number;
   churchName: string;
   recordedBy: string;
@@ -330,6 +332,40 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
     doc.setFontSize(11);
     doc.text("Total checks", margin + 8, y);
     doc.text(formatCurrency(s.totalChecks), pageWidth - margin - 8, y, { align: "right" });
+    y += 24;
+  }
+
+  // ── Named cash gifts ─────────────────────────────────────────────────
+  if (s.cashGifts && s.cashGifts.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Named cash gifts (envelopes)", margin, y);
+    y += 18;
+
+    doc.setFillColor(240, 253, 244);
+    doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text("Donor", margin + 8, y);
+    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    y += 14;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(28, 25, 23);
+    for (const g of s.cashGifts) {
+      doc.text(g.donorName, margin + 8, y);
+      doc.text(formatCurrency(g.amount), pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+
+    doc.line(margin + 100, y, pageWidth - margin, y);
+    y += 4;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Named cash total", margin + 8, y);
+    doc.text(formatCurrency(s.totalCashGifts), pageWidth - margin - 8, y, { align: "right" });
     y += 24;
   }
 

@@ -91,6 +91,8 @@ describe("Atlanta Little Flock PDF documents", () => {
       netCash: 100,
       checks: [],
       totalChecks: 0,
+      cashGifts: [],
+      totalCashGifts: 0,
       totalDeposit: 100,
       churchName: "Atlanta Little Flock Church",
       recordedBy: "Treasurer",

@@ -22,6 +22,8 @@ create or replace function public.record_offering(
   p_notes            text,
   -- Check entries as JSON array: [{donor_name, donor_id, check_number, amount}]
   p_checks           jsonb,
+  -- Named cash gifts as JSON array: [{donor_name, donor_id, amount}]
+  p_cash_gifts       jsonb default ''[]''::jsonb,
   -- Counter sign-off
   p_counter_1_id     uuid,
   p_pin_1            text,
@@ -141,6 +143,46 @@ begin
       nullif(ch->>'check_number', ''),
       coalesce((ch->>'amount')::numeric, 0),
       v_donation_id
+    );
+  end loop;
+
+  -- ── 4. Insert named cash gift donations ──────────────────────────────
+  for ch in select * from jsonb_array_elements(p_cash_gifts)
+  loop
+    v_donor_id := (ch->>'donor_id')::uuid;
+
+    if v_donor_id is null and (ch->>'donor_name') is not null then
+      select d.id into v_donor_id
+      from public.donors d
+      where lower(trim(d.first_name || ' ' || d.last_name)) = lower(trim(ch->>'donor_name'))
+      limit 1;
+
+      if v_donor_id is null then
+        with parts as (
+          select split_part(trim(ch->>'donor_name'), ' ', 1) as fn,
+                 trim(substr(trim(ch->>'donor_name'), length(split_part(trim(ch->>'donor_name'), ' ', 1)) + 1)) as ln
+        )
+        insert into public.donors (first_name, last_name)
+        select fn, case when ln = '' then fn else ln end
+        from parts
+        returning id into v_donor_id;
+      end if;
+    end if;
+
+    insert into public.donations (
+      donor_id, donor_name, amount,
+      donation_type, payment_method,
+      donation_date,
+      entered_by, offering_id
+    ) values (
+      v_donor_id,
+      coalesce(ch->>'donor_name', 'Anonymous'),
+      coalesce((ch->>'amount')::numeric, 0),
+      'offering',
+      'cash',
+      p_service_date,
+      v_entered_by,
+      v_offering_id
     );
   end loop;
 

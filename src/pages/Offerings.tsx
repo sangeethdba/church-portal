@@ -34,6 +34,13 @@ interface CheckEntry {
   amount: string;
 }
 
+interface CashGift {
+  key: string;
+  donorName: string;
+  donorId: string;
+  amount: string;
+}
+
 interface CounterInfo {
   id: string;
   full_name: string;
@@ -112,6 +119,7 @@ export default function Offerings() {
   const [denoms, setDenoms] = useState<DenomCounts>(emptyDenoms());
   const [deductions, setDeductions] = useState<Deduction[]>([]);
   const [checks, setChecks] = useState<CheckEntry[]>([]);
+  const [cashGifts, setCashGifts] = useState<CashGift[]>([]);
   const [notes, setNotes] = useState("");
   const [activeSuggestKey, setActiveSuggestKey] = useState<string | null>(null);
 
@@ -183,6 +191,8 @@ export default function Offerings() {
       netCash: net,
       checks,
       totalChecks: checksTotal,
+      cashGifts: [],
+      totalCashGifts: 0,
       totalDeposit: net + checksTotal,
       churchName,
       recordedBy: "Admin",
@@ -207,6 +217,7 @@ export default function Offerings() {
   const totalDeductions = deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0);
   const netCash = grossCash - totalDeductions;
   const totalChecks = checks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const totalCashGifts = cashGifts.reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const depositTotal = netCash + totalChecks;
 
   const filtered = useMemo(() => {
@@ -268,6 +279,7 @@ export default function Offerings() {
     setDenoms(emptyDenoms());
     setDeductions([]);
     setChecks([]);
+    setCashGifts([]);
     setNotes("");
     setCounter1Pin("");
     setCounter2Id("");
@@ -283,6 +295,16 @@ export default function Offerings() {
 
   const updateCheck = (key: string, patch: Partial<CheckEntry>) => {
     setChecks((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  };
+
+  const addCashGift = () => {
+    setCashGifts((prev) => [...prev, { key: `g${Date.now()}`, donorName: "", donorId: "", amount: "" }]);
+  };
+
+  const removeCashGift = (key: string) => setCashGifts((prev) => prev.filter((c) => c.key !== key));
+
+  const updateCashGift = (key: string, patch: Partial<CashGift>) => {
+    setCashGifts((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
   };
 
   // Live member suggestions as the counter types a donor name
@@ -321,6 +343,8 @@ export default function Offerings() {
     netCash,
     checks: checks.map((c) => ({ donorName: c.donorName || "—", checkNumber: c.checkNumber, amount: Number(c.amount) || 0 })),
     totalChecks,
+    cashGifts: cashGifts.map((g) => ({ donorName: g.donorName || "—", checkNumber: "", amount: Number(g.amount) || 0 })),
+    totalCashGifts,
     totalDeposit: depositTotal,
     churchName: (typeof window !== "undefined" && localStorage.getItem("church_name")) || "Atlanta Little Flock Church",
     recordedBy: ctx.profile?.full_name ?? "Admin",
@@ -374,7 +398,16 @@ export default function Offerings() {
           amount: Number(ch.amount),
         }));
 
-      // Atomic: insert offering + checks + PIN verify in one transaction.
+      // Build named cash gifts from local state
+      const p_cash_gifts = cashGifts
+        .filter((g) => Number(g.amount) > 0)
+        .map((g) => ({
+          donor_name: g.donorName.trim() || "Anonymous",
+          donor_id: g.donorId || null,
+          amount: Number(g.amount),
+        }));
+
+      // Atomic: insert offering + checks + cash gifts + PIN verify in one transaction.
       // If PIN is wrong the DB raises an exception and nothing is persisted.
       const { error: rpcErr } = await supabase.rpc("record_offering", {
         p_service_date: svcDate,
@@ -391,6 +424,7 @@ export default function Offerings() {
         p_pin_1: counter1Pin,
         p_counter_2_id: counter2Id,
         p_pin_2: counter2Pin,
+        p_cash_gifts,
       });
 
       if (rpcErr) {
@@ -703,6 +737,52 @@ export default function Offerings() {
                 )}
               </div>
 
+              {/* Named cash gifts (envelopes) */}
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50/40 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
+                    <Banknote className="h-4 w-4 text-green-600" /> Named cash gifts (envelopes)
+                  </span>
+                  <Button size="sm" variant="outline" onClick={addCashGift}>+ Add cash gift</Button>
+                </div>
+                {cashGifts.length === 0 && (
+                  <p className="text-xs text-stone-400">No named envelopes yet. Add cash gifts with donor names — these will appear on their tax statements.</p>
+                )}
+                {cashGifts.map((g) => (
+                  <div key={g.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-green-100 bg-white p-2">
+                    <div className="flex-1 min-w-[160px]">
+                      <Label className="text-xs">Donor</Label>
+                      <Input
+                        placeholder="Donor name"
+                        value={g.donorName}
+                        onChange={(e) => updateCashGift(g.key, { donorName: e.target.value, donorId: "" })}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div className="w-28">
+                      <Label className="text-xs">Amount</Label>
+                      <Input
+                        type="number" min="0" step="0.01" placeholder="0.00"
+                        value={g.amount}
+                        onChange={(e) => updateCashGift(g.key, { amount: e.target.value })}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <button onClick={() => removeCashGift(g.key)}
+                      className="mt-4 rounded p-1 text-stone-400 hover:bg-rose-100 hover:text-rose-600">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {cashGifts.length > 0 && (
+                  <div className="mt-2 text-right text-sm text-stone-600">
+                    Named cash total: <span className="font-serif text-lg font-semibold text-green-700">{formatCurrency(totalCashGifts)}</span>
+                    <p className="text-xs text-stone-400 mt-0.5">These amounts are part of the net cash deposit — tracked to donors for tax statements.</p>
+                  </div>
+                )}
+              </div>
+
+
               {/* Deposit total */}
               <div className="mt-3 rounded-lg border-2 border-accent bg-accent-soft p-3 text-center">
                 <span className="text-sm font-medium text-accent">Total deposit</span>
@@ -710,7 +790,7 @@ export default function Offerings() {
                   {formatCurrency(depositTotal)}
                 </div>
                 <p className="mt-1 text-xs text-stone-500">
-                  Net cash {formatCurrency(netCash)} + Checks {formatCurrency(totalChecks)}
+                  Net cash {formatCurrency(netCash)} (incl. {formatCurrency(totalCashGifts)} named) + Checks {formatCurrency(totalChecks)}
                 </p>
               </div>
 
