@@ -42,9 +42,9 @@ const periodLabel: Record<Period, string> = {
 function periodRange(p: Period): { start: string; label: string } {
   const now = new Date();
   if (p === "this_week") {
-    const day = now.getDay();
-    const sun = new Date(now);
-    sun.setDate(now.getDate() - day);
+    // Sunday-start week computed in UTC so it matches the weekly buckets.
+    const day = now.getUTCDay();
+    const sun = new Date(now.getTime() - day * 86400000);
     return { start: sun.toISOString().slice(0, 10), label: "Sun – today" };
   }
   if (p === "this_month") {

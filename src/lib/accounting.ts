@@ -97,9 +97,10 @@ export function buildWeeklyBuckets(
 ): Array<[string, WeeklyBucket]> {
   const weeks = new Map<string, WeeklyBucket>();
   const bump = (dateStr: string, cash: number, check: number, other: number) => {
-    const date = new Date(dateStr);
-    const weekStart = new Date(date);
-    weekStart.setDate(date.getDate() - date.getDay());
+    // Treat the date as a calendar date (UTC midnight) and compute the
+    // Sunday-start key in UTC so it never drifts with the viewer's timezone.
+    const date = new Date(dateStr + "T00:00:00Z");
+    const weekStart = new Date(date.getTime() - date.getUTCDay() * 86400000);
     const key = weekStart.toISOString().slice(0, 10);
     const cur = weeks.get(key) ?? { cash: 0, check: 0, other: 0 };
     cur.cash += cash;
