@@ -4,7 +4,7 @@ import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
   Shield, UserCheck, Lock, Banknote, UserPlus,
 } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
+import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent, Skeleton, KpiSkeleton } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { MemberOverview } from "@/pages/MyOverview";
@@ -61,7 +61,7 @@ function ProfileCard({ p, draftTogglePortal, draftToggleCounter, draftLinkDonor,
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={() => draftTogglePortal(p.id)} disabled={isAdminRole(p.role)}
             title={isAdminRole(p.role) ? "Admins always have access" : p.portal_access ? "Click to revoke access" : "Click to grant access"}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-indigo-500" : "bg-stone-300"}`}>
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-purple-600" : "bg-stone-300"}`}>
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || isAdminRole(p.role) ? "translate-x-6" : "translate-x-1"}`}/>
           </button>
           <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Access</span>
@@ -329,7 +329,7 @@ export default function Dashboard() {
                   <DialogHeader><DialogTitle>Manage members & access</DialogTitle><DialogDescription>Approve who can use the portal, link members to donor records, and designate counters with sign-off PINs.</DialogDescription></DialogHeader>
                   <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600"><Shield className="mb-1 inline h-4 w-4 text-amber-500" /> Anyone with a Google account can sign in — but only members with <strong>Portal access</strong> approved here can view data or submit expenses.</div>
                   {hasUnsavedChanges && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-700">
                       ⚠ You have unsaved changes. Scroll down and click <strong>Save changes</strong> to apply them.
                     </div>
                   )}
@@ -399,20 +399,28 @@ export default function Dashboard() {
 
       {pendingApprovals > 0 && (
         <button type="button" onClick={() => { setCounterOpen(true); loadProfiles(); }}
-          className="mb-6 flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-800 transition hover:bg-amber-100/80">
+          className="mb-6 flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-left text-sm text-amber-800 transition hover:bg-amber-100/80">
           <UserCheck className="h-5 w-5 shrink-0 text-amber-600" />
           <span><strong>{pendingApprovals} member{pendingApprovals > 1 ? "s" : ""} waiting for approval</strong> — someone signed in with Google. Click here to review, grant access, link their donor record, or make them a counter.</span>
         </button>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Tile label="YTD Giving" value={formatCurrency(kpis.ytdGiving)} accent="indigo" icon={<HandCoins className="h-5 w-5" />}/>
-        <Tile label="YTD Expenses" value={formatCurrency(ytdExpenses)} accent={ytdExpenses > 0 ? "rose" : "emerald"} icon={<Receipt className="h-5 w-5" />}/>
-        <Tile label="Net position" value={formatCurrency(ytdNet)} accent={ytdNet >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />}/>
-        <Tile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}
-          onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} />
-        <Tile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}
-          onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} />
+        {loading ? (
+          <>
+            <KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton />
+          </>
+        ) : (
+          <>
+            <Tile label="YTD Giving" value={formatCurrency(kpis.ytdGiving)} accent="indigo" icon={<HandCoins className="h-5 w-5" />}/>
+            <Tile label="YTD Expenses" value={formatCurrency(ytdExpenses)} accent={ytdExpenses > 0 ? "rose" : "emerald"} icon={<Receipt className="h-5 w-5" />}/>
+            <Tile label="Net position" value={formatCurrency(ytdNet)} accent={ytdNet >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />}/>
+            <Tile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}
+              onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} />
+            <Tile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}
+              onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} />
+          </>
+        )}
       </div>
 
       <p className="mt-3 text-xs text-stone-400">
@@ -437,7 +445,7 @@ export default function Dashboard() {
       </div>
 
       {!supabase && (
-        <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><strong>Demo mode.</strong> Connect Supabase to see live numbers.</div>
+        <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-800"><strong>Demo mode.</strong> Connect Supabase to see live numbers.</div>
       )}
     </div>
   );

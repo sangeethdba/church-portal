@@ -8,20 +8,20 @@ import { cn } from "@/lib/utils";
 
 // ---------- Button -------------------------------------------------------
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition focus-ring disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-all duration-200 focus-ring disabled:pointer-events-none disabled:opacity-50 active:scale-[0.97]",
   {
     variants: {
       variant: {
         solid:
-          "bg-accent text-white shadow-soft hover:bg-indigo-700 active:bg-indigo-800",
+          "bg-purple-600 text-white shadow-sm hover:bg-purple-700 hover:shadow-md active:bg-purple-800",
         outline:
-          "border border-stone-300 bg-white text-stone-900 shadow-sm hover:border-stone-400 hover:bg-stone-50",
+          "border border-stone-300 bg-white text-stone-900 shadow-sm hover:border-purple-300 hover:bg-purple-50/50",
         ghost: "text-stone-700 hover:bg-stone-100",
         danger:
-          "bg-rose-600 text-white shadow-soft hover:bg-rose-700",
+          "bg-rose-600 text-white shadow-sm hover:bg-rose-700",
         success:
-          "bg-emerald-600 text-white shadow-soft hover:bg-emerald-700",
-        warm: "bg-warm text-stone-900 shadow-soft hover:bg-amber-600",
+          "bg-emerald-600 text-white shadow-sm hover:bg-emerald-700",
+        warm: "bg-amber-500 text-white shadow-sm hover:bg-amber-600",
       },
       size: {
         sm: "h-9 px-3 text-xs",
@@ -62,7 +62,7 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
     <div
       ref={ref}
       className={cn(
-        "rounded-xl border border-stone-200 bg-white shadow-soft transition",
+        "rounded-xl border border-stone-200 bg-white shadow-sm card-hover",
         className,
       )}
       {...props}
@@ -147,15 +147,15 @@ Label.displayName = "Label";
 
 // ---------- Badge --------------------------------------------------------
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition",
   {
     variants: {
       tone: {
         neutral: "bg-stone-100 text-stone-700",
-        indigo: "bg-indigo-50 text-indigo-700",
-        amber: "bg-amber-50 text-amber-700",
-        emerald: "bg-emerald-50 text-emerald-700",
-        rose: "bg-rose-50 text-rose-700",
+        indigo: "bg-purple-100 text-purple-700",
+        amber: "bg-amber-100 text-amber-700",
+        emerald: "bg-emerald-100 text-emerald-700",
+        rose: "bg-rose-100 text-rose-700",
       },
     },
     defaultVariants: { tone: "neutral" },
@@ -182,10 +182,10 @@ export interface TileProps {
   onClick?: () => void;
 }
 const accentMap = {
-  indigo: "bg-indigo-50 text-indigo-700",
-  amber: "bg-amber-50 text-amber-700",
-  emerald: "bg-emerald-50 text-emerald-700",
-  rose: "bg-rose-50 text-rose-700",
+  indigo: "bg-purple-100 text-purple-700",
+  amber: "bg-amber-100 text-amber-700",
+  emerald: "bg-emerald-100 text-emerald-700",
+  rose: "bg-rose-100 text-rose-700",
 };
 export function Tile({ label, value, delta, deltaPositive, icon, accent = "indigo", onClick }: TileProps) {
   const inner = (
@@ -212,7 +212,7 @@ export function Tile({ label, value, delta, deltaPositive, icon, accent = "indig
           </div>
         )}
       </div>
-      <div className="h-1 w-full bg-gradient-to-r from-transparent via-stone-200 to-transparent" />
+      <div className="h-1 w-full bg-gradient-to-r from-transparent via-purple-200 to-transparent" />
     </>
   );
   if (onClick) {
@@ -334,6 +334,42 @@ export const DialogDescription = React.forwardRef<
 ));
 DialogDescription.displayName = "DialogDescription";
 
+// ---------- Loading Skeleton -----------------------------------------------
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("rounded-lg bg-stone-200 skeleton-pulse", className)} />;
+}
+
+export function KpiSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white p-5">
+      <Skeleton className="mb-3 h-3 w-20" />
+      <Skeleton className="mb-2 h-8 w-28" />
+      <Skeleton className="h-3 w-16" />
+    </div>
+  );
+}
+
+export function TableSkeleton({ rows = 4, cols = 4 }: { rows?: number; cols?: number }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-100 bg-stone-50 px-4 py-3">
+        <div className="flex gap-8">
+          {Array.from({ length: cols }).map((_, i) => (
+            <Skeleton key={i} className="h-3 w-16" />
+          ))}
+        </div>
+      </div>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex gap-8 border-b border-stone-50 px-4 py-3">
+          {Array.from({ length: cols }).map((_, j) => (
+            <Skeleton key={j} className="h-4 w-24" />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ---------- EmptyState ---------------------------------------------------
 export function EmptyState({
   icon,
@@ -347,8 +383,8 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-stone-300 bg-stone-50/60 px-6 py-12 text-center">
-      {icon && <div className="mb-3 text-stone-400">{icon}</div>}
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-purple-200 bg-purple-50/30 px-6 py-12 text-center">
+      {icon && <div className="mb-3 text-purple-300">{icon}</div>}
       <h3 className="font-serif text-lg font-semibold text-stone-800">{title}</h3>
       {description && <p className="mt-1 max-w-sm text-sm text-stone-500">{description}</p>}
       {action && <div className="mt-4">{action}</div>}

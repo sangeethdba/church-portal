@@ -53,7 +53,7 @@ export default function AppShell() {
   return (
     <div className="min-h-screen bg-parchment-50 text-stone-900">
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-stone-200 bg-white/80 px-4 py-3 backdrop-blur lg:hidden">
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-purple-100 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
         <Logo size={28} />
         <button
           aria-label="Open menu"
@@ -67,7 +67,7 @@ export default function AppShell() {
       <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
         {/* Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-72 -translate-x-full border-r border-stone-200 bg-white px-5 py-6 transition lg:static lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-50 w-72 -translate-x-full border-r border-purple-100 bg-white px-5 py-6 transition lg:static lg:translate-x-0 ${
             drawerOpen ? "translate-x-0" : ""
           }`}
         >
@@ -89,22 +89,27 @@ export default function AppShell() {
                 to={to}
                 onClick={() => setDrawerOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  `group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                     isActive
-                      ? "bg-accent-soft text-accent"
-                      : "text-stone-700 hover:bg-stone-100"
+                      ? "bg-purple-100 text-purple-700 shadow-sm"
+                      : "text-stone-600 hover:bg-purple-50/50 hover:text-purple-700"
                   }`
                 }
               >
-                <Icon className="h-4 w-4" />
-                {label}
+                {({ isActive }) => (
+                  <>
+                    <Icon className={`h-4 w-4 transition ${isActive ? "text-purple-600" : "text-stone-400 group-hover:text-purple-500"}`} />
+                    {label}
+                    {isActive && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-purple-500" />}
+                  </>
+                )}
               </NavLink>
             ))}
           </nav>
 
-          <div className="mt-8 rounded-xl border border-stone-200 bg-parchment-100/60 p-4">
+          <div className="mt-8 rounded-xl border border-purple-100 bg-purple-50/40 p-4 transition hover:border-purple-200">
             <div className="flex items-center gap-2 font-serif font-semibold text-stone-900">
-              <Church className="h-4 w-4 text-accent" />
+              <Church className="h-4 w-4 text-purple-600" />
               {ctx.profile?.church_name && ctx.profile.church_name !== "Grace Community Church" ? ctx.profile.church_name : "Atlanta Little Flock Church"}
             </div>
             <div className="mt-2 flex items-center gap-2">
@@ -116,9 +121,9 @@ export default function AppShell() {
 
           <div className="mt-6">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="w-full"
+              className="w-full justify-start text-stone-500 hover:text-stone-700 hover:bg-stone-100"
               onClick={onSignOut}
               iconLeft={<LogOut className="h-4 w-4" />}
             >

@@ -173,7 +173,7 @@ export function MemberOverview() {
                 ...(e.receipt_paths ?? []),
               ];
               return (
-              <div key={e.id} className="rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60">
+              <div key={e.id} className="rounded-lg border border-stone-100 px-4 py-3 transition hover:border-purple-200 hover:bg-purple-50/30">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-medium text-stone-900">{e.title ?? e.description ?? "Expense"}</div>
@@ -255,7 +255,7 @@ export function MemberOverview() {
             ) : donations.length === 0 ? (
               <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No donations yet" description="Gifts recorded under your donor record will appear here." />
             ) : donations.map((d) => (
-              <div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60">
+              <div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 transition hover:border-purple-200 hover:bg-purple-50/30">
                 <div>
                   <div className="font-medium text-stone-900">{d.donor_name}</div>
                   <div className="text-xs text-stone-500">{formatDate(d.donation_date)} · {d.donation_type} · {d.payment_method}{d.check_number ? ` · #${d.check_number}` : ""}</div>
@@ -314,7 +314,7 @@ function GivingBarChart({ data }: { data: { month: string; amount: number; label
           return (
             <g key={d.month}>
               <title>{`${d.label}: ${formatCurrency(d.amount)}`}</title>
-              <rect x={x} y={y} width={barW} height={Math.max(barH, d.amount > 0 ? 2 : 0)} rx={3} fill={d.amount > 0 ? "#6366f1" : "#e7e5e4"} opacity={d.amount > 0 ? 0.85 : 0.5} />
+              <rect x={x} y={y} width={barW} height={Math.max(barH, d.amount > 0 ? 2 : 0)} rx={3} fill={d.amount > 0 ? "#7C3AED" : "#e7e5e4"} opacity={d.amount > 0 ? 0.9 : 0.4} />
               {showLabel && <text x={x + barW / 2} y={h - pad.bottom + 13} textAnchor="middle" style={{ fontSize: 9 }} fill="#78716c">{d.label}</text>}
             </g>
           );
