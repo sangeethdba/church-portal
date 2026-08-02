@@ -7,6 +7,7 @@
 --   description:text
 --   date:       date (defaults to current_date)
 --   category:   text (expense_category for expenses, donation_kind for donations)
+--   donor_id:   uuid (optional — links donation to an existing donor record)
 --   payment_method: text (defaults to 'online' for both)
 --   check_number:   text (optional)
 --
@@ -71,12 +72,21 @@ begin
       );
 
     elsif v_tx->>'type' = 'donation' then
-      -- Insert directly into donations for online credits mapped to donors
+      -- Insert directly into donations for online credits mapped to donors.
+      -- If donor_id is provided and valid, link to that donor record;
+      -- otherwise fall back to donor_name from the description.
       insert into public.donations (
-        donor_name, amount, donation_type,
+        donor_id, donor_name, amount, donation_type,
         payment_method, check_number,
         donation_date, notes, entered_by
       ) values (
+        case
+          when v_tx->>'donor_id' is not null
+           and v_tx->>'donor_id' <> ''
+           and exists (select 1 from public.donors where id = (v_tx->>'donor_id')::uuid)
+          then (v_tx->>'donor_id')::uuid
+          else null
+        end,
         v_tx->>'description',
         (v_tx->>'amount')::numeric,
         coalesce(v_cat, 'offering')::public.donation_kind,

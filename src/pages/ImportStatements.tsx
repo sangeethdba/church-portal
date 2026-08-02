@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useOutletContext } from "react-router-dom";
 import {
@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/Layout";
 import { Button, Card, CardBody, CardHeader, Badge, EmptyState, Select, Input, toast } from "@/components/ui";
-import { supabase, isAdminRole, type Profile, type DonationKind, type ExpenseCategory, EXPENSE_CATEGORIES } from "@/lib/supabase";
+import { supabase, isAdminRole, type Profile, type Donor, type DonationKind, type ExpenseCategory, EXPENSE_CATEGORIES } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ interface ParsedTransaction {
   amount: number;                  // positive number
   direction: TxDirection;
   category: string;               // expense_category or donation_kind
+  donorId: string | null;         // donor UUID — only for donation rows
   paymentMethod: string;
   checkNumber: string;
   raw: string;                    // original line for debugging
@@ -147,7 +148,7 @@ function normalizeDate(raw: string): string {
  *  Supports Bank of America (Date,Description,Amount,Running Bal.),
  *  Chase, Wells Fargo, and generic CSV formats.
  *  Auto-detects expense vs donation from the sign of the Amount column. */
-function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[] {
+function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "category" | "donorId" | "paymentMethod" | "checkNumber" | "approved">[] {
   let lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
 
@@ -182,7 +183,7 @@ function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "c
     : { name: "No header", dateCol: 0, descCol: 1, amtCol: 2, balanceCol: 3 };
 
   // ── Step 3: Parse each data line using column indices ───────────────
-  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[] = [];
+  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "donorId" | "paymentMethod" | "checkNumber" | "approved">[] = [];
 
   for (const line of dataLines) {
     const cols = line.split(delim).map((c) => c.trim().replace(/^"|"$/g, ""));
@@ -224,7 +225,7 @@ function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "c
 }
 
 /** Parse PDF text via pdfjs-dist and try to extract tabular transaction data. */
-async function parsePDF(file: File): Promise<Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[]> {
+async function parsePDF(file: File): Promise<Omit<ParsedTransaction, "id" | "direction" | "category" | "donorId" | "paymentMethod" | "checkNumber" | "approved">[]> {
   // Dynamic import to avoid bundling pdfjs for users who only use CSV
   const pdfjsLib = await import("pdfjs-dist");
   // Use the bundled worker
@@ -261,7 +262,7 @@ async function parsePDF(file: File): Promise<Omit<ParsedTransaction, "id" | "dir
   }
 
   // Parse each line to extract date, description, amount
-  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[] = [];
+  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "donorId" | "paymentMethod" | "checkNumber" | "approved">[] = [];
   for (const line of txLines) {
     const dateM = line.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
     const dateStr = dateM ? dateM[1] : "";
@@ -306,12 +307,26 @@ export default function ImportStatements() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
+  const [donors, setDonors] = useState<Donor[]>([]);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; errors: number } | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [fileMode, setFileMode] = useState<"csv" | "pdf">("csv");
+
+  // ── Fetch donors for donation-row attribution ──────────────────────
+
+  useEffect(() => {
+    if (!supabase || !isAdmin) return;
+    supabase
+      .from("donors")
+      .select("id, first_name, last_name")
+      .order("last_name")
+      .then(({ data }) => {
+        if (data) setDonors(data as Donor[]);
+      });
+  }, [isAdmin]);
 
   // ── File handling ──────────────────────────────────────────────────
 
@@ -322,7 +337,7 @@ export default function ImportStatements() {
 
     try {
       const ext = file.name.split(".").pop()?.toLowerCase();
-      let raw: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber" | "approved">[];
+      let raw: Omit<ParsedTransaction, "id" | "direction" | "category" | "donorId" | "paymentMethod" | "checkNumber" | "approved">[];
 
       if (ext === "csv" || ext === "txt") {
         const text = await file.text();
@@ -355,6 +370,7 @@ export default function ImportStatements() {
           amount: r.amount || 0,
           direction: dir,
           category: dir === "expense" ? "other" : "offering",
+          donorId: null,           // user picks donor for donation rows
           paymentMethod: "online",
           checkNumber: "",
           raw: r.raw,
@@ -451,6 +467,7 @@ export default function ImportStatements() {
         description: t.description,
         date: t.date,
         category: t.category,
+        donor_id: t.donorId || null,
         payment_method: t.paymentMethod,
         check_number: t.checkNumber || null,
       }));
@@ -649,6 +666,7 @@ export default function ImportStatements() {
                     <th className="px-3 py-2.5 text-right font-medium text-[#78716C]">Amount</th>
                     <th className="px-3 py-2.5 text-center font-medium text-[#78716C]">Type</th>
                     <th className="px-3 py-2.5 text-left font-medium text-[#78716C]">Category</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-[#78716C]">Donor</th>
                     <th className="px-3 py-2.5 text-center font-medium text-[#78716C] w-12"></th>
                   </tr>
                 </thead>
@@ -741,6 +759,26 @@ export default function ImportStatements() {
                                 </option>
                               ))}
                         </Select>
+                      </td>
+                      {/* Donor selector — donation rows only */}
+                      <td className="px-3 py-2.5">
+                        {tx.direction === "donation" ? (
+                          <Select
+                            value={tx.donorId || ""}
+                            onChange={(e) => updateTx(tx.id, { donorId: e.target.value || null })}
+                            className="h-8 min-w-[160px] text-xs"
+                            disabled={!tx.approved}
+                          >
+                            <option value="">Unlinked (name only)</option>
+                            {donors.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.first_name} {d.last_name}
+                              </option>
+                            ))}
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-[#C4A77D]">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         <button
