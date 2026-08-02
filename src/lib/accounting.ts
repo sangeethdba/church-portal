@@ -76,6 +76,8 @@ export interface OfferingLike {
   service_date: string;
   cash_amount: number;
   check_amount: number;
+  cash_net?: number;
+  total_amount?: number;
 }
 
 export interface DonationLike {
@@ -106,7 +108,15 @@ export function buildWeeklyBuckets(
     weeks.set(key, cur);
   };
   for (const o of offerings) {
-    bump(o.service_date, Number(o.cash_amount ?? 0), Number(o.check_amount ?? 0), 0);
+    // Legacy rows may only have cash_net (pre-0048); prefer cash_amount when set.
+    const cash = Number(o.cash_amount || o.cash_net || 0);
+    const check = Number(o.check_amount || 0);
+    // Named cash gifts (envelopes) are recorded as donations linked to this
+    // offering, not on the offering row itself — derive them from the total so
+    // they show up as cash in the weekly trend instead of vanishing.
+    const total = Number(o.total_amount || 0);
+    const gifts = Math.max(0, total - cash - check);
+    bump(o.service_date, cash + gifts, check, 0);
   }
   for (const d of standaloneDonations) {
     const amt = Number(d.amount);

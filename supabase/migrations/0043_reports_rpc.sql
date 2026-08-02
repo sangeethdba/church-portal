@@ -39,7 +39,9 @@ begin
   into v_offerings
   from (
     select id, service_date, service_name,
-           coalesce(nullif(cash_amount, 0), cash_net) as cash_amount, check_amount, total_amount,
+           coalesce(nullif(cash_amount, 0), cash_net) as cash_amount,
+           cash_net,
+           check_amount, total_amount,
            check_count, deposit_status
     from public.offerings
   ) o;

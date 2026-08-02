@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
   Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
-  Download, Printer, Receipt, CalendarRange,
+  Download, Printer, Receipt, CalendarRange, Gift,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -175,6 +175,7 @@ export default function Offerings() {
     const deductions = (o.cash_deductions as Deduction[])?.map((d: Deduction) => ({ reason: d.reason, amount: Number(d.amount) || 0 })) ?? [];
     const counter1Name = counterName(o.counter_1_id);
     const counter2Name = counterName(o.counter_2_id);
+    const giftsTotal = Math.max(0, (Number(o.total_amount) || 0) - net - checksTotal);
     const summary: OfferingSummary = {
       serviceDate: o.service_date,
       serviceName: o.service_name,
@@ -185,8 +186,8 @@ export default function Offerings() {
       checks,
       totalChecks: checksTotal,
       cashGifts: [],
-      totalCashGifts: 0,
-      totalDeposit: net + checksTotal,  // checksTotal from DB, not local state
+      totalCashGifts: giftsTotal,
+      totalDeposit: Number(o.total_amount) || (net + checksTotal),
       churchName,
       recordedBy: "Admin",
       counter1Name,
@@ -224,12 +225,18 @@ export default function Offerings() {
   }, [offerings, filterYear, dateFrom, dateTo]);
 
   const totals = filtered.reduce(
-    (acc, o) => ({
-      cash: acc.cash + Number(o.cash_net || o.cash_amount),
-      checks: acc.checks + Number(o.check_amount),
-      grand: acc.grand + Number(o.total_amount),
-    }),
-    { cash: 0, checks: 0, grand: 0 },
+    (acc, o) => {
+      const cash = Number(o.cash_net || o.cash_amount) || 0;
+      const checks = Number(o.check_amount) || 0;
+      const grand = Number(o.total_amount) || 0;
+      return {
+        cash: acc.cash + cash,
+        checks: acc.checks + checks,
+        gifts: acc.gifts + Math.max(0, grand - cash - checks),
+        grand: acc.grand + grand,
+      };
+    },
+    { cash: 0, checks: 0, gifts: 0, grand: 0 },
   );
 
   const years = useMemo(() => {
@@ -822,7 +829,7 @@ export default function Offerings() {
       />
 
       {/* ── Summary cards ────────────────────────────────────────────────── */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardBody className="flex items-center gap-4 py-5">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
@@ -842,6 +849,17 @@ export default function Offerings() {
             <div>
               <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Checks</div>
               <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totals.checks)}</div>
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="flex items-center gap-4 py-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-lime-100 text-lime-700">
+              <Gift className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Cash gifts</div>
+              <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totals.gifts)}</div>
             </div>
           </CardBody>
         </Card>
@@ -910,6 +928,7 @@ export default function Offerings() {
               <Th>Docs</Th>
               <Th className="text-right">Cash (net)</Th>
               <Th className="text-right">Checks</Th>
+              <Th className="text-right">Cash gifts</Th>
               <Th className="text-right">Total</Th>
               <Th>Notes</Th>
             </Tr>
@@ -973,6 +992,9 @@ export default function Offerings() {
                     <span className="ml-1 text-xs text-stone-400">({o.check_count})</span>
                   )}
                 </Td>
+                <Td className="text-right font-mono text-sm text-lime-700">
+                  {formatCurrency(Math.max(0, Number(o.total_amount) - (Number(o.cash_net || o.cash_amount) || 0) - (Number(o.check_amount) || 0)))}
+                </Td>
                 <Td className="text-right font-serif text-base font-semibold text-stone-900">
                   {formatCurrency(o.total_amount)}
                 </Td>
@@ -988,6 +1010,9 @@ export default function Offerings() {
               </Td>
               <Td className="border-t-2 border-stone-200 py-4 text-right font-mono font-semibold text-stone-900">
                 {formatCurrency(totals.checks)}
+              </Td>
+              <Td className="border-t-2 border-stone-200 py-4 text-right font-mono font-semibold text-lime-700">
+                {formatCurrency(totals.gifts)}
               </Td>
               <Td className="border-t-2 border-stone-200 py-4 text-right font-serif text-lg font-semibold text-stone-900">
                 {formatCurrency(totals.grand)}

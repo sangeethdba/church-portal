@@ -11,11 +11,21 @@ import { buildWeeklyBuckets } from "@/lib/accounting";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
 
+// Weeks are keyed by their Sunday start; show the full Sun–Sat range so an
+// offering recorded late in the week (e.g. Sat Aug 01) is clearly visible.
+function weekRangeLabel(week: string): string {
+  const start = new Date(week + "T12:00:00");
+  const end = new Date(start.getTime() + 6 * 86400000);
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
 type OfferingRow = {
   id: string;
   service_date: string;
   service_name: string;
   cash_amount: number;
+  cash_net?: number;
   check_amount: number;
   total_amount: number;
   check_count?: number;
@@ -140,7 +150,8 @@ export default function Reports() {
         })) as Expense[]);
         setOfferings((result.offerings ?? []).map(r => ({
           id: r.id, service_date: r.service_date, service_name: r.service_name,
-          cash_amount: Number(r.cash_amount ?? 0), check_amount: Number(r.check_amount ?? 0),
+          cash_amount: Number(r.cash_amount ?? 0), cash_net: Number(r.cash_net ?? 0),
+          check_amount: Number(r.check_amount ?? 0),
           total_amount: Number(r.total_amount ?? 0), check_count: r.check_count,
           deposit_status: r.deposit_status,
         })) as OfferingRow[]);
@@ -189,8 +200,11 @@ export default function Reports() {
       m[d.payment_method] = (m[d.payment_method] ?? 0) + Number(d.amount);
     });
     filteredOff.forEach((o) => {
-      m.cash = (m.cash ?? 0) + Number(o.cash_amount ?? 0);
-      m.check = (m.check ?? 0) + Number(o.check_amount ?? 0);
+      const cash = Number(o.cash_amount || o.cash_net || 0);
+      const check = Number(o.check_amount || 0);
+      const gifts = Math.max(0, Number(o.total_amount || 0) - cash - check);
+      m.cash = (m.cash ?? 0) + cash + gifts;
+      m.check = (m.check ?? 0) + check;
     });
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredStandalone, filteredOff]);
@@ -554,7 +568,7 @@ export default function Reports() {
                 </div>
                 {weeklyOff.length > 0 && (
                   <Button size="sm" variant="outline" onClick={() => {
-                    const csv = ["Week,Cash,Check,Other,Total", ...weeklyOff.map(([week, v]) => `${week},${v.cash},${v.check},${v.other},${v.cash + v.check + v.other}`)].join("\n");
+                    const csv = ["Week,Cash,Check,Other,Total", ...weeklyOff.map(([week, v]) => `${weekRangeLabel(week)},${v.cash},${v.check},${v.other},${v.cash + v.check + v.other}`)].join("\n");
                     const blob = new Blob([csv], { type: "text/csv" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a"); a.href = url; a.download = `weekly-offerings-${range.label.replace(/\s/g, "-").toLowerCase()}.csv`; a.click();
@@ -582,7 +596,7 @@ export default function Reports() {
                       const total = v.cash + v.check + v.other;
                       return (
                         <Tr key={week}>
-                          <Td className="font-medium">{formatDate(week)}</Td>
+                          <Td className="font-medium">{weekRangeLabel(week)}</Td>
                           <Td className="text-right font-mono text-sm">{formatCurrency(v.cash)}</Td>
                           <Td className="text-right font-mono text-sm">{formatCurrency(v.check)}</Td>
                           <Td className="text-right font-mono text-sm">{formatCurrency(v.other)}</Td>

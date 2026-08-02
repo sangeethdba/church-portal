@@ -83,6 +83,24 @@ describe("buildWeeklyBuckets", () => {
     expect(week2[1]).toEqual({ cash: 100, check: 0, other: 0 });
   });
 
+  it("falls back to cash_net for legacy rows (pre-0048) and folds named cash gifts into cash", () => {
+    // Aug 01 2026 (Sat) — legacy row with only cash_net set, cash_amount = 0,
+    // and $200 in named cash gifts hidden inside total_amount.
+    const buckets = buildWeeklyBuckets(
+      [
+        {
+          service_date: "2026-08-01",
+          cash_amount: 0,
+          cash_net: 224,
+          check_amount: 200,
+          total_amount: 624,
+        },
+      ],
+      [],
+    );
+    expect(buckets).toEqual([["2026-07-26", { cash: 424, check: 200, other: 0 }]]);
+  });
+
   it("handles empty input", () => {
     expect(buildWeeklyBuckets([], [])).toEqual([]);
   });
