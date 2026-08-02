@@ -4,6 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 // ---------- Button -------------------------------------------------------
@@ -227,6 +228,126 @@ export function Tile({ label, value, delta, deltaPositive, icon, accent = "indig
     );
   }
   return <Card className="overflow-hidden">{inner}</Card>;
+}
+
+// ---------- Animated Counter -------------------------------------------
+export function AnimatedCounter({ value, duration = 0.8 }: { value: number; duration?: number }) {
+  const display = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <motion.span
+      key={value}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+    >
+      ${display}
+    </motion.span>
+  );
+}
+
+// ---------- Motion-enhanced KPI Tile -----------------------------------
+export function MotionTile({
+  label, value, delta, deltaPositive, icon, accent = "indigo", onClick, index = 0,
+}: {
+  label: string; value: string; delta?: string; deltaPositive?: boolean;
+  icon?: React.ReactNode; accent?: "indigo" | "amber" | "emerald" | "rose";
+  onClick?: () => void; index?: number;
+}) {
+  const Comp = onClick ? motion.button : motion.div;
+  return (
+    <Comp
+      initial={{ opacity: 0, y: 24, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.4, delay: index * 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
+      whileHover={{ scale: 1.02, y: -2 }}
+      whileTap={onClick ? { scale: 0.98 } : undefined}
+      onClick={onClick}
+      className={cn(
+        "group w-full overflow-hidden rounded-2xl border border-stone-200 bg-white text-left shadow-sm transition-shadow hover:shadow-lg",
+        onClick && "cursor-pointer",
+      )}
+    >
+      <div className="flex items-start justify-between p-5">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{label}</div>
+          <div className="mt-2 font-serif text-3xl font-semibold text-stone-900">{value}</div>
+          {delta && (
+            <motion.div
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+              className={cn(
+                "mt-2 inline-flex items-center gap-1 text-xs font-medium",
+                deltaPositive ? "text-emerald-700" : "text-rose-600",
+              )}
+            >
+              <span>{deltaPositive ? "▲" : "▼"}</span>
+              <span>{delta}</span>
+            </motion.div>
+          )}
+        </div>
+        {icon && (
+          <motion.div
+            whileHover={{ rotate: [0, -5, 5, 0], scale: 1.1 }}
+            transition={{ duration: 0.4 }}
+            className={cn("flex h-10 w-10 items-center justify-center rounded-xl", accentMap[accent])}
+          >
+            {icon}
+          </motion.div>
+        )}
+      </div>
+      <div className="h-1 w-full bg-gradient-to-r from-transparent via-purple-200 to-transparent" />
+    </Comp>
+  );
+}
+
+// ---------- Toast notification system ----------------------------------
+type ToastType = "success" | "error" | "info";
+interface Toast { id: string; message: string; type: ToastType; }
+let toastListeners: Array<(toasts: Toast[]) => void> = [];
+let currentToasts: Toast[] = [];
+
+function notifyListeners() { toastListeners.forEach((fn) => fn([...currentToasts])); }
+
+export function toast(message: string, type: ToastType = "info") {
+  const id = Math.random().toString(36).slice(2);
+  currentToasts = [...currentToasts, { id, message, type }];
+  notifyListeners();
+  setTimeout(() => {
+    currentToasts = currentToasts.filter((t) => t.id !== id);
+    notifyListeners();
+  }, 3500);
+}
+
+export function ToastContainer() {
+  const [toasts, setToasts] = React.useState<Toast[]>([]);
+  React.useEffect(() => {
+    toastListeners.push(setToasts);
+    return () => { toastListeners = toastListeners.filter((fn) => fn !== setToasts); };
+  }, []);
+  
+  const colors: Record<ToastType, string> = {
+    success: "bg-emerald-600", error: "bg-rose-600", info: "bg-purple-600",
+  };
+  
+  return (
+    <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2">
+      <AnimatePresence>
+        {toasts.map((t) => (
+          <motion.div
+            key={t.id}
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.25 }}
+            className={cn("rounded-xl px-4 py-3 text-sm font-medium text-white shadow-lg", colors[t.type])}
+          >
+            {t.message}
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 // ---------- Tabs ---------------------------------------------------------

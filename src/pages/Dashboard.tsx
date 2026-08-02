@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
   Shield, UserCheck, Lock, Banknote, UserPlus,
 } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent, Skeleton, KpiSkeleton } from "@/components/ui";
+import { Button, Card, CardBody, CardHeader, Tile, MotionTile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent, Skeleton, KpiSkeleton } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { MemberOverview } from "@/pages/MyOverview";
@@ -398,11 +399,13 @@ export default function Dashboard() {
       />
 
       {pendingApprovals > 0 && (
-        <button type="button" onClick={() => { setCounterOpen(true); loadProfiles(); }}
+        <motion.button type="button" onClick={() => { setCounterOpen(true); loadProfiles(); }}
+          initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+          whileHover={{ scale: 1.005 }}
           className="mb-6 flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-left text-sm text-amber-800 transition hover:bg-amber-100/80">
           <UserCheck className="h-5 w-5 shrink-0 text-amber-600" />
           <span><strong>{pendingApprovals} member{pendingApprovals > 1 ? "s" : ""} waiting for approval</strong> — someone signed in with Google. Click here to review, grant access, link their donor record, or make them a counter.</span>
-        </button>
+        </motion.button>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -412,13 +415,13 @@ export default function Dashboard() {
           </>
         ) : (
           <>
-            <Tile label="YTD Giving" value={formatCurrency(kpis.ytdGiving)} accent="indigo" icon={<HandCoins className="h-5 w-5" />}/>
-            <Tile label="YTD Expenses" value={formatCurrency(ytdExpenses)} accent={ytdExpenses > 0 ? "rose" : "emerald"} icon={<Receipt className="h-5 w-5" />}/>
-            <Tile label="Net position" value={formatCurrency(ytdNet)} accent={ytdNet >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />}/>
-            <Tile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}
-              onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} />
-            <Tile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}
-              onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} />
+            <MotionTile label="YTD Giving" value={formatCurrency(kpis.ytdGiving)} accent="indigo" icon={<HandCoins className="h-5 w-5" />} index={0} />
+            <MotionTile label="YTD Expenses" value={formatCurrency(ytdExpenses)} accent={ytdExpenses > 0 ? "rose" : "emerald"} icon={<Receipt className="h-5 w-5" />} index={1} />
+            <MotionTile label="Net position" value={formatCurrency(ytdNet)} accent={ytdNet >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />} delta={ytdNet >= 0 ? "Surplus" : "Deficit"} deltaPositive={ytdNet >= 0} index={2} />
+            <MotionTile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}
+              onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} index={3} />
+            <MotionTile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}
+              onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} index={4} />
           </>
         )}
       </div>

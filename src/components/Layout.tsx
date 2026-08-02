@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { NavLink, Outlet, useNavigate, useOutletContext } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { NavLink, Outlet, useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import {
   LayoutDashboard,
   HandCoins,
@@ -33,6 +34,7 @@ const allItems = [
 
 export default function AppShell() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
   const isAdmin = isAdminRole(ctx.profile?.role);
@@ -83,9 +85,14 @@ export default function AppShell() {
           </div>
 
           <nav className="flex flex-col gap-1">
-            {visibleItems.map(({ to, label, icon: Icon }) => (
-              <NavLink
+            {visibleItems.map(({ to, label, icon: Icon }, idx) => (
+              <motion.div
                 key={to}
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.04, duration: 0.3 }}
+              >
+              <NavLink
                 to={to}
                 onClick={() => setDrawerOpen(false)}
                 className={({ isActive }) =>
@@ -100,10 +107,11 @@ export default function AppShell() {
                   <>
                     <Icon className={`h-4 w-4 transition ${isActive ? "text-purple-600" : "text-stone-400 group-hover:text-purple-500"}`} />
                     {label}
-                    {isActive && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-purple-500" />}
+                    {isActive && <motion.div layoutId="active-dot" className="ml-auto h-1.5 w-1.5 rounded-full bg-purple-500" />}
                   </>
                 )}
               </NavLink>
+              </motion.div>
             ))}
           </nav>
 
@@ -132,9 +140,19 @@ export default function AppShell() {
           </div>
         </aside>
 
-        {/* Main */}
+        {/* Main with page transitions */}
         <main className="px-4 py-8 sm:px-8 lg:px-10">
-          <Outlet context={ctx} />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+            >
+              <Outlet context={ctx} />
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 
