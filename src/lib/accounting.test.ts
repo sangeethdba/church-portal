@@ -124,7 +124,7 @@ describe("buildWeeklyLedgerDetail", () => {
       ],
       [],
     );
-    expect(buckets).toEqual([["2026-07-26", { anonymous: 224, named: 200, checks: 200, pastor: 20, online: 0, other: 0 }]]);
+    expect(buckets).toEqual([["2026-07-26", { anonymous: 244, named: 200, checks: 200, pastor: -20, online: 0, other: 0 }]]);
   });
 
   it("keeps online gifts separate from the Sunday offering and folds standalone cash into named", () => {

@@ -89,12 +89,12 @@ export interface DonationLike {
 
 /** Per-service-week ledger breakdown of a Sunday offering. */
 export interface WeeklyLedgerDetail {
-  /** Plate cash (net of pastor-gift deductions) — anonymous. */
+  /** Plate cash BEFORE pastor-gift deductions (gross) — anonymous. */
   anonymous: number;
   /** Envelope cash gifts (named) + standalone cash donations (also named). */
   named: number;
   checks: number;
-  /** Pastor-gift / cash deductions taken out of the plate. */
+  /** Pastor-gift / cash deductions taken out of the plate (negative). */
   pastor: number;
   /** Online gifts entered separately — kept apart from the Sunday offering. */
   online: number;
@@ -179,7 +179,9 @@ export function buildWeeklyLedgerDetail(
     const named = Math.max(0, total - cash - checks);
     const pastor = (Array.isArray(o.cash_deductions) ? o.cash_deductions : [])
       .reduce((s, d) => s + (Number(d?.amount) || 0), 0);
-    bump(o.service_date, { anonymous: cash, named, checks, pastor });
+    // Anonymous cash is the GROSS plate (before pastor-gift deductions); the
+    // deduction is stored negative so the week reads like a true ledger line.
+    bump(o.service_date, { anonymous: cash + pastor, named, checks, pastor: -pastor });
   }
   for (const d of standaloneDonations) {
     const amt = Number(d.amount) || 0;

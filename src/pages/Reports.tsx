@@ -274,7 +274,7 @@ export default function Reports() {
     [filteredOff, filteredStandalone],
   );
   const weeklyOff = useMemo(
-    () => weeklyLedger.map(([week, v]) => [week, { cash: v.anonymous + v.named, check: v.checks, other: v.online + v.other }] as const),
+    () => weeklyLedger.map(([week, v]) => [week, { cash: v.anonymous + v.named + v.pastor, check: v.checks, other: v.online + v.other }] as const),
     [weeklyLedger],
   );
 
@@ -578,12 +578,12 @@ export default function Reports() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly offering collections</h2>
-                  <p className="text-xs text-stone-500">Per-Sunday ledger: anonymous plate cash, named envelope gifts, checks, pastor-gift deductions — online gifts kept separate</p>
+                  <p className="text-xs text-stone-500">Per-Sunday ledger: gross anonymous plate cash, named envelope gifts, checks, minus pastor-gift deductions — online gifts kept separate</p>
                 </div>
                 {weeklyOff.length > 0 && (
                   <Button size="sm" variant="outline" onClick={() => {
                     const csv = ["Week,Anonymous cash,Named cash,Checks,Pastor gifts,Online,Total", ...weeklyLedger.map(([week, v]) => {
-                      const total = v.anonymous + v.named + v.checks + v.online + v.other;
+                      const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
                       return `${weekRangeLabel(week)},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total}`;
                     })].join("\n");
                     const blob = new Blob([csv], { type: "text/csv" });
@@ -612,14 +612,14 @@ export default function Reports() {
                   </THead>
                   <tbody>
                     {weeklyLedger.map(([week, v]) => {
-                      const total = v.anonymous + v.named + v.checks + v.online + v.other;
+                      const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
                       return (
                         <Tr key={week}>
                           <Td className="font-medium">{weekRangeLabel(week)}</Td>
                           <Td className="text-right font-mono text-sm">{formatCurrency(v.anonymous)}</Td>
                           <Td className="text-right font-mono text-sm text-lime-700">{formatCurrency(v.named)}</Td>
                           <Td className="text-right font-mono text-sm">{formatCurrency(v.checks)}</Td>
-                          <Td className="text-right font-mono text-sm text-rose-700">{v.pastor > 0 ? formatCurrency(v.pastor) : "—"}</Td>
+                          <Td className="text-right font-mono text-sm text-rose-700">{v.pastor < 0 ? formatCurrency(v.pastor) : "—"}</Td>
                           <Td className="text-right font-mono text-sm text-indigo-700">{v.online > 0 ? formatCurrency(v.online) : "—"}</Td>
                           <Td className="text-right font-serif font-semibold">{formatCurrency(total)}</Td>
                         </Tr>

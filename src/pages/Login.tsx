@@ -303,7 +303,7 @@ export default function Login() {
             </CardBody>
           </Card>
           <p className="mt-6 text-center text-xs text-stone-500">
-            <span className="text-stone-300">v250802v</span>{" · "}
+            <span className="text-stone-300">v250802w</span>{" · "}
             By signing in you agree to keep all giving data confidential.{" "}
             <Link to="/" className="text-accent hover:underline">Back to home</Link>
           </p>
