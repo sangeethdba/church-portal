@@ -7,7 +7,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import { supabase, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { buildWeeklyLedgerDetail } from "@/lib/accounting";
+import { buildIncomeByMethod, buildWeeklyLedgerDetail } from "@/lib/accounting";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
 
@@ -196,26 +196,13 @@ export default function Reports() {
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredStandalone, filteredOff]);
 
-  // Split cash into anonymous (plate) vs named (envelope gifts + standalone)
-  const incomeByMethod = useMemo(() => {
-    const m: Record<string, number> = {};
-    // Standalone cash donations always carry a donor name, so they are named.
-    filteredStandalone.forEach((d) => {
-      const key = d.payment_method === "cash" ? "cash (named)" : d.payment_method;
-      m[key] = (m[key] ?? 0) + Number(d.amount);
-    });
-    filteredOff.forEach((o) => {
-      // Plate cash (cash_amount/cash_net) is anonymous; envelope gifts are the
-      // leftover between total_amount and cash+checks, and are named.
-      const cash = Number(o.cash_amount || o.cash_net || 0);
-      const check = Number(o.check_amount || 0);
-      const gifts = Math.max(0, Number(o.total_amount || 0) - cash - check);
-      if (cash > 0) m["cash (anonymous)"] = (m["cash (anonymous)"] ?? 0) + cash;
-      if (gifts > 0) m["cash (named)"] = (m["cash (named)"] ?? 0) + gifts;
-      if (check > 0) m.check = (m.check ?? 0) + check;
-    });
-    return Object.entries(m).sort(([, a], [, b]) => b - a);
-  }, [filteredStandalone, filteredOff]);
+  // Split cash into anonymous (plate, GROSS before pastor-gift deductions) vs
+  // named (envelope gifts + standalone) — pastor gifts shown as a negative
+  // deduction line, exactly like the weekly ledger, so both views reconcile.
+  const incomeByMethod = useMemo(
+    () => buildIncomeByMethod(filteredOff, filteredStandalone),
+    [filteredOff, filteredStandalone],
+  );
 
   const totalIncome =
     filteredStandalone.reduce((s, d) => s + Number(d.amount), 0) +
@@ -384,7 +371,7 @@ export default function Reports() {
             <Card>
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">By method</h2>
-                <p className="text-xs text-stone-500">Cash split into anonymous plate money vs named envelope gifts</p>
+                <p className="text-xs text-stone-500">Gross plate cash, named envelope gifts, checks — pastor gifts shown as a deduction</p>
               </CardHeader>
               <CardBody className="px-0 pb-0">
                 {incomeByMethod.length === 0 ? (
@@ -398,10 +385,10 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {incomeByMethod.map(([method, amt]) => (
+                      {incomeByMethod.map(({ method, amount: amt }) => (
                         <tr key={method} className="border-t border-stone-50 hover:bg-stone-50/50">
                           <td className="px-6 py-2 capitalize text-stone-800">{method}</td>
-                          <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
+                          <td className={`px-6 py-2 text-right font-mono ${amt < 0 ? "text-rose-700" : "text-stone-700"}`}>{formatCurrency(amt)}</td>
                         </tr>
                       ))}
                       <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">

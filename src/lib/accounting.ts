@@ -193,3 +193,50 @@ export function buildWeeklyLedgerDetail(
   }
   return Array.from(weeks.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
+
+export interface MethodRow {
+  method: string;
+  amount: number;
+}
+
+/**
+ * Income broken down by method — the "By method" report card. Mirrors the
+ * weekly ledger so both views reconcile identically: anonymous plate cash is
+ * GROSS (before pastor-gift deductions), the deduction appears as a negative
+ * "pastor gifts" line, envelope gifts are named cash, checks and online gifts
+ * keep their own lines. Sum of all rows always equals total income.
+ */
+export function buildIncomeByMethod(
+  offerings: OfferingLike[],
+  standaloneDonations: DonationLike[],
+): MethodRow[] {
+  const m = new Map<string, number>();
+  const add = (key: string, value: number) => {
+    if (value === 0) return;
+    m.set(key, (m.get(key) ?? 0) + value);
+  };
+  for (const d of standaloneDonations) {
+    const amt = Number(d.amount) || 0;
+    const method = (d.payment_method || "").toLowerCase();
+    if (method === "cash") add("cash (named)", amt);
+    else if (method === "online") add("online", amt);
+    else if (method === "check") add("check", amt);
+    else add("other", amt);
+  }
+  for (const o of offerings) {
+    const cash = Number(o.cash_net || o.cash_amount || 0);
+    const checks = Number(o.check_amount || 0);
+    const total = Number(o.total_amount || 0);
+    const pastor = (Array.isArray(o.cash_deductions) ? o.cash_deductions : [])
+      .reduce((s, d) => s + (Number(d?.amount) || 0), 0);
+    // Envelope gifts are the leftover between total and cash+checks.
+    const gifts = Math.max(0, total - cash - checks);
+    add("cash (anonymous)", cash + pastor);
+    if (pastor > 0) add("pastor gifts", -pastor);
+    add("cash (named)", gifts);
+    add("check", checks);
+  }
+  return Array.from(m.entries())
+    .map(([method, amount]) => ({ method, amount: Math.round(amount * 100) / 100 }))
+    .sort((a, b) => b.amount - a.amount);
+}

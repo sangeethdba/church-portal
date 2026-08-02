@@ -5,6 +5,7 @@ import {
   aggregateDonorStats,
   buildWeeklyBuckets,
   buildWeeklyLedgerDetail,
+  buildIncomeByMethod,
   sundayWeekKey,
 } from "./accounting";
 import { isAdminRole, normalizeLineItems, buildReceiptPath } from "./supabase";
@@ -146,6 +147,112 @@ describe("sundayWeekKey", () => {
     expect(sundayWeekKey("2026-08-01")).toBe("2026-07-26"); // Sat
     expect(sundayWeekKey("2026-07-26")).toBe("2026-07-26"); // Sun
     expect(sundayWeekKey("2026-08-02")).toBe("2026-08-02"); // Sun
+  });
+});
+
+// ── End-to-end data flow: a full year the way the Reports page computes it ─
+describe("end-to-end: full-year data flow reconciles every report total", () => {
+  // Two Sunday offerings:
+  //  - Aug 2: $224 net plate ($244 gross − $20 pastor gift), $200 checks,
+  //    $200 named envelope gifts → $624 deposited.
+  //  - Sep 6: $300 plate (no deduction), $100 checks → $400 deposited.
+  const offerings = [
+    {
+      service_date: "2026-08-02",
+      cash_amount: 224,
+      cash_net: 224,
+      cash_deductions: [{ reason: "pastor gift", amount: 20 }],
+      check_amount: 200,
+      total_amount: 624,
+    },
+    {
+      service_date: "2026-09-06",
+      cash_amount: 300,
+      cash_net: 300,
+      cash_deductions: null,
+      check_amount: 100,
+      total_amount: 400,
+    },
+  ];
+
+  // Offering-linked donations (envelopes + checks recorded via record_offering,
+  // carrying offering_id) must never be counted as standalone gifts.
+  const offeringLinked = [
+    { donor_id: "d1", donor_name: "John Seeli", amount: 100, donation_date: "2026-08-02", payment_method: "check" },
+    { donor_id: "d1", donor_name: "John Seeli", amount: 100, donation_date: "2026-08-02", payment_method: "check" },
+    { donor_id: "d2", donor_name: "Sangeeth Talluri", amount: 100, donation_date: "2026-08-02", payment_method: "check" },
+    { donor_id: "d1", donor_name: "John Seeli", amount: 100, donation_date: "2026-08-02", payment_method: "cash" },
+    { donor_id: "d2", donor_name: "Sangeeth Talluri", amount: 100, donation_date: "2026-08-02", payment_method: "cash" },
+  ].map((d) => ({ ...d, offering_id: "off-1" }));
+
+  // Standalone gifts entered separately (online + one walk-in cash).
+  const standalone = [
+    { donation_date: "2026-07-27", payment_method: "online", amount: 100 },
+    { donation_date: "2026-08-03", payment_method: "online", amount: 150 },
+    { donation_date: "2026-08-15", payment_method: "online", amount: 75 },
+    { donation_date: "2026-08-16", payment_method: "cash", amount: 25 },
+  ];
+
+  const totalIncome =
+    standalone.reduce((s, d) => s + Number(d.amount), 0) +
+    offerings.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+
+  it("weekly ledger splits every week exactly (gross plate, negative pastor)", () => {
+    expect(buildWeeklyLedgerDetail(offerings, standalone)).toEqual([
+      ["2026-07-26", { anonymous: 0, named: 0, checks: 0, pastor: 0, online: 100, other: 0 }],
+      ["2026-08-02", { anonymous: 244, named: 200, checks: 200, pastor: -20, online: 150, other: 0 }],
+      ["2026-08-09", { anonymous: 0, named: 0, checks: 0, pastor: 0, online: 75, other: 0 }],
+      ["2026-08-16", { anonymous: 0, named: 25, checks: 0, pastor: 0, online: 0, other: 0 }],
+      ["2026-09-06", { anonymous: 300, named: 0, checks: 100, pastor: 0, online: 0, other: 0 }],
+    ]);
+  });
+
+  it("weekly ledger grand total equals total income (offerings + standalone, no double count)", () => {
+    const ledger = buildWeeklyLedgerDetail(offerings, standalone);
+    const grand = ledger.reduce((s, [, v]) => s + v.anonymous + v.named + v.checks + v.pastor + v.online + v.other, 0);
+    expect(grand).toBe(totalIncome); // 1374 = 624 + 400 + 100 + 150 + 75 + 25
+    expect(totalIncome).toBe(1374);
+  });
+
+  it("by-method breakdown matches the ledger: gross anonymous, negative pastor, named, checks, online", () => {
+    const byMethod = buildIncomeByMethod(offerings, standalone);
+    const total = byMethod.reduce((s, r) => s + r.amount, 0);
+    expect(total).toBe(totalIncome);
+    expect(byMethod).toEqual([
+      { method: "cash (anonymous)", amount: 544 }, // 244 + 300 gross
+      { method: "online", amount: 325 },           // 100 + 150 + 75
+      { method: "check", amount: 300 },            // 200 + 100
+      { method: "cash (named)", amount: 225 },     // 200 envelope gifts + 25 walk-in
+      { method: "pastor gifts", amount: -20 },     // the deduction, negative
+    ]);
+  });
+
+  it("weekly trend chart view (deposited cash) ties to the ledger's cash-equivalent", () => {
+    const ledger = buildWeeklyLedgerDetail(offerings, standalone);
+    const buckets = buildWeeklyBuckets(offerings, standalone);
+    // For every week: ledger cash-equivalent (anon + named + pastor) = bucket cash,
+    // ledger checks = bucket check, ledger online+other = bucket other.
+    const ledgerByWeek = new Map(ledger);
+    for (const [week, b] of buckets) {
+      const v = ledgerByWeek.get(week)!;
+      expect(v.anonymous + v.named + v.pastor).toBe(b.cash);
+      expect(v.checks).toBe(b.check);
+      expect(v.online + v.other).toBe(b.other);
+    }
+    // Deposited cash for the Aug 2 week is $424 ($244 gross − $20 pastor + $200 gifts)
+    expect(buckets.find(([w]) => w === "2026-08-02")![1]).toEqual({ cash: 424, check: 200, other: 150 });
+  });
+
+  it("donor totals aggregate offering-linked + online gifts per donor, ignoring the anonymous plate", () => {
+    const { byId } = aggregateDonorStats(
+      [
+        ...offeringLinked.map((d) => ({ donor_id: d.donor_id, donor_name: d.donor_name, amount: d.amount, donation_date: d.donation_date })),
+        { donor_id: "d1", donor_name: "John Seeli", amount: 150, donation_date: "2026-08-03" },
+        { donor_id: null, donor_name: "Anonymous", amount: 244, donation_date: "2026-08-02" },
+      ],
+    );
+    expect(byId.get("d1")).toEqual({ total: 450, last: "2026-08-03" }); // 100+100+100+150
+    expect(byId.get("d2")).toEqual({ total: 200, last: "2026-08-02" }); // 100+100
   });
 });
 
