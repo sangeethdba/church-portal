@@ -16,8 +16,8 @@ const buttonVariants = cva(
         solid:
           "bg-purple-600 text-white shadow-sm hover:bg-purple-700 hover:shadow-md active:bg-purple-800",
         outline:
-          "border border-stone-300 bg-white text-stone-900 shadow-sm hover:border-purple-300 hover:bg-purple-50/50",
-        ghost: "text-stone-700 hover:bg-stone-100",
+          "border border-[#EDE4D8] bg-[#FFFBF5] text-stone-900 shadow-sm hover:border-purple-300 hover:bg-purple-50/50",
+        ghost: "text-[#3C2A1E] hover:bg-[#FDF2E9]",
         danger:
           "bg-rose-600 text-white shadow-sm hover:bg-rose-700",
         success:
@@ -63,7 +63,7 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
     <div
       ref={ref}
       className={cn(
-        "rounded-xl border border-stone-200 bg-white shadow-sm card-hover",
+        "rounded-2xl border border-[#EDE4D8] bg-[#FFFBF5] card-organic grain-subtle",
         className,
       )}
       {...props}
@@ -73,7 +73,7 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
 Card.displayName = "Card";
 
 export const CardHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col gap-1.5 border-b border-stone-100 px-6 py-5", className)} {...props} />
+  <div className={cn("flex flex-col gap-1.5 border-b border-[#F5F0E8] px-6 py-5", className)} {...props} />
 );
 
 export const CardBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
@@ -83,7 +83,7 @@ export const CardBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivEl
 export const CardFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex items-center justify-between gap-2 border-t border-stone-100 px-6 py-4 text-sm text-stone-600",
+      "flex items-center justify-between gap-2 border-t border-[#F5F0E8] px-6 py-4 text-sm text-stone-600",
       className,
     )}
     {...props}
@@ -96,7 +96,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
     <input
       ref={ref}
       className={cn(
-        "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 placeholder:text-stone-400 transition focus-ring",
+        "h-10 w-full rounded-lg border border-[#EDE4D8] bg-[#FFFBF5] px-3 text-sm text-stone-900 placeholder:text-stone-400 transition focus-ring",
         className,
       )}
       {...props}
@@ -110,7 +110,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
     <textarea
       ref={ref}
       className={cn(
-        "min-h-[80px] w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 transition focus-ring",
+        "min-h-[80px] w-full rounded-lg border border-[#EDE4D8] bg-[#FFFBF5] px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 transition focus-ring",
         className,
       )}
       {...props}
@@ -124,7 +124,7 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
     <select
       ref={ref}
       className={cn(
-        "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 transition focus-ring",
+        "h-10 w-full rounded-lg border border-[#EDE4D8] bg-[#FFFBF5] px-3 text-sm text-stone-900 transition focus-ring",
         className,
       )}
       {...props}
@@ -152,11 +152,11 @@ const badgeVariants = cva(
   {
     variants: {
       tone: {
-        neutral: "bg-stone-100 text-stone-700",
-        indigo: "bg-purple-100 text-purple-700",
-        amber: "bg-amber-100 text-amber-700",
-        emerald: "bg-emerald-100 text-emerald-700",
-        rose: "bg-rose-100 text-rose-700",
+        neutral: "bg-[#F5F0E8] text-[#78716C]",
+        indigo: "bg-[#FDF2E9] text-[#C67B5C]",
+        amber: "bg-[#FFFBEB] text-[#B45309]",
+        emerald: "bg-[#F4F7EE] text-[#15803D]",
+        rose: "bg-[#FEF2F2] text-[#DC2626]",
       },
     },
     defaultVariants: { tone: "neutral" },
@@ -183,17 +183,17 @@ export interface TileProps {
   onClick?: () => void;
 }
 const accentMap = {
-  indigo: "bg-purple-100 text-purple-700",
-  amber: "bg-amber-100 text-amber-700",
-  emerald: "bg-emerald-100 text-emerald-700",
-  rose: "bg-rose-100 text-rose-700",
+  indigo: "bg-[#FDF2E9] text-[#C67B5C]",
+  amber: "bg-[#FFFBEB] text-[#B45309]",
+  emerald: "bg-[#F4F7EE] text-[#15803D]",
+  rose: "bg-[#FEF2F2] text-[#DC2626]",
 };
 export function Tile({ label, value, delta, deltaPositive, icon, accent = "indigo", onClick }: TileProps) {
   const inner = (
     <>
       <div className="flex items-start justify-between p-5">
         <div>
-          <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{label}</div>
+          <div className="text-xs font-medium uppercase tracking-wider text-[#78716C]">{label}</div>
           <div className="mt-2 font-serif text-3xl font-semibold text-stone-900">{value}</div>
           {delta && (
             <div
@@ -213,7 +213,7 @@ export function Tile({ label, value, delta, deltaPositive, icon, accent = "indig
           </div>
         )}
       </div>
-      <div className="h-1 w-full bg-gradient-to-r from-transparent via-purple-200 to-transparent" />
+      <div className="h-1 w-full bg-gradient-to-r from-transparent via-[#EDE4D8] to-transparent" />
     </>
   );
   if (onClick) {
@@ -221,7 +221,7 @@ export function Tile({ label, value, delta, deltaPositive, icon, accent = "indig
       <button
         type="button"
         onClick={onClick}
-        className="group w-full cursor-pointer overflow-hidden rounded-2xl border border-stone-200 bg-white text-left shadow-soft transition hover:border-amber-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+        className="group w-full cursor-pointer overflow-hidden rounded-2xl border border-[#EDE4D8] bg-[#FFFBF5] text-left shadow-soft transition hover:border-amber-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
       >
         {inner}
       </button>
@@ -263,13 +263,13 @@ export function MotionTile({
       whileTap={onClick ? { scale: 0.98 } : undefined}
       onClick={onClick}
       className={cn(
-        "group w-full overflow-hidden rounded-2xl border border-stone-200 bg-white text-left shadow-sm transition-shadow hover:shadow-lg",
+        "group w-full overflow-hidden rounded-2xl border border-[#EDE4D8] bg-[#FFFBF5] text-left shadow-sm transition-shadow hover:shadow-lg",
         onClick && "cursor-pointer",
       )}
     >
       <div className="flex items-start justify-between p-5">
         <div>
-          <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{label}</div>
+          <div className="text-xs font-medium uppercase tracking-wider text-[#78716C]">{label}</div>
           <div className="mt-2 font-serif text-3xl font-semibold text-stone-900">{value}</div>
           {delta && (
             <motion.div
@@ -296,7 +296,7 @@ export function MotionTile({
           </motion.div>
         )}
       </div>
-      <div className="h-1 w-full bg-gradient-to-r from-transparent via-purple-200 to-transparent" />
+      <div className="h-1 w-full bg-gradient-to-r from-transparent via-[#EDE4D8] to-transparent" />
     </Comp>
   );
 }
@@ -327,7 +327,7 @@ export function ToastContainer() {
   }, []);
   
   const colors: Record<ToastType, string> = {
-    success: "bg-emerald-600", error: "bg-rose-600", info: "bg-purple-600",
+    success: "bg-[#15803D]", error: "bg-rose-600", info: "bg-[#C67B5C]",
   };
   
   return (
@@ -373,7 +373,7 @@ export const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ring-offset-white transition data-[state=active]:bg-white data-[state=active]:text-stone-900 data-[state=active]:shadow-sm",
+      "inline-flex items-center justify-center whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ring-offset-white transition data-[state=active]:bg-[#FFFBF5] data-[state=active]:text-[#3C2A1E] data-[state=active]:shadow-[0_1px_3px_rgba(139,90,43,0.1)]",
       className,
     )}
     {...props}
@@ -400,7 +400,7 @@ export const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-sm", className)}
+    className={cn("fixed inset-0 z-50 bg-[#3C2A1E]/30 backdrop-blur-sm", className)}
     {...props}
   />
 ));
@@ -415,13 +415,13 @@ export const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-stone-200 bg-white p-6 shadow-2xl",
+        "fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#EDE4D8] bg-[#FFFBF5] p-6 shadow-2xl",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1 text-stone-500 hover:bg-stone-100">
+      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1 text-[#78716C] hover:bg-[#FDF2E9]">
         <X className="h-4 w-4" />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
@@ -457,12 +457,12 @@ DialogDescription.displayName = "DialogDescription";
 
 // ---------- Loading Skeleton -----------------------------------------------
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("rounded-lg bg-stone-200 skeleton-pulse", className)} />;
+  return <div className={cn("rounded-lg bg-[#EDE4D8] skeleton-pulse", className)} />;
 }
 
 export function KpiSkeleton() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white p-5">
+    <div className="overflow-hidden rounded-2xl border border-[#EDE4D8] bg-[#FFFBF5] p-5">
       <Skeleton className="mb-3 h-3 w-20" />
       <Skeleton className="mb-2 h-8 w-28" />
       <Skeleton className="h-3 w-16" />
@@ -472,8 +472,8 @@ export function KpiSkeleton() {
 
 export function TableSkeleton({ rows = 4, cols = 4 }: { rows?: number; cols?: number }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-      <div className="border-b border-stone-100 bg-stone-50 px-4 py-3">
+    <div className="overflow-hidden rounded-xl border border-[#EDE4D8] bg-[#FFFBF5]">
+      <div className="border-b border-[#F5F0E8] bg-[#FDF8F2] px-4 py-3">
         <div className="flex gap-8">
           {Array.from({ length: cols }).map((_, i) => (
             <Skeleton key={i} className="h-3 w-16" />
@@ -504,10 +504,10 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-purple-200 bg-purple-50/30 px-6 py-12 text-center">
-      {icon && <div className="mb-3 text-purple-300">{icon}</div>}
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#EDE4D8] bg-[#FDF2E9]/40 px-6 py-12 text-center">
+      {icon && <div className="mb-3 text-[#D4C4A8]">{icon}</div>}
       <h3 className="font-serif text-lg font-semibold text-stone-800">{title}</h3>
-      {description && <p className="mt-1 max-w-sm text-sm text-stone-500">{description}</p>}
+      {description && <p className="mt-1 max-w-sm text-sm text-[#78716C]">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -516,7 +516,7 @@ export function EmptyState({
 // ---------- Table primitives --------------------------------------------
 export const TableWrap = React.forwardRef<HTMLTableElement, React.TableHTMLAttributes<HTMLTableElement>>(
   ({ className, children, ...props }, ref) => (
-    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-soft">
+    <div className="overflow-hidden rounded-xl border border-[#EDE4D8] bg-[#FFFBF5] shadow-soft">
       <table ref={ref} className={cn("w-full text-left text-sm", className)} {...props}>
         {children}
       </table>
@@ -526,7 +526,7 @@ export const TableWrap = React.forwardRef<HTMLTableElement, React.TableHTMLAttri
 TableWrap.displayName = "TableWrap";
 export const THead = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
   ({ className, children, ...props }, ref) => (
-    <thead ref={ref} className={cn("bg-stone-50 text-xs uppercase tracking-wider text-stone-500", className)} {...props}>
+    <thead ref={ref} className={cn("bg-[#FDF8F2] text-xs uppercase tracking-wider text-[#78716C]", className)} {...props}>
       {children}
     </thead>
   ),
@@ -542,7 +542,7 @@ export const Th = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
 Th.displayName = "Th";
 export const Tr = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTMLTableRowElement>>(
   ({ className, children, ...props }, ref) => (
-    <tr ref={ref} className={cn("border-t border-stone-100 transition hover:bg-stone-50/60", className)} {...props}>
+    <tr ref={ref} className={cn("border-t border-[#F5F0E8] transition hover:bg-[#FDF8F2]/60", className)} {...props}>
       {children}
     </tr>
   ),
@@ -550,7 +550,7 @@ export const Tr = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTM
 Tr.displayName = "Tr";
 export const Td = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
   ({ className, children, ...props }, ref) => (
-    <td ref={ref} className={cn("px-4 py-3 text-stone-700", className)} {...props}>
+    <td ref={ref} className={cn("px-4 py-3 text-[#3C2A1E]", className)} {...props}>
       {children}
     </td>
   ),

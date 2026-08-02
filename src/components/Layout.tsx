@@ -53,14 +53,14 @@ export default function AppShell() {
   };
 
   return (
-    <div className="min-h-screen bg-parchment-50 text-stone-900">
+    <div className="min-h-screen bg-[#FEF7ED] text-[#3C2A1E]">
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-purple-100 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-[#EDE4D8] bg-[#FFFBF5]/95 px-4 py-3 backdrop-blur lg:hidden">
         <Logo size={28} />
         <button
           aria-label="Open menu"
           onClick={() => setDrawerOpen(true)}
-          className="rounded-md p-2 text-stone-700 hover:bg-stone-100"
+          className="rounded-md p-2 text-[#78716C] hover:bg-[#FDF2E9]"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -69,7 +69,7 @@ export default function AppShell() {
       <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
         {/* Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-72 -translate-x-full border-r border-purple-100 bg-white px-5 py-6 transition lg:static lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-50 w-72 -translate-x-full border-r border-[#EDE4D8] bg-[#FFFBF5] px-5 py-6 transition lg:static lg:translate-x-0 ${
             drawerOpen ? "translate-x-0" : ""
           }`}
         >
@@ -78,7 +78,7 @@ export default function AppShell() {
             <button
               aria-label="Close menu"
               onClick={() => setDrawerOpen(false)}
-              className="rounded-md p-2 text-stone-500 hover:bg-stone-100 lg:hidden"
+              className="rounded-md p-2 text-[#78716C] hover:bg-[#FDF2E9] lg:hidden"
             >
               <X className="h-5 w-5" />
             </button>
@@ -98,16 +98,16 @@ export default function AppShell() {
                 className={({ isActive }) =>
                   `group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                     isActive
-                      ? "bg-purple-100 text-purple-700 shadow-sm"
-                      : "text-stone-600 hover:bg-purple-50/50 hover:text-purple-700"
+                      ? "bg-[#FDF2E9] text-[#C67B5C] shadow-sm"
+                      : "text-[#78716C] hover:bg-[#FDF2E9]/60 hover:text-[#C67B5C]"
                   }`
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <Icon className={`h-4 w-4 transition ${isActive ? "text-purple-600" : "text-stone-400 group-hover:text-purple-500"}`} />
+                    <Icon className={`h-4 w-4 transition ${isActive ? "text-[#C67B5C]" : "text-[#C4A77D] group-hover:text-[#C67B5C]"}`} />
                     {label}
-                    {isActive && <motion.div layoutId="active-dot" className="ml-auto h-1.5 w-1.5 rounded-full bg-purple-500" />}
+                    {isActive && <motion.div layoutId="active-dot" className="ml-auto h-1.5 w-1.5 rounded-full bg-[#C67B5C]" />}
                   </>
                 )}
               </NavLink>
@@ -115,9 +115,9 @@ export default function AppShell() {
             ))}
           </nav>
 
-          <div className="mt-8 rounded-xl border border-purple-100 bg-purple-50/40 p-4 transition hover:border-purple-200">
+          <div className="mt-8 rounded-xl border border-[#EDE4D8] bg-[#FDF2E9]/50 p-4 transition hover:border-[#C67B5C]/30">
             <div className="flex items-center gap-2 font-serif font-semibold text-stone-900">
-              <Church className="h-4 w-4 text-purple-600" />
+              <Church className="h-4 w-4 text-[#C67B5C]" />
               {ctx.profile?.church_name && ctx.profile.church_name !== "Grace Community Church" ? ctx.profile.church_name : "Atlanta Little Flock Church"}
             </div>
             <div className="mt-2 flex items-center gap-2">
@@ -131,7 +131,7 @@ export default function AppShell() {
             <Button
               variant="ghost"
               size="sm"
-              className="w-full justify-start text-stone-500 hover:text-stone-700 hover:bg-stone-100"
+              className="w-full justify-start text-stone-500 hover:text-[#78716C] hover:bg-[#FDF2E9]"
               onClick={onSignOut}
               iconLeft={<LogOut className="h-4 w-4" />}
             >
@@ -160,7 +160,7 @@ export default function AppShell() {
         <button
           aria-label="Close menu overlay"
           onClick={() => setDrawerOpen(false)}
-          className="fixed inset-0 z-40 bg-stone-900/40 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-[#3C2A1E]/30 backdrop-blur-sm lg:hidden"
         />
       )}
     </div>
@@ -182,11 +182,11 @@ export function PageHeader({
     <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <div className="flex items-center gap-3">
-          <h1 className="font-serif text-2xl font-semibold text-stone-900 sm:text-3xl">{title}</h1>
+          <h1 className="font-serif text-2xl font-semibold text-[#3C2A1E] sm:text-3xl">{title}</h1>
           {badge && <Badge tone="indigo">{badge}</Badge>}
         </div>
         {subtitle && (
-          <p className="mt-1 max-w-2xl text-sm text-stone-600">{subtitle}</p>
+          <p className="mt-1 max-w-2xl text-sm text-[#78716C]">{subtitle}</p>
         )}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

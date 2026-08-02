@@ -57,31 +57,31 @@ function ProfileCard({ p, draftTogglePortal, draftToggleCounter, draftLinkDonor,
   draftSetPin: (id: string) => void;
 }) {
   return (
-    <div key={p.id} className="rounded-lg border border-stone-100 px-3 py-2.5 hover:bg-stone-50/50">
+    <div key={p.id} className="rounded-lg border border-[#F5F0E8] px-3 py-2.5 hover:bg-[#FDF8F2]/50">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={() => draftTogglePortal(p.id)} disabled={isAdminRole(p.role)}
             title={isAdminRole(p.role) ? "Admins always have access" : p.portal_access ? "Click to revoke access" : "Click to grant access"}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-purple-600" : "bg-stone-300"}`}>
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.portal_access || isAdminRole(p.role) ? "bg-[#C67B5C]" : "bg-[#EDE4D8]"}`}>
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.portal_access || isAdminRole(p.role) ? "translate-x-6" : "translate-x-1"}`}/>
           </button>
-          <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Access</span>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-[#C4A77D]">Access</span>
         </div>
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={() => draftToggleCounter(p.id)}
             title={p.is_counter ? "Click to remove counter role" : "Click to make counter"}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.is_counter ? "bg-emerald-500" : "bg-stone-300"}`}>
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition ${p.is_counter ? "bg-emerald-500" : "bg-[#EDE4D8]"}`}>
             <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${p.is_counter ? "translate-x-6" : "translate-x-1"}`}/>
           </button>
-          <span className="text-[10px] font-medium uppercase tracking-wide text-stone-400">Counter</span>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-[#C4A77D]">Counter</span>
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2"><span className="text-sm font-medium text-stone-900">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{isAdminRole(p.role) && <Badge tone="indigo">Admin</Badge>}{p.portal_access && !isAdminRole(p.role) && <Badge tone="indigo">Access</Badge>}</div>
-          <div className="truncate text-xs text-stone-400">{p.email}</div>
+          <div className="flex items-center gap-2"><span className="text-sm font-medium text-[#3C2A1E]">{p.full_name || p.email}</span>{p.is_counter && <Badge tone="emerald">Counter</Badge>}{isAdminRole(p.role) && <Badge tone="indigo">Admin</Badge>}{p.portal_access && !isAdminRole(p.role) && <Badge tone="indigo">Access</Badge>}</div>
+          <div className="truncate text-xs text-[#C4A77D]">{p.email}</div>
         </div>
       </div>
       {(p.portal_access || isAdminRole(p.role) || p.is_counter) && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[#F5F0E8] pt-2">
           <div className="flex-1 min-w-[180px]">
             <Label className="text-[10px]">Link to donor record</Label>
             <div className="mt-1 flex items-center gap-1.5">
@@ -105,14 +105,14 @@ function ProfileCard({ p, draftTogglePortal, draftToggleCounter, draftLinkDonor,
               )}
             </div>
             {donorOptions.length === 0 && (
-              <p className="mt-1 text-[10px] leading-snug text-stone-400">
+              <p className="mt-1 text-[10px] leading-snug text-[#C4A77D]">
                 No donor records yet. Add members in the <strong>Donors</strong> page, or create one here with the ＋ button.
               </p>
             )}
           </div>
           {p.is_counter && (
             <div className="flex items-end gap-2">
-              <div className="relative"><Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-stone-400"/><Input type="password" maxLength={6} placeholder="New PIN" value={pinInputs[p.id] ?? ""} onChange={(e) => setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))} className="h-8 w-24 pl-7 text-xs"/></div>
+              <div className="relative"><Lock className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-[#C4A77D]"/><Input type="password" maxLength={6} placeholder="New PIN" value={pinInputs[p.id] ?? ""} onChange={(e) => setPinInputs((prev) => ({ ...prev, [p.id]: e.target.value }))} className="h-8 w-24 pl-7 text-xs"/></div>
               <Button size="sm" variant="outline" disabled={!pinInputs[p.id] || (pinInputs[p.id]?.length ?? 0) < 3} onClick={() => draftSetPin(p.id)}>Set</Button>
             </div>
           )}
@@ -328,9 +328,9 @@ export default function Dashboard() {
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Manage members & access</DialogTitle><DialogDescription>Approve who can use the portal, link members to donor records, and designate counters with sign-off PINs.</DialogDescription></DialogHeader>
-                  <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600"><Shield className="mb-1 inline h-4 w-4 text-amber-500" /> Anyone with a Google account can sign in — but only members with <strong>Portal access</strong> approved here can view data or submit expenses.</div>
+                  <div className="rounded-lg border border-[#EDE4D8] bg-[#FDF8F2] p-3 text-sm text-[#78716C]"><Shield className="mb-1 inline h-4 w-4 text-amber-500" /> Anyone with a Google account can sign in — but only members with <strong>Portal access</strong> approved here can view data or submit expenses.</div>
                   {hasUnsavedChanges && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-700">
+                    <div className="rounded-lg border border-[#EDE4D8] bg-[#FDF2E9] px-3 py-2 text-xs font-medium text-amber-700">
                       ⚠ You have unsaved changes. Scroll down and click <strong>Save changes</strong> to apply them.
                     </div>
                   )}
@@ -351,7 +351,7 @@ export default function Dashboard() {
 
                     <TabsContent value="pending" className="mt-3 space-y-2">
                       {pendingProfiles.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">No pending approvals — everyone who signed in has been approved.</p>
+                        <p className="rounded-lg border border-dashed border-[#EDE4D8] bg-[#FDF8F2] p-3 text-center text-sm text-[#78716C]">No pending approvals — everyone who signed in has been approved.</p>
                       ) : (
                         pendingProfiles.map((p) => <ProfileCard key={p.id} p={p} {...cardProps} />)
                       )}
@@ -359,7 +359,7 @@ export default function Dashboard() {
 
                     <TabsContent value="approved" className="mt-3 space-y-2">
                       {approvedProfiles.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">No approved members yet — approve members from the Pending tab.</p>
+                        <p className="rounded-lg border border-dashed border-[#EDE4D8] bg-[#FDF8F2] p-3 text-center text-sm text-[#78716C]">No approved members yet — approve members from the Pending tab.</p>
                       ) : (
                         approvedProfiles.map((p) => <ProfileCard key={p.id} p={p} {...cardProps} />)
                       )}
@@ -367,7 +367,7 @@ export default function Dashboard() {
 
                     <TabsContent value="admins" className="mt-3 space-y-2">
                       {adminProfiles.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-500">No admin accounts found.</p>
+                        <p className="rounded-lg border border-dashed border-[#EDE4D8] bg-[#FDF8F2] p-3 text-center text-sm text-[#78716C]">No admin accounts found.</p>
                       ) : (
                         adminProfiles.map((p) => <ProfileCard key={p.id} p={p} {...cardProps} />)
                       )}
@@ -375,8 +375,8 @@ export default function Dashboard() {
                   </Tabs>
 
                   {/* Save button */}
-                  <div className="sticky bottom-0 -mx-6 -mb-6 mt-4 flex items-center justify-between gap-3 rounded-b-xl border-t border-stone-200 bg-white px-6 py-4">
-                    <div className="text-xs text-stone-500">
+                  <div className="sticky bottom-0 -mx-6 -mb-6 mt-4 flex items-center justify-between gap-3 rounded-b-xl border-t border-[#EDE4D8] bg-[#FFFBF5] px-6 py-4">
+                    <div className="text-xs text-[#78716C]">
                       {saveMessage === "saved" && <span className="text-emerald-600">✓ Changes saved successfully</span>}
                       {saveMessage === "error" && <span className="text-rose-600">✗ Some changes failed — try again</span>}
                       {saveMessage === "" && hasUnsavedChanges && <span>You have unsaved changes</span>}
@@ -402,8 +402,8 @@ export default function Dashboard() {
         <motion.button type="button" onClick={() => { setCounterOpen(true); loadProfiles(); }}
           initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
           whileHover={{ scale: 1.005 }}
-          className="mb-6 flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-left text-sm text-amber-800 transition hover:bg-amber-100/80">
-          <UserCheck className="h-5 w-5 shrink-0 text-amber-600" />
+          className="mb-6 flex w-full items-center gap-3 rounded-xl border border-[#EDE4D8] bg-[#FDF2E9] px-4 py-3 text-left text-sm text-[#9A3412] transition hover:bg-[#FDF2E9]">
+          <UserCheck className="h-5 w-5 shrink-0 text-[#C67B5C]" />
           <span><strong>{pendingApprovals} member{pendingApprovals > 1 ? "s" : ""} waiting for approval</strong> — someone signed in with Google. Click here to review, grant access, link their donor record, or make them a counter.</span>
         </motion.button>
       )}
@@ -426,29 +426,29 @@ export default function Dashboard() {
         )}
       </div>
 
-      <p className="mt-3 text-xs text-stone-400">
+      <p className="mt-3 text-xs text-[#C4A77D]">
         Church-wide YTD totals — weekly offerings (cash + checks) and all individual gifts across every member.
       </p>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-stone-900">Recent giving</h2><Badge tone="indigo">{recentItems.length}</Badge></div></CardHeader>
+          <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-[#3C2A1E]">Recent giving</h2><Badge tone="indigo">{recentItems.length}</Badge></div></CardHeader>
           <CardBody className="space-y-3">
             {recentItems.length === 0 ? <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No giving yet" description="Once offerings and gifts are recorded, they'll show here."/>
-            : recentItems.map((d) => (<div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60"><div><div className="font-medium text-stone-900">{d.name}</div><div className="text-xs text-stone-500">{formatDate(d.date)} · {d.meta}</div></div><div className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(d.amount)}</div></div>))}
+            : recentItems.map((d) => (<div key={d.id} className="flex items-center justify-between rounded-lg border border-[#F5F0E8] px-4 py-3 hover:bg-[#FDF2E9]/60"><div><div className="font-medium text-[#3C2A1E]">{d.name}</div><div className="text-xs text-[#78716C]">{formatDate(d.date)} · {d.meta}</div></div><div className="font-serif text-lg font-semibold text-[#3C2A1E]">{formatCurrency(d.amount)}</div></div>))}
           </CardBody>
         </Card>
         <Card>
-          <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-stone-900">Recent expenses</h2><Badge tone="amber">{recentExpenses.length}</Badge></div></CardHeader>
+          <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-[#3C2A1E]">Recent expenses</h2><Badge tone="amber">{recentExpenses.length}</Badge></div></CardHeader>
           <CardBody className="space-y-3">
             {recentExpenses.length === 0 ? <EmptyState icon={<Receipt className="h-6 w-6" />} title="No expenses logged"/>
-            : recentExpenses.map((e) => (<div key={e.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 hover:bg-stone-50/60"><div className="min-w-0"><div className="truncate font-medium text-stone-900">{e.title ?? e.description ?? "—"}</div><div className="text-xs text-stone-500">{formatDate(e.submitted_at)} · {e.source === "church_direct" ? "Direct" : "Submitted"} · <Badge tone={e.status === "auto_paid" || e.status === "paid" ? "emerald" : e.status === "rejected" ? "rose" : e.status === "approved" ? "indigo" : "amber"}>{e.status.replace("_", " ")}</Badge></div></div><div className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(e.amount)}</div></div>))}
+            : recentExpenses.map((e) => (<div key={e.id} className="flex items-center justify-between rounded-lg border border-[#F5F0E8] px-4 py-3 hover:bg-[#FDF2E9]/60"><div className="min-w-0"><div className="truncate font-medium text-[#3C2A1E]">{e.title ?? e.description ?? "—"}</div><div className="text-xs text-[#78716C]">{formatDate(e.submitted_at)} · {e.source === "church_direct" ? "Direct" : "Submitted"} · <Badge tone={e.status === "auto_paid" || e.status === "paid" ? "emerald" : e.status === "rejected" ? "rose" : e.status === "approved" ? "indigo" : "amber"}>{e.status.replace("_", " ")}</Badge></div></div><div className="font-serif text-lg font-semibold text-[#3C2A1E]">{formatCurrency(e.amount)}</div></div>))}
           </CardBody>
         </Card>
       </div>
 
       {!supabase && (
-        <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-800"><strong>Demo mode.</strong> Connect Supabase to see live numbers.</div>
+        <div className="mt-8 rounded-xl border border-[#EDE4D8] bg-[#FDF2E9] p-4 text-sm text-[#9A3412]"><strong>Demo mode.</strong> Connect Supabase to see live numbers.</div>
       )}
     </div>
   );

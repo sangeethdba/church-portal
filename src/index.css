@@ -4,51 +4,58 @@
 
 :root {
   color-scheme: light;
-  /* Church portal color palette — spiritual purple + warm gold */
-  --color-primary: #7C3AED;
-  --color-primary-soft: #F5F3FF;
-  --color-primary-border: #DDD6FE;
-  --color-accent: #A16207;
-  --color-accent-soft: #FFFBEB;
-  --color-success: #16A34A;
+  /* ── Warm Organic / Nature Distilled palette ── */
+  --color-bg: #FEF7ED;
+  --color-surface: #FFFBF5;
+  --color-primary: #C67B5C;
+  --color-primary-hover: #B5651D;
+  --color-primary-soft: #FDF2E9;
+  --color-accent: #6B7B3C;
+  --color-accent-soft: #F4F7EE;
+  --color-success: #15803D;
   --color-destructive: #DC2626;
-  --color-bg: #FAF5FF;
-  --color-surface: #FFFFFF;
-  --color-text: #4C1D95;
+  --color-text: #3C2A1E;
   --color-text-muted: #78716C;
-  --color-border: #E7E5E4;
-  --radius-card: 1rem;
-  --radius-btn: 0.75rem;
-  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-  --shadow-card-hover: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
-  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --color-border: #EDE4D8;
+  --color-border-warm: #E8DDD0;
+  --radius-sm: 0.75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.5rem;
+  --shadow-soft: 0 2px 8px rgba(139, 90, 43, 0.06), 0 1px 3px rgba(139, 90, 43, 0.04);
+  --shadow-card: 0 4px 16px rgba(139, 90, 43, 0.07), 0 1px 4px rgba(139, 90, 43, 0.04);
+  --shadow-elevated: 0 8px 30px rgba(139, 90, 43, 0.10), 0 2px 8px rgba(139, 90, 43, 0.05);
+  --transition-base: 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+html, body, #root { height: 100%; }
 
 body {
-  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-    Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--color-bg);
-  color: #1c1917;
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  border-color: var(--color-border);
+/* ── Parchment grain texture overlay ── */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.5'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
 }
 
-/* Smooth transitions on interactive elements */
+* { border-color: var(--color-border); }
+
 a, button, input, select, textarea, [role="button"], [tabindex] {
   transition: all var(--transition-base);
 }
 
-/* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -59,76 +66,55 @@ a, button, input, select, textarea, [role="button"], [tabindex] {
 
 @layer components {
   .glass {
-    background: rgba(255, 255, 255, 0.78);
-    backdrop-filter: saturate(140%) blur(10px);
-    -webkit-backdrop-filter: saturate(140%) blur(10px);
-  }
-
-  .gradient-text-serif {
-    background: linear-gradient(120deg, #1c1917 0%, #7C3AED 60%, #A16207 110%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    background: rgba(255, 251, 245, 0.82);
+    backdrop-filter: saturate(140%) blur(12px);
+    -webkit-backdrop-filter: saturate(140%) blur(12px);
   }
 
   .focus-ring {
-    @apply outline-none ring-0 focus-visible:ring-2 focus-visible:ring-purple-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-purple-50;
+    @apply outline-none ring-0 focus-visible:ring-2 focus-visible:ring-[#C67B5C]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FEF7ED];
   }
 
-  /* Loading skeleton pulse */
   .skeleton-pulse {
     animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
-  /* Card hover lift */
-  .card-hover {
+  /* ── Organic card with warm shadow ── */
+  .card-organic {
     transition: transform var(--transition-base), box-shadow var(--transition-base);
+    box-shadow: var(--shadow-soft);
   }
-  .card-hover:hover {
+  .card-organic:hover {
     transform: translateY(-2px);
-    box-shadow: var(--shadow-card-hover);
+    box-shadow: var(--shadow-card);
   }
 
-  /* KPI stat card accent bar */
-  .kpi-accent::before {
+  /* ── Subtle grain overlay for cards ── */
+  .grain-subtle {
+    position: relative;
+  }
+  .grain-subtle::after {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    padding: 2px;
-    background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    opacity: 0;
-    transition: opacity var(--transition-base);
-  }
-  .kpi-accent:hover::before {
-    opacity: 1;
+    pointer-events: none;
+    opacity: 0.015;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
   }
 
-  /* Sidebar active indicator */
-  .nav-active {
-    position: relative;
-  }
-  .nav-active::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 3px;
-    height: 60%;
-    border-radius: 0 4px 4px 0;
-    background: var(--color-primary);
+  /* ── Terracotta gradient text ── */
+  .gradient-text {
+    background: linear-gradient(135deg, #C67B5C 0%, #9A3412 60%, #6B7B3C 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }
 
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { opacity: 0.35; }
 }
 
-.text-balance {
-  text-wrap: balance;
-}
+.text-balance { text-wrap: balance; }
