@@ -162,7 +162,12 @@ export default function Offerings() {
   };
 
   // Build the ledger document from a stored offering row + its check lines
-  const buildOfferingDocs = (o: Offering, checksData: { donor_name: string; check_number: string | null; amount: number }[]) => {
+  // and named cash-gift donations (stored as donation rows linked to the offering).
+  const buildOfferingDocs = (
+    o: Offering,
+    checksData: { donor_name: string; check_number: string | null; amount: number }[],
+    giftsData: { donor_name: string; amount: number }[],
+  ) => {
     const net = Number(o.cash_net ?? o.cash_amount) || 0;
     const dedSum = Number((o.cash_deductions as Deduction[])?.reduce((s, d) => s + (Number(d.amount) || 0), 0) ?? 0) || 0;
     const checksTotal = checksData.reduce((s, c) => s + (Number(c.amount) || 0), 0) || Number(o.check_amount) || 0;
@@ -176,6 +181,8 @@ export default function Offerings() {
     const counter1Name = counterName(o.counter_1_id);
     const counter2Name = counterName(o.counter_2_id);
     const giftsTotal = Math.max(0, (Number(o.total_amount) || 0) - net - checksTotal);
+    const cashGifts = giftsData.map((g) => ({ donorName: g.donor_name || "—", checkNumber: "", amount: Number(g.amount) || 0 }));
+    const giftsFromRows = cashGifts.reduce((s, g) => s + g.amount, 0);
     const summary: OfferingSummary = {
       serviceDate: o.service_date,
       serviceName: o.service_name,
@@ -185,9 +192,9 @@ export default function Offerings() {
       netCash: net,
       checks,
       totalChecks: checksTotal,
-      cashGifts: [],
-      totalCashGifts: giftsTotal,
-      totalDeposit: Number(o.total_amount) || (net + checksTotal),
+      cashGifts,
+      totalCashGifts: giftsFromRows || giftsTotal,
+      totalDeposit: Number(o.total_amount) || (net + checksTotal + giftsTotal),
       churchName,
       recordedBy: "Admin",
       counter1Name,
@@ -204,6 +211,17 @@ export default function Offerings() {
       .eq("offering_id", o.id)
       .order("donor_name");
     return (data ?? []) as { donor_name: string; check_number: string | null; amount: number }[];
+  };
+
+  const loadOfferingCashGifts = async (o: Offering) => {
+    if (!supabase) return [];
+    const { data } = await supabase
+      .from("donations")
+      .select("donor_name, amount")
+      .eq("offering_id", o.id)
+      .eq("payment_method", "cash")
+      .order("donor_name");
+    return (data ?? []) as { donor_name: string; amount: number }[];
   };
 
   // ── Computed values ────────────────────────────────────────────────────
@@ -966,8 +984,11 @@ export default function Offerings() {
                   <div className="flex items-center gap-1.5">
                     <Button size="sm" variant="ghost"
                       onClick={async () => {
-                        const checksData = await loadOfferingChecks(o);
-                        openLedgerPreview(buildOfferingDocs(o, checksData).summary);
+                        const [checksData, giftsData] = await Promise.all([
+                          loadOfferingChecks(o),
+                          loadOfferingCashGifts(o),
+                        ]);
+                        openLedgerPreview(buildOfferingDocs(o, checksData, giftsData).summary);
                       }}
                       iconLeft={<FileDown className="h-3.5 w-3.5" />}
                     >
