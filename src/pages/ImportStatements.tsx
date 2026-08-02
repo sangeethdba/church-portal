@@ -47,73 +47,177 @@ const DONATION_TYPES: { value: DonationKind; label: string }[] = [
 
 const PAYMENT_METHODS = ["online", "card", "check", "cash"];
 
+// ── Bank statement type detection ─────────────────────────────────────
+
+interface BankFormat {
+  name: string;
+  dateCol: number;
+  descCol: number;
+  amtCol: number;     // signed amount column; -1 means unknown
+  balanceCol: number;  // running-balance column to skip; -1 means absent
+}
+
+/** Detect the bank CSV format from the header row.
+ *  Returns column indices for the standard BofA layout:
+ *    Date (0), Description (1), Amount (2), Running Bal. (3)
+ *  Also handles Chase, Wells Fargo, and generic CSV formats. */
+function detectBankFormat(header: string): BankFormat {
+  const h = header.toLowerCase();
+  const cols = header.split(",").map((c) => c.trim().toLowerCase().replace(/^"|"$/g, ""));
+
+  // Bank of America: "Date, Description, Amount, Running Bal."
+  if (h.includes("running bal") || h.includes("running balance")) {
+    const dateI = cols.findIndex((c) => c === "date");
+    const descI = cols.findIndex((c) => c === "description");
+    const amtI = cols.findIndex((c) => c === "amount");
+    const balI = cols.findIndex((c) => c.includes("running"));
+    return {
+      name: "Bank of America",
+      dateCol: dateI >= 0 ? dateI : 0,
+      descCol: descI >= 0 ? descI : 1,
+      amtCol: amtI >= 0 ? amtI : 2,
+      balanceCol: balI >= 0 ? balI : (cols.length > 3 ? 3 : -1),
+    };
+  }
+
+  // Chase: "Transaction Date, Post Date, Description, Category, Type, Amount, Memo"
+  if (h.includes("transaction date") || h.includes("post date")) {
+    const dateI = cols.findIndex((c) => c.includes("date"));
+    const descI = cols.findIndex((c) => c === "description");
+    const amtI = cols.findIndex((c) => c === "amount");
+    return {
+      name: "Chase",
+      dateCol: dateI >= 0 ? dateI : 0,
+      descCol: descI >= 0 ? descI : 2,
+      amtCol: amtI >= 0 ? amtI : 5,
+      balanceCol: -1,
+    };
+  }
+
+  // Wells Fargo: "Date, Amount, Star, Blank, Description" (sometimes reversed)
+  if (h.includes("star") || h.includes("wells")) {
+    const dateI = cols.findIndex((c) => c === "date");
+    const descI = cols.findIndex((c) => c === "description");
+    const amtI = cols.findIndex((c) => c === "amount");
+    return {
+      name: "Wells Fargo",
+      dateCol: dateI >= 0 ? dateI : 0,
+      descCol: descI >= 0 ? descI : (cols.length - 1),
+      amtCol: amtI >= 0 ? amtI : 1,
+      balanceCol: -1,
+    };
+  }
+
+  // Generic detection: look for date/amount/description keywords
+  const dateI = cols.findIndex((c) => /date|posted|trans/.test(c));
+  const descI = cols.findIndex((c) => /desc|memo|payee|narration|name/.test(c));
+  const amtI = cols.findIndex((c) => /amount|sum|value/.test(c));
+  const balI = cols.findIndex((c) => /bal|running/.test(c));
+
+  return {
+    name: "Generic CSV",
+    dateCol: dateI >= 0 ? dateI : 0,
+    descCol: descI >= 0 ? descI : 1,
+    amtCol: amtI >= 0 ? amtI : 2,
+    balanceCol: balI >= 0 ? balI : -1,
+  };
+}
+
+/** Parse a MM/DD/YYYY or DD/MM/YYYY date string into YYYY-MM-DD. */
+function normalizeDate(raw: string): string {
+  const m = raw.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (!m) return new Date().toISOString().slice(0, 10);
+
+  const a = parseInt(m[1]), b = parseInt(m[2]);
+  const yy = m[3].length === 2 ? `20${m[3]}` : m[3];
+
+  // BofA uses MM/DD/YYYY — month ≤ 12 always
+  // If a > 12 it's DD/MM/YYYY, otherwise assume MM/DD/YYYY
+  const [mm, dd] = a > 12 ? [String(b).padStart(2, "0"), String(a).padStart(2, "0")]
+                           : [String(a).padStart(2, "0"), String(b).padStart(2, "0")];
+  return `${yy}-${mm}-${dd}`;
+}
+
 // ── CSV / PDF parsers ──────────────────────────────────────────────────
 
-/** Parse CSV text into transaction rows. Expects: Date,Description,Amount */
+/** Parse CSV text into transaction rows.
+ *  Supports Bank of America (Date,Description,Amount,Running Bal.),
+ *  Chase, Wells Fargo, and generic CSV formats.
+ *  Auto-detects expense vs donation from the sign of the Amount column. */
 function parseCSV(text: string): Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  let lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) return [];
 
-  // Detect header — skip if first line has "date" in it
-  const header = lines[0].toLowerCase();
-  const hasHeader = /date|posted|transaction|amount|description|debit|credit/.test(header);
-  const dataLines = hasHeader ? lines.slice(1) : lines;
+  // ── Step 1: Skip BofA-style summary / metadata rows ────────────────
+  // BofA CSVs sometimes prepend account summary lines like:
+  //   "Account number: XXXX1234", "Statement period: ...", "Beginning balance: ..."
+  // Find the actual header row and skip everything before it.
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(lines.length, 12); i++) {
+    const l = lines[i].toLowerCase();
+    // Match BofA header: "Date, Description, Amount, Running Bal." or similar
+    if (/date.*(?:desc|memo|narration|payee)/.test(l) ||
+        /(?:desc|memo|narration).*amount/.test(l) ||
+        /date.*amount.*(?:bal|running)/.test(l) ||
+        /date.*description.*amount/.test(l)) {
+      headerIdx = i;
+      break;
+    }
+  }
 
-  return dataLines
-    .map((line) => {
-      // Try comma, tab, or pipe delimiters
-      const delim = line.includes("\t") ? "\t" : line.includes("|") ? "|" : ",";
-      const cols = line.split(delim).map((c) => c.trim().replace(/^"|"$/g, ""));
+  // If we found a header, use it; otherwise assume the first line is the header
+  const headerLine = lines[headerIdx];
+  const hasHeader = /date|posted|transaction|amount|description|debit|credit/.test(headerLine.toLowerCase());
+  const dataLines = hasHeader ? lines.slice(headerIdx + 1) : lines;
 
-      if (cols.length < 2) return null;
+  if (dataLines.length === 0) return [];
 
-      // Find columns by position or heuristics
-      let dateIdx = 0;
-      let descIdx = -1;
-      let amtIdx = -1;
+  // ── Step 2: Detect bank format ──────────────────────────────────────
+  const delim = headerLine.includes("\t") ? "\t" : ",";
+  const fmt: BankFormat = hasHeader
+    ? detectBankFormat(headerLine)
+    : { name: "No header", dateCol: 0, descCol: 1, amtCol: 2, balanceCol: 3 };
 
-      for (let i = 0; i < cols.length; i++) {
-        const c = cols[i];
-        if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(c) || /^\d{4}-\d{2}-\d{2}$/.test(c)) {
-          dateIdx = i;
-        } else if (/^-?\$?[\d,]+\.?\d*$/.test(c.replace(/[()]/g, ""))) {
-          // Account for parentheses notation for negative: (123.45) = -123.45
-          amtIdx = i;
-        } else if (i !== dateIdx && i !== amtIdx && descIdx === -1) {
-          descIdx = i;
-        }
-      }
+  // ── Step 3: Parse each data line using column indices ───────────────
+  const results: Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[] = [];
 
-      if (amtIdx === -1) return null;
+  for (const line of dataLines) {
+    const cols = line.split(delim).map((c) => c.trim().replace(/^"|"$/g, ""));
 
-      const rawAmount = cols[amtIdx].replace(/[$,]/g, "");
-      const isNegative = rawAmount.startsWith("(") || rawAmount.startsWith("-");
-      const amt = Math.abs(parseFloat(rawAmount.replace(/[()\-]/g, "")));
-      if (isNaN(amt) || amt === 0) return null;
+    // Need at least enough columns for date + amount
+    if (cols.length <= fmt.amtCol) continue;
 
-      // Parse date
-      let date = "";
-      const rawDate = cols[dateIdx];
-      const m = rawDate.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-      if (m) {
-        const mm = m[1].padStart(2, "0");
-        const dd = m[2].padStart(2, "0");
-        const yy = m[3].length === 2 ? `20${m[3]}` : m[3];
-        date = `${yy}-${mm}-${dd}`;
-      } else {
-        date = new Date().toISOString().slice(0, 10);
-      }
+    // Parse amount (signed — negative = debit/expense, positive = credit/donation)
+    const rawAmt = cols[fmt.amtCol].replace(/[$,]/g, "");
+    // Handle parentheses negative notation: (123.45) = -123.45
+    const isNegative = rawAmt.startsWith("(") || rawAmt.startsWith("-");
+    const parsedAmt = Math.abs(parseFloat(rawAmt.replace(/[()\-]/g, "")));
+    if (isNaN(parsedAmt) || parsedAmt === 0) continue;
 
-      const desc = descIdx >= 0 ? cols[descIdx] : cols.slice(1).filter((_, i) => i !== amtIdx - 1).join(" ");
+    // Parse date
+    const date = normalizeDate(cols[fmt.dateCol]);
 
-      return {
-        date,
-        description: desc || "Unknown transaction",
-        amount: amt,
-        raw: line,
-      };
-    })
-    .filter(Boolean) as Omit<ParsedTransaction, "id" | "direction" | "category" | "paymentMethod" | "checkNumber">[];
+    // Parse description — skip amount and balance columns
+    const descParts: string[] = [];
+    for (let i = 0; i < cols.length; i++) {
+      if (i === fmt.dateCol) continue;
+      if (i === fmt.amtCol) continue;
+      if (i === fmt.balanceCol) continue;
+      if (cols[i]) descParts.push(cols[i]);
+    }
+    const description = descParts.join(" ") || "Unknown transaction";
+
+    results.push({
+      date,
+      description: description.length > 200 ? description.slice(0, 200) : description,
+      amount: parsedAmt,
+      raw: line,
+      // Pass sign info for auto-detecting direction
+      _isNegative: isNegative,
+    } as any);
+  }
+
+  return results;
 }
 
 /** Parse PDF text via pdfjs-dist and try to extract tabular transaction data. */
@@ -236,11 +340,11 @@ export default function ImportStatements() {
         return;
       }
 
-      // Convert raw to ParsedTransaction with direction guessed from sign
-      const parsed: ParsedTransaction[] = raw.map((r) => {
-        // Default: debits = expenses, credits = donations for bank statements
-        // But we can't always tell from CSV, so default to expense for debits
-        const dir: TxDirection = "expense";
+      // Convert raw to ParsedTransaction — auto-detect direction from sign
+      // BofA CSV: negative = debit/expense, positive = credit/donation
+      const parsed: ParsedTransaction[] = raw.map((r: any) => {
+        const isDebit = r._isNegative === true;
+        const dir: TxDirection = isDebit ? "expense" : "donation";
         return {
           id: nextId(),
           date: r.date,
@@ -418,17 +522,21 @@ export default function ImportStatements() {
                   </div>
                   <h3 className="font-serif text-xl font-semibold text-[#3C2A1E]">Drop your bank statement here</h3>
                   <p className="mt-2 text-sm text-[#78716C]">
-                    CSV files work best — just export from your bank. <br />
-                    PDF statements are also supported as a fallback.
+                    Export your bank statement as CSV, then drop it here. <br />
+                    Works with Bank of America, Chase, Wells Fargo, and more.
                   </p>
                   <div className="mt-6 flex gap-3">
                     <Badge tone="neutral" className="text-xs">
                       <FileSpreadsheet className="mr-1 h-3 w-3" />
-                      CSV (recommended)
+                      Bank of America
+                    </Badge>
+                    <Badge tone="neutral" className="text-xs">
+                      <FileSpreadsheet className="mr-1 h-3 w-3" />
+                      Chase
                     </Badge>
                     <Badge tone="neutral" className="text-xs">
                       <FileText className="mr-1 h-3 w-3" />
-                      PDF
+                      PDF fallback
                     </Badge>
                   </div>
                   {parseError && (
