@@ -621,10 +621,7 @@ export default function Offerings() {
                   <span className="flex items-center gap-2 text-sm font-medium text-stone-700">
                     <ScrollText className="h-4 w-4 text-amber-600" /> Individual donations
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    <Button size="sm" variant="outline" onClick={() => addDonation("check")}>+ Add check</Button>
-                    <Button size="sm" variant="outline" onClick={() => addDonation("cash")}>+ Add cash</Button>
-                  </div>
+                  <Button size="sm" variant="outline" onClick={() => addDonation("check")}>+ Add donation</Button>
                 </div>
                 {donations.length === 0 && (
                   <p className="text-xs text-stone-400">No donations yet. Add checks with donor names + check numbers, or cash envelopes for named givers.</p>
@@ -633,12 +630,46 @@ export default function Offerings() {
                   <div key={d.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-100 bg-white p-2">
                     <div className="flex-1 min-w-[160px]">
                       <Label className="text-xs">Donor</Label>
-                      <Input
-                        placeholder="Donor name"
-                        value={d.donorName}
-                        onChange={(e) => updateDonation(d.key, { donorName: e.target.value, donorId: "" })}
-                        className="mt-1 h-9 text-sm"
-                      />
+                      <div className="relative">
+                        <input
+                          value={d.donorName}
+                          onChange={(e) => {
+                            updateDonation(d.key, { donorName: e.target.value, donorId: "" });
+                            setActiveSuggestKey(d.key);
+                          }}
+                          onFocus={() => setActiveSuggestKey(d.key)}
+                          onBlur={() => setActiveSuggestKey(null)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const first = suggestionsFor(d.donorName)[0];
+                              if (first) { e.preventDefault(); pickDonor(d.key, first); }
+                            } else if (e.key === "Escape") {
+                              setActiveSuggestKey(null);
+                            }
+                          }}
+                          placeholder="Type member name…"
+                          className="mt-1 w-full rounded-md border border-stone-200 px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+                        />
+                        {activeSuggestKey === d.key && d.donorName.trim() !== "" && (
+                          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 shadow-lg">
+                            {suggestionsFor(d.donorName).length === 0 ? (
+                              <li className="px-3 py-2 text-xs text-amber-600">
+                                No match — new member will be created on save
+                              </li>
+                            ) : (
+                              suggestionsFor(d.donorName).map((donor) => (
+                                <li
+                                  key={donor.id}
+                                  onMouseDown={(e) => { e.preventDefault(); pickDonor(d.key, donor); }}
+                                  className="cursor-pointer px-3 py-2 text-sm text-stone-700 hover:bg-accent-soft hover:text-accent"
+                                >
+                                  {donor.first_name} {donor.last_name}
+                                </li>
+                              ))
+                            )}
+                          </ul>
+                        )}
+                      </div>
                     </div>
                     <div className="w-24">
                       <Label className="text-xs">Type</Label>
