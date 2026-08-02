@@ -15,6 +15,7 @@ import {
   Banknote,
   Shield,
   Wallet,
+  Upload,
 } from "lucide-react";
 import Logo from "./Logo";
 import { Button, Badge } from "./ui";
@@ -30,6 +31,7 @@ const allItems = [
   { to: "/donors", label: "Donors", icon: Users, roles: ["admin"] as string[] },
   { to: "/tax-report", label: "Tax report", icon: FileText, roles: ["admin"] as string[] },
   { to: "/reports", label: "Reports", icon: BarChart3, roles: ["admin"] as string[] },
+  { to: "/import", label: "Import", icon: Upload, roles: ["admin"] as string[] },
 ];
 
 export default function AppShell() {
