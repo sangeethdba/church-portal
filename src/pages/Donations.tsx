@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange } from "lucide-react";
+import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange, Globe, Search, Trash2, Check } from "lucide-react";
 import {
   Button,
   Card,
@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  toast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { supabase, isAdminRole } from "@/lib/supabase";
@@ -77,6 +78,284 @@ const sampleDonorsForPick: { id: string; label: string }[] = [
   { id: "demo-d1", label: "Marcus Lin" },
   { id: "demo-d2", label: "The Reyes Family" },
 ];
+
+// ---------- Quick online giving (bulk entry) ----------
+interface QuickRow {
+  key: number;
+  query: string;
+  donorId: string;
+  amount: string;
+}
+
+/** Type-to-search donor picker with keyboard support (↑/↓/Enter/Esc). */
+function QuickDonorInput({
+  query,
+  onQuery,
+  donors,
+  onPick,
+}: {
+  query: string;
+  onQuery: (v: string) => void;
+  donors: { id: string; label: string }[];
+  onPick: (d: { id: string; label: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return donors.filter((d) => d.label.toLowerCase().includes(q)).slice(0, 6);
+  }, [donors, query]);
+
+  const choose = (d: { id: string; label: string }) => {
+    onQuery(d.label);
+    onPick(d);
+    setOpen(false);
+  };
+
+  const exactMatch = matches.some((m) => m.label.toLowerCase() === query.trim().toLowerCase());
+
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+      <Input
+        value={query}
+        placeholder="Type donor name…"
+        className="mt-1.5 h-10 pl-8"
+        onChange={(e) => {
+          onQuery(e.target.value);
+          setOpen(true);
+          setActive(0);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" && matches.length > 0) {
+            e.preventDefault();
+            setActive((a) => Math.min(a + 1, matches.length - 1));
+          } else if (e.key === "ArrowUp" && matches.length > 0) {
+            e.preventDefault();
+            setActive((a) => Math.max(a - 1, 0));
+          } else if (e.key === "Enter") {
+            if (open && matches.length > 0) {
+              e.preventDefault();
+              choose(matches[Math.min(active, matches.length - 1)]);
+            }
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[#EDE4D8] bg-[#FFFBF5] py-1 shadow-xl">
+          {matches.map((m, i) => (
+            <button
+              key={m.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                choose(m);
+              }}
+              onMouseEnter={() => setActive(i)}
+              className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
+                i === active ? "bg-[#FDF2E9] text-[#C67B5C]" : "text-stone-700 hover:bg-[#FDF2E9]/60"
+              }`}
+            >
+              <span className="truncate">{m.label}</span>
+              {i === active && <Check className="h-3.5 w-3.5 shrink-0" />}
+            </button>
+          ))}
+          <div className="border-t border-[#F5F0E8] px-3 py-1.5 text-[11px] text-[#C4A77D]">
+            {query.trim() && !exactMatch
+              ? `"${query.trim()}" isn't on file yet — it'll be saved as a new name`
+              : "↑/↓ to move · Enter to pick"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Bulk quick-entry card: many online gifts on one screen, one-click save. */
+function QuickOnlineEntry({
+  donors,
+  onSaved,
+}: {
+  donors: { id: string; label: string }[];
+  onSaved: () => void;
+}) {
+  const [rows, setRows] = useState<QuickRow[]>([{ key: 1, query: "", donorId: "", amount: "" }]);
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [giftType, setGiftType] = useState("offering");
+  const [saving, setSaving] = useState(false);
+  const nextKey = useRef(2);
+
+  const addRow = () => setRows((r) => [...r, { key: nextKey.current++, query: "", donorId: "", amount: "" }]);
+  const removeRow = (key: number) =>
+    setRows((r) => (r.length === 1 ? r : r.filter((x) => x.key !== key)));
+  const updateRow = (key: number, patch: Partial<Omit<QuickRow, "key">>) =>
+    setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+
+  const valid = rows.filter((r) => Number(r.amount) > 0);
+  const total = valid.reduce((s, r) => s + Number(r.amount), 0);
+
+  const submit = async () => {
+    if (!date) {
+      toast("Choose the offering date first", "error");
+      return;
+    }
+    if (valid.length === 0) {
+      toast("Enter at least one amount first", "error");
+      return;
+    }
+    setSaving(true);
+    let saved = 0;
+    let failed = 0;
+    if (supabase) {
+      await Promise.all(
+        valid.map(async (r) => {
+          const { error } = await supabase.rpc("submit_donation", {
+            p_donor_name: r.query.trim() || "Anonymous",
+            p_amount: Number(r.amount),
+            p_donation_type: giftType,
+            p_payment_method: "online",
+            p_check_number: null,
+            p_donation_date: date,
+            p_notes: null,
+            p_donor_id: r.donorId || null,
+          });
+          if (error) failed++;
+          else saved++;
+        }),
+      );
+    } else {
+      saved = valid.length;
+    }
+    setSaving(false);
+    if (failed === 0) {
+      toast(`Saved ${saved} online gift${saved === 1 ? "" : "s"} • ${formatCurrency(total)}`, "success");
+      onSaved();
+      setRows([{ key: nextKey.current++, query: "", donorId: "", amount: "" }]);
+    } else {
+      toast(`${saved} saved, ${failed} failed — please check and retry`, "error");
+    }
+  };
+
+  return (
+    <Card className="mb-6 overflow-visible border-indigo-100 bg-gradient-to-br from-[#FFFBF5] via-[#FDFBFF] to-[#F5F3FF]">
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <Globe className="h-4 w-4 text-indigo-600" />
+          <h2 className="font-serif text-lg font-semibold text-[#3C2A1E]">Quick online giving</h2>
+          <Badge tone="indigo">Bulk entry</Badge>
+        </div>
+        <p className="text-sm text-[#78716C]">
+          Type the donor's name, tap the suggestion, add the amount — then <strong>＋ Add row</strong> for the next
+          giver. One <strong>Save all</strong> writes every row to the ledger, Reports, and donor statements.
+        </p>
+      </CardHeader>
+      <CardBody>
+        {/* Shared settings */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label>Date of offering</Label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1.5 w-44" />
+          </div>
+          <div>
+            <Label>Type</Label>
+            <Select value={giftType} onChange={(e) => setGiftType(e.target.value)} className="mt-1.5 w-36">
+              <option value="tithe">Tithe</option>
+              <option value="offering">Offering</option>
+              <option value="building">Building fund</option>
+              <option value="missions">Missions</option>
+              <option value="other">Other</option>
+            </Select>
+          </div>
+        </div>
+
+        {/* Column headers (desktop) */}
+        <div className="mt-4 hidden grid-cols-[minmax(0,1fr)_150px_36px] gap-2 sm:grid">
+          <Label>Donor — type to search</Label>
+          <Label>Amount</Label>
+          <span />
+        </div>
+
+        {/* Rows */}
+        <div className="mt-2 max-h-[440px] space-y-2 overflow-y-auto pr-1">
+          {rows.map((r, i) => (
+            <div
+              key={r.key}
+              className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_150px_36px]"
+            >
+              <div className="relative">
+                <Label className="sm:hidden">Donor {i + 1}</Label>
+                <QuickDonorInput
+                  query={r.query}
+                  onQuery={(v) => updateRow(r.key, { query: v, donorId: "" })}
+                  onPick={(d) => updateRow(r.key, { donorId: d.id })}
+                  donors={donors}
+                />
+              </div>
+              <div>
+                <Label className="sm:hidden">Amount {i + 1}</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={r.amount}
+                  onChange={(e) => updateRow(r.key, { amount: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addRow();
+                  }}
+                  className="mt-1.5 h-10"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeRow(r.key)}
+                disabled={rows.length === 1}
+                aria-label={`Remove row ${i + 1}`}
+                className="flex h-10 w-9 items-center justify-center justify-self-end rounded-lg border border-[#EDE4D8] text-stone-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 sm:justify-self-start"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer: live total + actions */}
+        <div className="mt-4 flex flex-col gap-3 border-t border-[#F5F0E8] pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-[#78716C]">
+            {valid.length > 0 ? (
+              <>
+                <span className="font-medium text-stone-800">{valid.length}</span> gift{valid.length === 1 ? "" : "s"}
+                {" · "}
+                <span className="font-serif font-semibold text-stone-900">{formatCurrency(total)}</span>
+              </>
+            ) : (
+              "No amounts entered yet"
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" iconLeft={<Plus className="h-4 w-4" />} onClick={addRow}>
+              Add row
+            </Button>
+            <Button
+              variant="solid"
+              disabled={saving || valid.length === 0}
+              onClick={submit}
+              iconLeft={<Check className="h-4 w-4" />}
+            >
+              {saving ? "Saving…" : `Save all (${valid.length})`}
+            </Button>
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
 
 export default function Donations() {
   const navigate = useNavigate();
@@ -206,6 +485,13 @@ export default function Donations() {
       check_number: "",
       donation_date: new Date().toISOString().slice(0, 10),
       notes: "",
+    });
+  };
+
+  const reloadDonations = () => {
+    if (!supabase) return;
+    supabase.rpc("list_donations").then(({ data, error }) => {
+      if (!error && data) setDonations(data as Donation[]);
     });
   };
 
@@ -389,6 +675,8 @@ export default function Donations() {
           </>
         }
       />
+
+      <QuickOnlineEntry donors={donors} onSaved={reloadDonations} />
 
       <Card className="mb-4">
         <CardHeader className="border-b border-stone-100">
