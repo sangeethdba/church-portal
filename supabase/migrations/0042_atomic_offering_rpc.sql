@@ -23,7 +23,7 @@ create or replace function public.record_offering(
   -- Check entries as JSON array: [{donor_name, donor_id, check_number, amount}]
   p_checks           jsonb,
   -- Named cash gifts as JSON array: [{donor_name, donor_id, amount}]
-  p_cash_gifts       jsonb default '[]'::jsonb,
+  p_cash_gifts       jsonb,
   -- Counter sign-off
   p_counter_1_id     uuid,
   p_pin_1            text,
