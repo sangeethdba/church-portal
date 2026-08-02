@@ -176,6 +176,19 @@ describe("formatCurrency", () => {
 describe("formatDate", () => {
   it("formats ISO dates as MMM DD, YYYY", () => {
     expect(formatDate("2026-07-18")).toBe("Jul 18, 2026");
+    expect(formatDate("2026-08-02")).toBe("Aug 02, 2026");
+  });
+
+  it("never shifts a date-only string with the viewer's timezone", () => {
+    const original = process.env.TZ;
+    try {
+      process.env.TZ = "America/New_York"; // UTC-4 — the zone that showed Aug 01 for Aug 02
+      // Re-read the formatter under the shifted zone.
+      expect(formatDate("2026-08-02")).toBe("Aug 02, 2026");
+      expect(formatDate("2026-08-01")).toBe("Aug 01, 2026");
+    } finally {
+      process.env.TZ = original;
+    }
   });
 });
 
