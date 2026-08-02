@@ -516,7 +516,7 @@ export function EmptyState({
 // ---------- Table primitives --------------------------------------------
 export const TableWrap = React.forwardRef<HTMLTableElement, React.TableHTMLAttributes<HTMLTableElement>>(
   ({ className, children, ...props }, ref) => (
-    <div className="overflow-hidden rounded-xl border border-[#EDE4D8] bg-[#FFFBF5] shadow-soft">
+    <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-[#EDE4D8] bg-[#FFFBF5] shadow-soft">
       <table ref={ref} className={cn("w-full text-left text-sm", className)} {...props}>
         {children}
       </table>

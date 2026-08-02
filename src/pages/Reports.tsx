@@ -598,7 +598,7 @@ export default function Reports() {
               {weeklyOff.length === 0 ? (
                 <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No offerings in this period" /></div>
               ) : (
-                <TableWrap className="border-0 shadow-none">
+                <TableWrap className="min-w-[760px] border-0 shadow-none">
                   <THead>
                     <Tr>
                       <Th>Week of</Th>

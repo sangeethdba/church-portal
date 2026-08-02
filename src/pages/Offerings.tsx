@@ -548,7 +548,7 @@ export default function Offerings() {
               </DialogHeader>
 
               {/* Date & Service */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <Label htmlFor="svc-date">Service date</Label>
                   <Input id="svc-date" type="date" value={svcDate}
@@ -576,7 +576,7 @@ export default function Offerings() {
                 <div className="mb-3 flex items-center gap-2 text-sm font-medium text-stone-700">
                   <Banknote className="h-4 w-4 text-emerald-600" /> Cash by denomination
                 </div>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {DENOMS.map((d) => (
                     <div key={d}>
                       <Label className="text-xs">${d}</Label>
@@ -777,7 +777,7 @@ export default function Offerings() {
                     {signOffError}
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {/* Counter 1 — logged-in user (auto) */}
                   <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">
                     <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-emerald-700">
@@ -936,7 +936,7 @@ export default function Offerings() {
           title="No offerings recorded"
           description="Record your first service collection to start tracking weekly offerings." />
       ) : (
-        <TableWrap>
+        <TableWrap className="min-w-[900px]">
           <THead>
             <Tr>
               <Th>Date</Th>

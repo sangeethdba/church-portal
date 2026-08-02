@@ -275,7 +275,7 @@ export default function Donations() {
                   Pick a donor from the directory or add a new walk-in name.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="col-span-2">
                   <Label htmlFor="donor">Donor</Label>
                   <Select
@@ -452,7 +452,7 @@ export default function Donations() {
           description="Click New donation to log the first gift."
         />
       ) : (
-        <TableWrap>
+        <TableWrap className="min-w-[720px]">
           <THead>
             <Tr>
               <Th>Date</Th>

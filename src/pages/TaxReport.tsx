@@ -212,7 +212,7 @@ export default function TaxReport() {
             </div>
           </CardHeader>
           <CardBody className="px-0">
-            <TableWrap className="border-0 shadow-none">
+            <TableWrap className="min-w-[640px] border-0 shadow-none">
               <THead>
                 <Tr>
                   <Th>Date</Th>

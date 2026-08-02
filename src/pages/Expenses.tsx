@@ -464,7 +464,7 @@ export default function Expenses() {
                   )}
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {isAdmin ? (
                   <div className="col-span-2">
                     <Label>Source</Label>
@@ -967,7 +967,7 @@ function ExpenseList({
         <h2 className="font-serif text-lg font-semibold text-stone-900">{title}</h2>
       </CardHeader>
       <CardBody className="px-0 py-2">
-        <TableWrap className="border-0 shadow-none">
+        <TableWrap className="min-w-[640px] border-0 shadow-none">
           <THead>
             <Tr>
               <Th>Title</Th>

@@ -331,7 +331,7 @@ export default function Donors() {
 
 
   const donorFields = (v: typeof editForm, set: (f: typeof editForm) => void, prefix: string) => (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <Label htmlFor={`${prefix}-first_name`}>First name</Label>
         <Input
@@ -549,7 +549,7 @@ export default function Donors() {
           }
         />
       ) : (
-        <TableWrap>
+        <TableWrap className="min-w-[640px]">
           <THead>
             <Tr>
               <Th>Name</Th>
