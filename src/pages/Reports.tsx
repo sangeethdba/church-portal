@@ -194,17 +194,23 @@ export default function Reports() {
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredStandalone, filteredOff]);
 
+  // Split cash into anonymous (plate) vs named (envelope gifts + standalone)
   const incomeByMethod = useMemo(() => {
     const m: Record<string, number> = {};
+    // Standalone cash donations always carry a donor name, so they are named.
     filteredStandalone.forEach((d) => {
-      m[d.payment_method] = (m[d.payment_method] ?? 0) + Number(d.amount);
+      const key = d.payment_method === "cash" ? "cash (named)" : d.payment_method;
+      m[key] = (m[key] ?? 0) + Number(d.amount);
     });
     filteredOff.forEach((o) => {
+      // Plate cash (cash_amount/cash_net) is anonymous; envelope gifts are the
+      // leftover between total_amount and cash+checks, and are named.
       const cash = Number(o.cash_amount || o.cash_net || 0);
       const check = Number(o.check_amount || 0);
       const gifts = Math.max(0, Number(o.total_amount || 0) - cash - check);
-      m.cash = (m.cash ?? 0) + cash + gifts;
-      m.check = (m.check ?? 0) + check;
+      if (cash > 0) m["cash (anonymous)"] = (m["cash (anonymous)"] ?? 0) + cash;
+      if (gifts > 0) m["cash (named)"] = (m["cash (named)"] ?? 0) + gifts;
+      if (check > 0) m.check = (m.check ?? 0) + check;
     });
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredStandalone, filteredOff]);
@@ -371,6 +377,7 @@ export default function Reports() {
             <Card>
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">By method</h2>
+                <p className="text-xs text-stone-500">Cash split into anonymous plate money vs named envelope gifts</p>
               </CardHeader>
               <CardBody className="px-0 pb-0">
                 {incomeByMethod.length === 0 ? (
