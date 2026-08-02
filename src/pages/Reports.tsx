@@ -7,7 +7,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import { supabase, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { buildWeeklyBuckets } from "@/lib/accounting";
+import { buildWeeklyLedgerDetail } from "@/lib/accounting";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
 
@@ -26,6 +26,7 @@ type OfferingRow = {
   service_name: string;
   cash_amount: number;
   cash_net?: number;
+  cash_deductions?: Array<{ reason?: string; amount?: number }> | null;
   check_amount: number;
   total_amount: number;
   check_count?: number;
@@ -151,6 +152,7 @@ export default function Reports() {
         setOfferings((result.offerings ?? []).map(r => ({
           id: r.id, service_date: r.service_date, service_name: r.service_name,
           cash_amount: Number(r.cash_amount ?? 0), cash_net: Number(r.cash_net ?? 0),
+          cash_deductions: (r.cash_deductions as Array<{ reason?: string; amount?: number }> | null) ?? null,
           check_amount: Number(r.check_amount ?? 0),
           total_amount: Number(r.total_amount ?? 0), check_count: r.check_count,
           deposit_status: r.deposit_status,
@@ -265,10 +267,15 @@ export default function Reports() {
     color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
   }));
 
-  const weeklyOff = useMemo(
-    () =>
-      buildWeeklyBuckets(filteredOff, filteredStandalone).map(([week, v]) => [week, { cash: v.cash, check: v.check, other: v.other }] as const),
+  // Rich per-week ledger detail (anonymous/named cash, checks, pastor gifts,
+  // online, other) — the chart still renders the cash/check/other summary.
+  const weeklyLedger = useMemo(
+    () => buildWeeklyLedgerDetail(filteredOff, filteredStandalone),
     [filteredOff, filteredStandalone],
+  );
+  const weeklyOff = useMemo(
+    () => weeklyLedger.map(([week, v]) => [week, { cash: v.anonymous + v.named, check: v.checks, other: v.online + v.other }] as const),
+    [weeklyLedger],
   );
 
   const statusTone = (s: string) =>
@@ -571,11 +578,14 @@ export default function Reports() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly offering collections</h2>
-                  <p className="text-xs text-stone-500">Cash + checks per service week, plus any standalone gifts</p>
+                  <p className="text-xs text-stone-500">Per-Sunday ledger: anonymous plate cash, named envelope gifts, checks, pastor-gift deductions — online gifts kept separate</p>
                 </div>
                 {weeklyOff.length > 0 && (
                   <Button size="sm" variant="outline" onClick={() => {
-                    const csv = ["Week,Cash,Check,Other,Total", ...weeklyOff.map(([week, v]) => `${weekRangeLabel(week)},${v.cash},${v.check},${v.other},${v.cash + v.check + v.other}`)].join("\n");
+                    const csv = ["Week,Anonymous cash,Named cash,Checks,Pastor gifts,Online,Total", ...weeklyLedger.map(([week, v]) => {
+                      const total = v.anonymous + v.named + v.checks + v.online + v.other;
+                      return `${weekRangeLabel(week)},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total}`;
+                    })].join("\n");
                     const blob = new Blob([csv], { type: "text/csv" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a"); a.href = url; a.download = `weekly-offerings-${range.label.replace(/\s/g, "-").toLowerCase()}.csv`; a.click();
@@ -592,27 +602,31 @@ export default function Reports() {
                   <THead>
                     <Tr>
                       <Th>Week of</Th>
-                      <Th className="text-right">Cash</Th>
-                      <Th className="text-right">Check</Th>
-                      <Th className="text-right">Other</Th>
+                      <Th className="text-right">Anonymous cash</Th>
+                      <Th className="text-right">Named cash</Th>
+                      <Th className="text-right">Checks</Th>
+                      <Th className="text-right">Pastor gifts</Th>
+                      <Th className="text-right">Online</Th>
                       <Th className="text-right">Total</Th>
                     </Tr>
                   </THead>
                   <tbody>
-                    {weeklyOff.map(([week, v]) => {
-                      const total = v.cash + v.check + v.other;
+                    {weeklyLedger.map(([week, v]) => {
+                      const total = v.anonymous + v.named + v.checks + v.online + v.other;
                       return (
                         <Tr key={week}>
                           <Td className="font-medium">{weekRangeLabel(week)}</Td>
-                          <Td className="text-right font-mono text-sm">{formatCurrency(v.cash)}</Td>
-                          <Td className="text-right font-mono text-sm">{formatCurrency(v.check)}</Td>
-                          <Td className="text-right font-mono text-sm">{formatCurrency(v.other)}</Td>
+                          <Td className="text-right font-mono text-sm">{formatCurrency(v.anonymous)}</Td>
+                          <Td className="text-right font-mono text-sm text-lime-700">{formatCurrency(v.named)}</Td>
+                          <Td className="text-right font-mono text-sm">{formatCurrency(v.checks)}</Td>
+                          <Td className="text-right font-mono text-sm text-rose-700">{v.pastor > 0 ? formatCurrency(v.pastor) : "—"}</Td>
+                          <Td className="text-right font-mono text-sm text-indigo-700">{v.online > 0 ? formatCurrency(v.online) : "—"}</Td>
                           <Td className="text-right font-serif font-semibold">{formatCurrency(total)}</Td>
                         </Tr>
                       );
                     })}
                     <Tr>
-                      <Td colSpan={4} className="border-t-2 border-stone-200 py-4 text-right font-semibold">Total</Td>
+                      <Td colSpan={6} className="border-t-2 border-stone-200 py-4 text-right font-semibold">Total</Td>
                       <Td className="border-t-2 border-stone-200 py-4 text-right font-serif text-lg font-semibold text-stone-900">
                         {formatCurrency(totalIncome)}
                       </Td>

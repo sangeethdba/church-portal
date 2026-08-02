@@ -41,6 +41,7 @@ begin
     select id, service_date, service_name,
            coalesce(nullif(cash_amount, 0), cash_net) as cash_amount,
            cash_net,
+           cash_deductions,
            check_amount, total_amount,
            check_count, deposit_status
     from public.offerings

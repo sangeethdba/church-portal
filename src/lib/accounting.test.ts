@@ -4,6 +4,8 @@ import {
   computeCashFromDenoms,
   aggregateDonorStats,
   buildWeeklyBuckets,
+  buildWeeklyLedgerDetail,
+  sundayWeekKey,
 } from "./accounting";
 import { isAdminRole, normalizeLineItems, buildReceiptPath } from "./supabase";
 import { formatCurrency, formatDate } from "./utils";
@@ -103,6 +105,47 @@ describe("buildWeeklyBuckets", () => {
 
   it("handles empty input", () => {
     expect(buildWeeklyBuckets([], [])).toEqual([]);
+  });
+});
+
+// ── buildWeeklyLedgerDetail ──────────────────────────────────────────────
+describe("buildWeeklyLedgerDetail", () => {
+  it("splits anonymous plate cash, named envelope gifts, checks, and pastor-gift deductions per week", () => {
+    const buckets = buildWeeklyLedgerDetail(
+      [
+        {
+          service_date: "2026-08-01", // Sat — same week as Sun Jul 26
+          cash_amount: 0,
+          cash_net: 224, // net after pastor gift
+          check_amount: 200,
+          total_amount: 624, // 224 net + 200 checks + 200 envelope gifts
+          cash_deductions: [{ reason: "pastor gift", amount: 20 }],
+        },
+      ],
+      [],
+    );
+    expect(buckets).toEqual([["2026-07-26", { anonymous: 224, named: 200, checks: 200, pastor: 20, online: 0, other: 0 }]]);
+  });
+
+  it("keeps online gifts separate from the Sunday offering and folds standalone cash into named", () => {
+    const buckets = buildWeeklyLedgerDetail(
+      [{ service_date: "2026-07-26", cash_amount: 100, check_amount: 50, total_amount: 150, cash_net: 100 }],
+      [
+        { donation_date: "2026-07-27", payment_method: "online", amount: 40 },
+        { donation_date: "2026-07-28", payment_method: "cash", amount: 25 },
+        { donation_date: "2026-07-29", payment_method: "card", amount: 10 },
+      ],
+    );
+    expect(buckets).toEqual([["2026-07-26", { anonymous: 100, named: 25, checks: 50, pastor: 0, online: 40, other: 10 }]]);
+  });
+});
+
+// ── sundayWeekKey ─────────────────────────────────────────────────────────
+describe("sundayWeekKey", () => {
+  it("returns the Sunday that starts a date's week, regardless of timezone", () => {
+    expect(sundayWeekKey("2026-08-01")).toBe("2026-07-26"); // Sat
+    expect(sundayWeekKey("2026-07-26")).toBe("2026-07-26"); // Sun
+    expect(sundayWeekKey("2026-08-02")).toBe("2026-08-02"); // Sun
   });
 });
 

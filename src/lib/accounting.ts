@@ -78,12 +78,35 @@ export interface OfferingLike {
   check_amount: number;
   cash_net?: number;
   total_amount?: number;
+  cash_deductions?: Array<{ reason?: string; amount?: number }> | null;
 }
 
 export interface DonationLike {
   donation_date: string;
   payment_method: string;
   amount: number;
+}
+
+/** Per-service-week ledger breakdown of a Sunday offering. */
+export interface WeeklyLedgerDetail {
+  /** Plate cash (net of pastor-gift deductions) — anonymous. */
+  anonymous: number;
+  /** Envelope cash gifts (named) + standalone cash donations (also named). */
+  named: number;
+  checks: number;
+  /** Pastor-gift / cash deductions taken out of the plate. */
+  pastor: number;
+  /** Online gifts entered separately — kept apart from the Sunday offering. */
+  online: number;
+  /** Any other standalone method (card, etc.). */
+  other: number;
+}
+
+/** Sunday-start week key (UTC) for a YYYY-MM-DD date. */
+export function sundayWeekKey(dateStr: string): string {
+  const date = new Date(dateStr + "T00:00:00Z");
+  const weekStart = new Date(date.getTime() - date.getUTCDay() * 86400000);
+  return weekStart.toISOString().slice(0, 10);
 }
 
 /**
@@ -97,11 +120,7 @@ export function buildWeeklyBuckets(
 ): Array<[string, WeeklyBucket]> {
   const weeks = new Map<string, WeeklyBucket>();
   const bump = (dateStr: string, cash: number, check: number, other: number) => {
-    // Treat the date as a calendar date (UTC midnight) and compute the
-    // Sunday-start key in UTC so it never drifts with the viewer's timezone.
-    const date = new Date(dateStr + "T00:00:00Z");
-    const weekStart = new Date(date.getTime() - date.getUTCDay() * 86400000);
-    const key = weekStart.toISOString().slice(0, 10);
+    const key = sundayWeekKey(dateStr);
     const cur = weeks.get(key) ?? { cash: 0, check: 0, other: 0 };
     cur.cash += cash;
     cur.check += check;
@@ -124,6 +143,51 @@ export function buildWeeklyBuckets(
     if (d.payment_method === "cash") bump(d.donation_date, amt, 0, 0);
     else if (d.payment_method === "check") bump(d.donation_date, 0, amt, 0);
     else bump(d.donation_date, 0, 0, amt);
+  }
+  return Array.from(weeks.entries()).sort(([a], [b]) => a.localeCompare(b));
+}
+
+/**
+ * Per-service-week ledger detail: anonymous plate cash, named envelope cash,
+ * checks, pastor-gift deductions, plus separately-entered online/other gifts.
+ * Standalone online gifts stay in their own bucket so the Sunday offering is
+ * never merged with online giving. Offering-linked donation rows must be
+ * excluded from `standaloneDonations` to avoid double counting.
+ */
+export function buildWeeklyLedgerDetail(
+  offerings: OfferingLike[],
+  standaloneDonations: DonationLike[],
+): Array<[string, WeeklyLedgerDetail]> {
+  const weeks = new Map<string, WeeklyLedgerDetail>();
+  const zero = (): WeeklyLedgerDetail => ({ anonymous: 0, named: 0, checks: 0, pastor: 0, online: 0, other: 0 });
+  const bump = (dateStr: string, part: Partial<WeeklyLedgerDetail>) => {
+    const key = sundayWeekKey(dateStr);
+    const cur = weeks.get(key) ?? zero();
+    cur.anonymous += part.anonymous ?? 0;
+    cur.named += part.named ?? 0;
+    cur.checks += part.checks ?? 0;
+    cur.pastor += part.pastor ?? 0;
+    cur.online += part.online ?? 0;
+    cur.other += part.other ?? 0;
+    weeks.set(key, cur);
+  };
+  for (const o of offerings) {
+    const cash = Number(o.cash_net || o.cash_amount || 0);
+    const checks = Number(o.check_amount || 0);
+    const total = Number(o.total_amount || 0);
+    // Named envelope gifts are the leftover between total and cash+checks.
+    const named = Math.max(0, total - cash - checks);
+    const pastor = (Array.isArray(o.cash_deductions) ? o.cash_deductions : [])
+      .reduce((s, d) => s + (Number(d?.amount) || 0), 0);
+    bump(o.service_date, { anonymous: cash, named, checks, pastor });
+  }
+  for (const d of standaloneDonations) {
+    const amt = Number(d.amount) || 0;
+    const method = (d.payment_method || "").toLowerCase();
+    if (method === "cash") bump(d.donation_date, { named: amt });
+    else if (method === "check") bump(d.donation_date, { checks: amt });
+    else if (method === "online") bump(d.donation_date, { online: amt });
+    else bump(d.donation_date, { other: amt });
   }
   return Array.from(weeks.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
