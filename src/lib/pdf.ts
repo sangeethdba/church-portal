@@ -86,11 +86,11 @@ function drawDocumentHeader(
     drawBrandMark(doc, logoX, logoY, 1.0);
   }
 
-  // Church name next to logo
+  // Church name — centered across full page width
   doc.setTextColor(28, 25, 23);
   doc.setFont("times", "bold");
-  doc.setFontSize(16);
-  doc.text(displayChurchName(churchName), logoX + 74, logoY + 24);
+  doc.setFontSize(18);
+  doc.text(displayChurchName(churchName), pageWidth / 2, logoY + 16, { align: "center" });
 
   // Contact info — centered across full page width
   doc.setFont("helvetica", "normal");
@@ -145,18 +145,15 @@ function drawDocumentFooter(doc: jsPDF) {
   doc.setLineWidth(0.5);
   doc.line(margin, 720, pageWidth - margin, 720);
 
-  // All footer text centered
+  // All footer text centered — church name + page on same line
   doc.setFont("helvetica", "normal");
   doc.setTextColor(120, 113, 108);
 
   doc.setFontSize(8);
-  doc.text(ALF_DOCUMENT_BRANDING.name, center, 738, { align: "center" });
-
-  doc.setFontSize(7);
   doc.text(
-    `Page ${doc.getCurrentPageInfo().pageNumber} of ${TOTAL_PAGES_TOKEN}`,
+    `${ALF_DOCUMENT_BRANDING.name}  ·  Page ${doc.getCurrentPageInfo().pageNumber} of ${TOTAL_PAGES_TOKEN}`,
     center,
-    750,
+    738,
     { align: "center" },
   );
 
@@ -164,13 +161,13 @@ function drawDocumentFooter(doc: jsPDF) {
   doc.text(
     `${ALF_DOCUMENT_BRANDING.address}  ·  Tel: ${ALF_DOCUMENT_BRANDING.phones}`,
     center,
-    762,
+    752,
     { align: "center" },
   );
   doc.text(
     `${ALF_DOCUMENT_BRANDING.website}  ·  ${ALF_DOCUMENT_BRANDING.email}`,
     center,
-    774,
+    766,
     { align: "center" },
   );
 }
@@ -648,13 +645,24 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   // Table
   drawTableHeader();
 
+  // Helper: build a readable type label for the table
+  const typeLabel = (d: Donation) => {
+    const method = d.payment_method?.toLowerCase() || "";
+    if (method === "check" && d.check_number) {
+      return `Check #${d.check_number}`;
+    }
+    if (method === "check") return "Check";
+    if (method === "cash") return "Cash";
+    return capitalizeWords(d.donation_type);
+  };
+
   const sorted = [...s.donations].sort((a, b) =>
     a.donation_date.localeCompare(b.donation_date),
   );
   for (const d of sorted) {
     if (y > 680) newPage();
     doc.text(formatDateLong(d.donation_date), margin + 10, y);
-    doc.text(capitalizeWords(d.donation_type), margin + 140, y);
+    doc.text(typeLabel(d), margin + 140, y);
     doc.text(formatCurrency(d.amount), pageWidth - margin - 10, y, { align: "right" });
     y += 18;
   }
