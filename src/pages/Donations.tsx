@@ -84,6 +84,7 @@ interface QuickRow {
   key: number;
   query: string;
   donorId: string;
+  date: string;
   amount: string;
 }
 
@@ -184,13 +185,15 @@ function QuickOnlineEntry({
   donors: { id: string; label: string }[];
   onSaved: () => void;
 }) {
-  const [rows, setRows] = useState<QuickRow[]>([{ key: 1, query: "", donorId: "", amount: "" }]);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const today = new Date().toISOString().slice(0, 10);
+  const [rows, setRows] = useState<QuickRow[]>([{ key: 1, query: "", donorId: "", date: today, amount: "" }]);
+  const [date, setDate] = useState(today);
   const [giftType, setGiftType] = useState("offering");
   const [saving, setSaving] = useState(false);
   const nextKey = useRef(2);
 
-  const addRow = () => setRows((r) => [...r, { key: nextKey.current++, query: "", donorId: "", amount: "" }]);
+  const addRow = () =>
+    setRows((r) => [...r, { key: nextKey.current++, query: "", donorId: "", date, amount: "" }]);
   const removeRow = (key: number) =>
     setRows((r) => (r.length === 1 ? r : r.filter((x) => x.key !== key)));
   const updateRow = (key: number, patch: Partial<Omit<QuickRow, "key">>) =>
@@ -200,12 +203,13 @@ function QuickOnlineEntry({
   const total = valid.reduce((s, r) => s + Number(r.amount), 0);
 
   const submit = async () => {
-    if (!date) {
-      toast("Choose the offering date first", "error");
-      return;
-    }
     if (valid.length === 0) {
       toast("Enter at least one amount first", "error");
+      return;
+    }
+    const noDate = valid.find((r) => !r.date);
+    if (noDate) {
+      toast("Every gift needs a date — fill the row that's missing one", "error");
       return;
     }
     setSaving(true);
@@ -220,7 +224,7 @@ function QuickOnlineEntry({
             p_donation_type: giftType,
             p_payment_method: "online",
             p_check_number: null,
-            p_donation_date: date,
+            p_donation_date: r.date || date,
             p_notes: null,
             p_donor_id: r.donorId || null,
           });
@@ -235,7 +239,7 @@ function QuickOnlineEntry({
     if (failed === 0) {
       toast(`Saved ${saved} online gift${saved === 1 ? "" : "s"} • ${formatCurrency(total)}`, "success");
       onSaved();
-      setRows([{ key: nextKey.current++, query: "", donorId: "", amount: "" }]);
+      setRows([{ key: nextKey.current++, query: "", donorId: "", date: today, amount: "" }]);
     } else {
       toast(`${saved} saved, ${failed} failed — please check and retry`, "error");
     }
@@ -250,15 +254,17 @@ function QuickOnlineEntry({
           <Badge tone="indigo">Bulk entry</Badge>
         </div>
         <p className="text-sm text-[#78716C]">
-          Type the donor's name, tap the suggestion, add the amount — then <strong>＋ Add row</strong> for the next
-          giver. One <strong>Save all</strong> writes every row to the ledger, Reports, and donor statements.
+          Online gifts arrive any day of the week — so every row carries its <strong>own date</strong>. Set the
+          default below, type the donor's name, tap the suggestion, add the amount — then <strong>＋ Add row</strong>.
+          One <strong>Save all</strong> writes every row (with its own date) to the ledger, Reports, and donor
+          statements.
         </p>
       </CardHeader>
       <CardBody>
         {/* Shared settings */}
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <Label>Date of offering</Label>
+            <Label>Default date (new rows)</Label>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1.5 w-44" />
           </div>
           <div>
@@ -274,8 +280,9 @@ function QuickOnlineEntry({
         </div>
 
         {/* Column headers (desktop) */}
-        <div className="mt-4 hidden grid-cols-[minmax(0,1fr)_150px_36px] gap-2 sm:grid">
+        <div className="mt-4 hidden grid-cols-[minmax(0,1fr)_160px_150px_36px] gap-2 sm:grid">
           <Label>Donor — type to search</Label>
+          <Label>Date</Label>
           <Label>Amount</Label>
           <span />
         </div>
@@ -285,7 +292,7 @@ function QuickOnlineEntry({
           {rows.map((r, i) => (
             <div
               key={r.key}
-              className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_150px_36px]"
+              className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_160px_150px_36px]"
             >
               <div className="relative">
                 <Label className="sm:hidden">Donor {i + 1}</Label>
@@ -294,6 +301,18 @@ function QuickOnlineEntry({
                   onQuery={(v) => updateRow(r.key, { query: v, donorId: "" })}
                   onPick={(d) => updateRow(r.key, { donorId: d.id })}
                   donors={donors}
+                />
+              </div>
+              <div>
+                <Label className="sm:hidden">Date {i + 1}</Label>
+                <Input
+                  type="date"
+                  value={r.date}
+                  onChange={(e) => updateRow(r.key, { date: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addRow();
+                  }}
+                  className="mt-1.5 h-10"
                 />
               </div>
               <div>
