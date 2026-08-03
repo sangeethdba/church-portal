@@ -146,7 +146,7 @@ function QuickDonorInput({
           }
         }}
       />
-      {open && matches.length > 0 && (
+      {open && query.trim().length > 0 && (
         <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[#EDE4D8] bg-[#FFFBF5] py-1 shadow-xl">
           {matches.map((m, i) => (
             <button
@@ -281,7 +281,7 @@ function QuickOnlineEntry({
         </div>
 
         {/* Rows */}
-        <div className="mt-2 max-h-[440px] space-y-2 overflow-y-auto pr-1">
+        <div className="mt-2 space-y-2">
           {rows.map((r, i) => (
             <div
               key={r.key}
@@ -366,7 +366,7 @@ export default function Donations() {
   const canAccess = isAdmin;
 
   const [donations, setDonations] = useState<Donation[]>(sampleDonations);
-  const [donors, setDonors] = useState<{ id: string; label: string }[]>(sampleDonorsForPick);
+  const [donors, setDonors] = useState<{ id: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>("all");
   const [filterYear, setFilterYear] = useState<string>("all");
@@ -389,23 +389,30 @@ export default function Donations() {
 
   useEffect(() => {
     if (!supabase) {
+      setDonors(sampleDonorsForPick);
       setLoading(false);
       return;
     }
-    Promise.all([
-      supabase.rpc("list_donations"),
-      supabase.from("donors").select("id, first_name, last_name").eq("is_active", true),
-    ]).then(([{ data: dData, error }, { data: ddData }]) => {
-      if (!error && dData) setDonations(dData as Donation[]);
-      if (ddData)
+    // Donor directory drives the quick-entry autocomplete — load it on its
+    // own so one failing query never blocks the other.
+    void (async () => {
+      const { data } = await supabase
+        .from("donors")
+        .select("id, first_name, last_name")
+        .eq("is_active", true)
+        .order("last_name");
+      if (data)
         setDonors(
-          (ddData as Pick<Donor, "id" | "first_name" | "last_name">[]).map((d) => ({
+          (data as Pick<Donor, "id" | "first_name" | "last_name">[]).map((d) => ({
             id: d.id,
             label: `${d.first_name} ${d.last_name}`,
           })),
         );
-      setLoading(false);
-    });
+    })().catch(() => {});
+    void (async () => {
+      const { data, error } = await supabase.rpc("list_donations");
+      if (!error && data) setDonations(data as Donation[]);
+    })().catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const years = useMemo(() => {
