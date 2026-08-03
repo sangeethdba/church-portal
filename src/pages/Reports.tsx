@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, TrendingUp, CircleDollarSign, Receipt, PieChart, CalendarDays, Download } from "lucide-react";
+import { useOutletContext } from "react-router-dom";
+import { BarChart3, TrendingUp, CircleDollarSign, Receipt, PieChart, CalendarDays, Download, Mail } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Select,
-  Badge, EmptyState, TableWrap, THead, Tr, Th, Td, Tabs, TabsList, TabsTrigger, TabsContent,
+  Badge, EmptyState, TableWrap, THead, Tr, Th, Td, Tabs, TabsList, TabsTrigger, TabsContent, toast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
+import { supabase, isOversightRole, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { buildIncomeByMethod, buildWeeklyLedgerDetail } from "@/lib/accounting";
+import { notifyWeeklySummary } from "@/lib/notify";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
 
@@ -123,11 +125,27 @@ function DonutChart({
 }
 
 export default function Reports() {
+  const ctx = useOutletContext<{ profile: { role?: string } | null }>();
+  const canSendWeekly = isOversightRole(ctx.profile?.role);
+  const [sendingSummary, setSendingSummary] = useState(false);
   const [donations, setDonations] = useState<Donation[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("this_year");
+
+  const sendWeeklySummary = async () => {
+    setSendingSummary(true);
+    const res = await notifyWeeklySummary();
+    setSendingSummary(false);
+    if (res.ok) {
+      toast(
+        `Weekly summary sent to the pastor${res.weekStart ? ` (${res.weekStart} – ${res.weekEnd})` : ""}`, "success",
+      );
+    } else {
+      toast(res.message ?? "Could not send the weekly summary — is the send-weekly-summary function deployed?", "error");
+    }
+  };
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return; }
@@ -275,12 +293,25 @@ export default function Reports() {
         subtitle="Weekly, monthly, and yearly summaries of offerings, expenses, and net position."
         badge={`${filteredOff.length} offerings · ${filteredExp.length} expenses`}
         actions={
-          <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-36">
-            <option value="this_week">This week</option>
-            <option value="this_month">This month</option>
-            <option value="this_year">This year</option>
-            <option value="all">All time</option>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-36">
+              <option value="this_week">This week</option>
+              <option value="this_month">This month</option>
+              <option value="this_year">This year</option>
+              <option value="all">All time</option>
+            </Select>
+            {canSendWeekly && (
+              <Button
+                variant="outline"
+                onClick={sendWeeklySummary}
+                disabled={sendingSummary}
+                iconLeft={<Mail className="h-4 w-4" />}
+                title="Emails the pastor a weekly summary of offerings, expenses, and online gifts"
+              >
+                {sendingSummary ? "Sending…" : "Email weekly summary"}
+              </Button>
+            )}
+          </div>
         }
       />
 

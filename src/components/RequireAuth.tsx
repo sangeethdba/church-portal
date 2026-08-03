@@ -58,7 +58,7 @@ export default function RequireAuth() {
       <div className="grid min-h-screen place-items-center bg-parchment-50">
         <div className="text-center">
           <div className="text-sm text-stone-500">Loading…</div>
-          <div className="mt-1 text-[10px] text-stone-300">v250802ae</div>
+          <div className="mt-1 text-[10px] text-stone-300">v250802af</div>
         </div>
       </div>
     );

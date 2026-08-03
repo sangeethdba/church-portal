@@ -136,7 +136,7 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ success: true, sent }), { status: 200 });
     }
 
-    // ── New member signed up → notify every admin ───────────────────────
+    // ── New member signed up → notify every admin + pastor oversight ────
     if (type === "member_signed_up") {
       const userId: string | undefined = body?.user_id;
       if (!userId) {
@@ -156,7 +156,9 @@ serve(async (req: Request) => {
       }
 
       const name = profile.full_name || profile.email || "A new member";
-      const admins = await listAdminEmails();
+      // The pastor is an overseer too — include explicit oversight emails and
+      // pastor-role profiles so they know new members are joining.
+      const admins = await listAdminEmails(true);
       const results = await Promise.allSettled(
         admins.map((a) =>
           resend.emails.send({
