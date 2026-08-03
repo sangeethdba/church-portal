@@ -12,6 +12,16 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const FROM = "GraceLedger <notifications@graceledger.org>";
 const ADMIN_ROLES = ["admin", "treasurer", "super_admin"];
 
+// Oversight recipients who may not have a portal account yet — e.g. the pastor
+// is currently only a donor record, not a signed-up profile. Comma-separated
+// emails set as the OVERSIGHT_EMAILS secret on this edge function. They are
+// deduped against profile recipients so nobody gets the same email twice once
+// they sign up and are promoted to the pastor role.
+const OVERSIGHT_EMAILS = (Deno.env.get("OVERSIGHT_EMAILS") ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 // Best-effort caller id from the JWT — used only to stop members from
 // triggering notifications about other people's records. Never blocks mail.
 function callerSub(authHeader?: string): string | null {
@@ -37,7 +47,15 @@ async function listAdminEmails(includePastor = false): Promise<{ email: string; 
     .select("email, full_name")
     .in("role", roles)
     .not("email", "is", null);
-  return (data ?? []).filter((p) => p.email);
+  const recipients = (data ?? []).filter((p) => p.email);
+  if (!includePastor || OVERSIGHT_EMAILS.length === 0) return recipients;
+  // Always include explicit oversight emails (pastor may not have a profile yet)
+  // and drop any that already match a profile so there are no duplicates.
+  const seen = new Set(recipients.map((r) => r.email.toLowerCase()));
+  const extras = OVERSIGHT_EMAILS
+    .filter((email) => !seen.has(email.toLowerCase()))
+    .map((email) => ({ email, full_name: "Pastor" }));
+  return [...recipients, ...extras];
 }
 
 function formatUsd(n: number | string): string {
