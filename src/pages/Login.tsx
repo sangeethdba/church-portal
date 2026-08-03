@@ -12,6 +12,7 @@ import {
   signInWithGoogle,
 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { notifyPortal } from "@/lib/notify";
 
 const highlights = [
   {
@@ -85,7 +86,11 @@ export default function Login() {
     setLoading(true);
     setError(null);
     try {
-      await signUpWithEmail(email, password, name);
+      const res = await signUpWithEmail(email, password, name);
+      // Let the treasurer know a new member account was created
+      if (res.user?.id) {
+        notifyPortal({ type: "member_signed_up", user_id: res.user.id });
+      }
       setError("Check your inbox to confirm your email, then sign in.");
       setSearchParams({});
     } catch (err: unknown) {
@@ -303,7 +308,7 @@ export default function Login() {
             </CardBody>
           </Card>
           <p className="mt-6 text-center text-xs text-stone-500">
-            <span className="text-stone-300">v250802ac</span>{" · "}
+            <span className="text-stone-300">v250802ad</span>{" · "}
             By signing in you agree to keep all giving data confidential.{" "}
             <Link to="/" className="text-accent hover:underline">Back to home</Link>
           </p>

@@ -33,6 +33,7 @@ import ReceiptViewer from "@/components/ReceiptViewer";
 import ReceiptThumbs from "@/components/ReceiptThumbs";
 import { supabase, isAdminRole, buildReceiptPath, normalizeLineItems, EXPENSE_CATEGORIES, EVENT_SUGGESTIONS, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { notifyPortal } from "@/lib/notify";
 
 const sampleExpenses: Expense[] = [
   {
@@ -411,6 +412,10 @@ export default function Expenses() {
           }
           setExpenses((rows) => [expense, ...rows]);
         }
+      }
+      // Notify admins that a member submitted a reimbursement request
+      if (form.source === "member_submitted" && expenseId) {
+        notifyPortal({ type: "expense_submitted", expense_id: expenseId });
       }
       if (error) console.warn("Insert expense failed:", error);
     } else {
