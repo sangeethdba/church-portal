@@ -9,7 +9,7 @@ import { Button, Card, CardBody, CardHeader, Tile, MotionTile, Badge, EmptyState
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { MemberOverview } from "@/pages/MyOverview";
-import { supabase, isAdminRole } from "@/lib/supabase";
+import { supabase, isAdminRole, isPastorRole } from "@/lib/supabase";
 import type { Profile, Donation, Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -136,6 +136,9 @@ export default function Dashboard() {
   const [pendingApprovals, setPendingApprovals] = useState(0);
 
   const isAdmin = isAdminRole(profile?.role);
+  // The pastor gets the church-wide snapshot (read-only) — the KPI RPC returns
+  // admin-scope data for them — but never member-management or entry actions.
+  const isWide = isAdmin || isPastorRole(profile?.role);
   const [counterOpen, setCounterOpen] = useState(false);
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [draftProfiles, setDraftProfiles] = useState<Profile[]>([]);
@@ -294,7 +297,7 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  if (!isAdmin) {
+  if (!isWide) {
     return (
       <div>
         <PageHeader title={`Welcome, ${profile?.full_name ?? "member"}`} subtitle="Your personal giving, submitted bills, and reimbursement status." badge="Member" />
@@ -313,9 +316,9 @@ export default function Dashboard() {
   return (
     <div>
       <PageHeader
-        title={`Welcome, ${profile?.full_name ?? "treasurer"}`}
+        title={`Welcome, ${profile?.full_name ?? (isAdmin ? "treasurer" : "pastor")}`}
         subtitle="A snapshot of how your church is stewarding its resources this year."
-        badge="Live"
+        badge={isAdmin ? "Live" : "View only"}
         actions={
           <div className="flex items-center gap-2">
             {isAdmin && (
@@ -393,12 +396,12 @@ export default function Dashboard() {
                 </DialogContent>
               </Dialog>
             )}
-            <Button iconLeft={<Plus className="h-4 w-4" />} variant="solid" onClick={() => navigate("/offerings")}>New donation</Button>
+            {isAdmin && <Button iconLeft={<Plus className="h-4 w-4" />} variant="solid" onClick={() => navigate("/offerings")}>New donation</Button>}
           </div>
         }
       />
 
-      {pendingApprovals > 0 && (
+      {isAdmin && pendingApprovals > 0 && (
         <motion.button type="button" onClick={() => { setCounterOpen(true); loadProfiles(); }}
           initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
           whileHover={{ scale: 1.005 }}

@@ -20,7 +20,7 @@ import {
 import Logo from "./Logo";
 import { Button, Badge } from "./ui";
 import { signOut } from "@/lib/auth";
-import { isAdminRole, type Profile } from "@/lib/supabase";
+import { isAdminRole, isPastorRole, type Profile } from "@/lib/supabase";
 
 const allItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["member", "admin"] as string[] },
@@ -40,9 +40,12 @@ export default function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
   const isAdmin = isAdminRole(ctx.profile?.role);
+  // The pastor is a read-only overseer — every ledger page except Import,
+  // which is a bulk-write flow with no read-only purpose.
+  const isPastor = isPastorRole(ctx.profile?.role);
 
   const visibleItems = allItems.filter((item) => {
-    if (item.roles.includes("admin") && isAdmin) return true;
+    if (item.roles.includes("admin") && (isAdmin || (isPastor && item.to !== "/import"))) return true;
     // Counters are regular members too — they only verify/sign off, so they get
     // the member navigation, never the admin-only ledger pages.
     if (item.roles.includes("member") && !isAdmin) return true;
@@ -123,8 +126,8 @@ export default function AppShell() {
               {ctx.profile?.church_name && ctx.profile.church_name !== "Grace Community Church" ? ctx.profile.church_name : "Atlanta Little Flock Church"}
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <Badge tone={isAdmin ? "indigo" : ctx.isCounter ? "amber" : "neutral"}>
-                {isAdmin ? "Admin" : ctx.isCounter ? "Counter" : "Member"}
+              <Badge tone={isAdmin ? "indigo" : isPastor ? "emerald" : ctx.isCounter ? "amber" : "neutral"}>
+                {isAdmin ? "Admin" : isPastor ? "Pastor · View only" : ctx.isCounter ? "Counter" : "Member"}
               </Badge>
             </div>
           </div>

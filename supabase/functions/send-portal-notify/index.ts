@@ -30,11 +30,12 @@ function callerSub(authHeader?: string): string | null {
   }
 }
 
-async function listAdminEmails(): Promise<{ email: string; full_name: string | null }[]> {
+async function listAdminEmails(includePastor = false): Promise<{ email: string; full_name: string | null }[]> {
+  const roles = includePastor ? [...ADMIN_ROLES, "pastor"] : ADMIN_ROLES;
   const { data } = await supabase
     .from("profiles")
     .select("email, full_name")
-    .in("role", ADMIN_ROLES)
+    .in("role", roles)
     .not("email", "is", null);
   return (data ?? []).filter((p) => p.email);
 }
@@ -94,7 +95,9 @@ serve(async (req: Request) => {
       }
 
       const title = expense.title || expense.description || "Expense";
-      const admins = await listAdminEmails();
+      // The pastor is a read-only overseer — they get notified when a member
+      // submits a reimbursement so they can review bills without approving them.
+      const admins = await listAdminEmails(true);
       const results = await Promise.allSettled(
         admins.map((a) =>
           resend.emails.send({

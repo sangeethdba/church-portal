@@ -11,7 +11,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase, getReceiptUrl, isAdminRole } from "@/lib/supabase";
+import { supabase, getReceiptUrl, isAdminRole, isOversightRole } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { computeCashFromDenoms, normName } from "@/lib/accounting";
@@ -120,7 +120,9 @@ export default function Offerings() {
   const ctx = useOutletContext<{ profile: { id: string; full_name?: string | null; role?: string } | null; isCounter: boolean }>();
   // Counters verify and sign off, but the ledger pages are admin-only —
   // counters are otherwise regular members who only see their own records.
-  const canAccess = isAdminRole(ctx.profile?.role);
+  // The pastor sees the ledger read-only (no record/deposit actions).
+  const isAdmin = isAdminRole(ctx.profile?.role);
+  const canAccess = isOversightRole(ctx.profile?.role);
   const [counterList, setCounterList] = useState<CounterInfo[]>([]);
   const [nameProfiles, setNameProfiles] = useState<CounterInfo[]>([]);
   const [counter1Id] = useState(ctx.profile?.id ?? "");
@@ -535,6 +537,7 @@ export default function Offerings() {
         subtitle="Record Sunday collections — cash by denomination, individual checks per donor, and dual counter sign-off."
         badge={`${filtered.length} services`}
         actions={
+          isAdmin && (
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>Record offering</Button>
@@ -843,6 +846,7 @@ export default function Offerings() {
               </div>
             </DialogContent>
           </Dialog>
+          )
         }
       />
 
@@ -972,11 +976,13 @@ export default function Offerings() {
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <Badge tone="amber">Pending</Badge>
-                      <Button size="sm" variant="ghost"
-                        onClick={() => { setDepositOfferingId(o.id); setDepositFile(null); setDepositError(""); setDepositOpen(true); }}
-                        iconLeft={<Upload className="h-3.5 w-3.5" />}>
-                        Deposit
-                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" variant="ghost"
+                          onClick={() => { setDepositOfferingId(o.id); setDepositFile(null); setDepositError(""); setDepositOpen(true); }}
+                          iconLeft={<Upload className="h-3.5 w-3.5" />}>
+                          Deposit
+                        </Button>
+                      )}
                     </div>
                   )}
                 </Td>

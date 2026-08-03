@@ -35,7 +35,7 @@ import {
   Select,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase, isAdminRole } from "@/lib/supabase";
+import { supabase, isAdminRole, isOversightRole } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { aggregateDonorStats, normName } from "@/lib/accounting";
@@ -94,7 +94,9 @@ type DonationStatRow = {
 
 export default function Donors() {
   const ctx = useOutletContext<{ profile: { id?: string; role?: string } | null }>();
-  const canAccess = isAdminRole(ctx.profile?.role);
+  // The pastor can browse the directory read-only — no add/edit.
+  const isAdmin = isAdminRole(ctx.profile?.role);
+  const canAccess = isOversightRole(ctx.profile?.role);
 
   const [donors, setDonors] = useState<Donor[]>(sampleDonors);
   const [donations, setDonations] = useState<DonationStatRow[]>([]);
@@ -464,6 +466,7 @@ export default function Donors() {
         subtitle="The people who faithfully support your ministry. Totals are live from recorded giving."
         badge={`${donors.length} on file`}
         actions={
+          isAdmin && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>Add donor</Button>
@@ -486,6 +489,7 @@ export default function Donors() {
               </div>
             </DialogContent>
           </Dialog>
+          )
         }
       />
 
@@ -609,14 +613,16 @@ export default function Donors() {
                     {formatCurrency(st.total)}
                   </Td>
                   <Td className="text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      iconLeft={<Pencil className="h-3.5 w-3.5" />}
-                      onClick={() => openEdit(d)}
-                    >
-                      Edit
-                    </Button>
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        iconLeft={<Pencil className="h-3.5 w-3.5" />}
+                        onClick={() => openEdit(d)}
+                      >
+                        Edit
+                      </Button>
+                    )}
                   </Td>
                 </Tr>
               );

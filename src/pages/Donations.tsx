@@ -25,7 +25,7 @@ import {
   toast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
-import { supabase, isAdminRole } from "@/lib/supabase";
+import { supabase, isAdminRole, isOversightRole } from "@/lib/supabase";
 import type { Donation, Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { downloadStatement, type AnnualStatement } from "@/lib/pdf";
@@ -382,7 +382,8 @@ export default function Donations() {
   const isAdmin = isAdminRole(ctx.profile?.role);
   // Counters verify and sign off, but the ledger pages are admin-only —
   // counters are otherwise regular members who only see their own records.
-  const canAccess = isAdmin;
+  // The pastor sees the ledger read-only (no entry forms).
+  const canAccess = isOversightRole(ctx.profile?.role);
 
   const [donations, setDonations] = useState<Donation[]>(sampleDonations);
   const [donors, setDonors] = useState<{ id: string; label: string }[]>([]);
@@ -574,6 +575,7 @@ export default function Donations() {
         subtitle="Every gift, recorded faithfully. Issue annual tax statements in one click."
         badge={`${formatCurrency(totalShown)} (${filtered.length} on screen)`}
         actions={
+          isAdmin && (
           <>
           <Button iconLeft={<Church className="h-4 w-4" />} variant="outline" onClick={() => navigate("/offerings")}>Record Sunday offering</Button>
           <Dialog open={open} onOpenChange={setOpen}>
@@ -699,10 +701,11 @@ export default function Donations() {
             </DialogContent>
           </Dialog>
           </>
+          )
         }
       />
 
-      <QuickOnlineEntry donors={donors} onSaved={reloadDonations} />
+      {isAdmin && <QuickOnlineEntry donors={donors} onSaved={reloadDonations} />}
 
       <Card className="mb-4">
         <CardHeader className="border-b border-stone-100">

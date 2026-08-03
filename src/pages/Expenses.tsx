@@ -31,7 +31,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
 import ReceiptThumbs from "@/components/ReceiptThumbs";
-import { supabase, isAdminRole, buildReceiptPath, normalizeLineItems, EXPENSE_CATEGORIES, EVENT_SUGGESTIONS, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
+import { supabase, isAdminRole, isPastorRole, buildReceiptPath, normalizeLineItems, EXPENSE_CATEGORIES, EVENT_SUGGESTIONS, type Expense, type ExpenseSource, type ExpenseStatus, type Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { notifyPortal } from "@/lib/notify";
 
@@ -120,6 +120,9 @@ export default function Expenses() {
   // Church-direct (bank auto-debits) is an admin-only flow — members only submit
   // their own reimbursements, so they must never see or pick the church-direct source.
   const isAdmin = isAdminRole(ctx.profile?.role);
+  // The pastor sees every expense like an admin, but has no review actions —
+  // read-only oversight while still being able to submit their own bills.
+  const canSeeAll = isAdmin || isPastorRole(ctx.profile?.role);
   const [expenses, setExpenses] = useState<Expense[]>(sampleExpenses);
   const [loading, setLoading] = useState(true);
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
@@ -886,21 +889,21 @@ export default function Expenses() {
         <TabsContent value="all">
           <ExpenseList
             rows={filtered}
-            isAdmin={isAdmin}
-            title={isAdmin ? "All expenses" : "My reimbursements"}
+            canAct={isAdmin}
+            title={canSeeAll ? "All expenses" : "My reimbursements"}
             onTransition={transition}
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
             onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
             statusTone={statusTone}
-            hideSource={!isAdmin}
+            hideSource={!canSeeAll}
           />
         </TabsContent>
         <TabsContent value="member_submitted">
           <ExpenseList
             rows={filtered.filter((e) => e.source === "member_submitted")}
-            isAdmin={isAdmin}
-            title={isAdmin ? "Member reimbursements" : "My reimbursements"}
+            canAct={isAdmin}
+            title={canSeeAll ? "Member reimbursements" : "My reimbursements"}
             onTransition={transition}
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
@@ -913,7 +916,7 @@ export default function Expenses() {
           <TabsContent value="church_direct">
             <ExpenseList
               rows={filtered.filter((e) => e.source === "church_direct")}
-              isAdmin
+              canAct
               title="Church-direct expenses"
               onTransition={transition}
               onMarkPaid={openPayDialog}
@@ -937,7 +940,7 @@ export default function Expenses() {
 
 function ExpenseList({
   rows,
-  isAdmin,
+  canAct,
   title,
   onTransition,
   onMarkPaid,
@@ -947,8 +950,9 @@ function ExpenseList({
   hideSource,
 }: {
   rows: Expense[];
-  /** Admin sees review actions (Ask/Approve/Reject/Clear); members only see their own submission. */
-  isAdmin: boolean;
+  /** Only the admin trio gets review actions (Ask/Approve/Reject/Clear).
+   *  Pastors see every row read-only; members only see their own submission. */
+  canAct: boolean;
   title: string;
   onTransition: (id: string, status: ExpenseStatus) => void;
   onMarkPaid: (id: string) => void;
@@ -1043,7 +1047,7 @@ function ExpenseList({
                     >
                       View
                     </Button>
-                    {isAdmin && e.status === "pending" && (
+                    {canAct && e.status === "pending" && (
                       <>
                         <Button
                           size="sm"
@@ -1072,7 +1076,7 @@ function ExpenseList({
                         </Button>
                       </>
                     )}
-                    {isAdmin && e.status === "approved" && (
+                    {canAct && e.status === "approved" && (
                       <Button
                         size="sm"
                         variant="warm"
@@ -1082,10 +1086,10 @@ function ExpenseList({
                         Clear reimbursement
                       </Button>
                     )}
-                    {!isAdmin && e.status === "pending" && (
+                    {!canAct && e.status === "pending" && (
                       <span className="text-xs text-stone-400">Awaiting admin review</span>
                     )}
-                    {!isAdmin && e.status === "approved" && (
+                    {!canAct && e.status === "approved" && (
                       <span className="text-xs text-amber-700">Awaiting payment</span>
                     )}
                     {e.status === "rejected" && (

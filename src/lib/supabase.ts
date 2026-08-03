@@ -1,11 +1,20 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // ----- Domain types (mirror the SQL enums) ------------------------------
-export type AppRole = "member" | "treasurer" | "admin" | "super_admin";
+export type AppRole = "member" | "treasurer" | "admin" | "super_admin" | "pastor";
 
 // Admin-level roles — mirrors public.is_admin_or_treasurer() in the database.
+// These roles have full write access (record offerings, approve expenses, …).
 export const isAdminRole = (role: string | null | undefined): boolean =>
   role === "admin" || role === "treasurer" || role === "super_admin";
+
+// The pastor is a read-only overseer: sees every ledger but can change nothing.
+export const isPastorRole = (role: string | null | undefined): boolean => role === "pastor";
+
+// Read-only oversight scope — mirrors public.is_oversight_read() in the DB.
+// Gates which pages are visible, never what a user may write.
+export const isOversightRole = (role: string | null | undefined): boolean =>
+  isAdminRole(role) || isPastorRole(role);
 
 export type DonationKind = "tithe" | "offering" | "building" | "missions" | "other";
 export type PaymentMethod = "cash" | "check" | "online" | "card";
