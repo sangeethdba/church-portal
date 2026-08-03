@@ -133,4 +133,42 @@ describe("Atlanta Little Flock PDF documents", () => {
     expect(receipt.output("datauristring")).toContain("data:application/pdf");
     expect(report.output("datauristring")).toContain("data:application/pdf");
   });
+
+  it("paginates the offering ledger so many checks never push the sign-off off the page", () => {
+    const checks = Array.from({ length: 45 }, (_, index) => ({
+      donorName: `Donor ${index + 1}`,
+      checkNumber: String(1001 + index),
+      amount: 40,
+    }));
+    const summary = generateOfferingSummary({
+      serviceDate: "2026-08-02",
+      serviceName: "Sunday Service",
+      cashDenoms: [
+        { denomination: 100, count: 2, subtotal: 200 },
+        { denomination: 20, count: 5, subtotal: 100 },
+      ],
+      grossCash: 300,
+      deductions: [{ reason: "pastor gift", amount: 20 }],
+      netCash: 280,
+      checks,
+      totalChecks: 1800,
+      cashGifts: [{ donorName: "Jane Doe", checkNumber: "", amount: 50 }],
+      totalCashGifts: 50,
+      totalDeposit: 2130,
+      churchName: "Atlanta Little Flock Church",
+      recordedBy: "Treasurer",
+      counter1Name: "Counter One",
+      counter2Name: "Counter Two",
+    });
+
+    // 45 checks at 16pt each can't fit one letter page — must span multiple
+    // pages instead of drawing the totals/sign-off past the bottom edge.
+    expect(summary.getNumberOfPages()).toBeGreaterThan(1);
+    const pdfBytes = new TextDecoder().decode(new Uint8Array(summary.output("arraybuffer")));
+    expect(pdfBytes).toContain("Total checks");
+    expect(pdfBytes).toContain("Total to be deposited");
+    expect(pdfBytes).toContain("Verified & signed by");
+    expect(pdfBytes).toContain("Counter 1");
+    expect(pdfBytes).toContain("Counter 2");
+  });
 });

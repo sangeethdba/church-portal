@@ -235,6 +235,45 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
     `Date: ${formatDateLong(s.serviceDate)}`,
   ]);
 
+  // Continuation page: close the current page and restart with letterhead.
+  const newPage = () => {
+    drawDocumentFooter(doc);
+    doc.addPage();
+    y = drawDocumentHeader(doc, s.churchName, `Offering ledger · ${s.serviceName}`);
+    y += 10;
+  };
+
+  // Header row for the checks table (re-drawn after a page break).
+  const drawChecksHeader = () => {
+    doc.setFillColor(250, 250, 249);
+    doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text("Donor", margin + 8, y);
+    doc.text("Check #", margin + 260, y);
+    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(28, 25, 23);
+  };
+
+  // Header row for the named-cash-gifts table (re-drawn after a page break).
+  const drawGiftsHeader = () => {
+    doc.setFillColor(240, 253, 244);
+    doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text("Donor", margin + 8, y);
+    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(28, 25, 23);
+  };
+
   // ── Cash breakdown ────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
@@ -258,6 +297,7 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   doc.setTextColor(28, 25, 23);
   for (const d of s.cashDenoms) {
     if (d.count === 0) continue;
+    if (y > 700) newPage();
     doc.text(`$${d.denomination.toLocaleString()}`, margin + 8, y);
     doc.text(`× ${d.count}`, margin + 200, y);
     doc.text(formatCurrency(d.subtotal), pageWidth - margin - 8, y, { align: "right" });
@@ -282,6 +322,7 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     for (const ded of s.deductions) {
+      if (y > 700) newPage();
       doc.text(ded.reason || "—", margin + 8, y);
       doc.text(`${formatCurrency(ded.amount)}`, pageWidth - margin - 8, y, { align: "right" });
       y += 16;
@@ -301,31 +342,30 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
 
   // ── Checks ────────────────────────────────────────────────────────────
   if (s.checks.length > 0) {
+    if (y > 680) newPage();
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     doc.text("Checks", margin, y);
     y += 20;
 
-    doc.setFillColor(250, 250, 249);
-    doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(120, 113, 108);
-    doc.text("Donor", margin + 8, y);
-    doc.text("Check #", margin + 260, y);
-    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
-    y += 14;
+    drawChecksHeader();
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(28, 25, 23);
     for (const ch of s.checks) {
+      if (y > 700) {
+        newPage();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text("Checks", margin, y);
+        y += 20;
+        drawChecksHeader();
+      }
       doc.text(ch.donorName, margin + 8, y);
       doc.text(ch.checkNumber || "—", margin + 260, y);
       doc.text(formatCurrency(ch.amount), pageWidth - margin - 8, y, { align: "right" });
       y += 16;
     }
 
+    if (y > 690) newPage();
     doc.line(margin + 100, y, pageWidth - margin, y);
     y += 4;
     doc.setFont("helvetica", "bold");
@@ -337,29 +377,29 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
 
   // ── Named cash gifts ─────────────────────────────────────────────────
   if (s.cashGifts && s.cashGifts.length > 0) {
+    if (y > 680) newPage();
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     doc.text("Named cash gifts (envelopes)", margin, y);
     y += 18;
 
-    doc.setFillColor(240, 253, 244);
-    doc.rect(margin, y - 14, pageWidth - margin * 2, 20, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(120, 113, 108);
-    doc.text("Donor", margin + 8, y);
-    doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
-    y += 14;
+    drawGiftsHeader();
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(28, 25, 23);
     for (const g of s.cashGifts) {
+      if (y > 700) {
+        newPage();
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text("Named cash gifts (envelopes)", margin, y);
+        y += 18;
+        drawGiftsHeader();
+      }
       doc.text(g.donorName, margin + 8, y);
       doc.text(formatCurrency(g.amount), pageWidth - margin - 8, y, { align: "right" });
       y += 16;
     }
 
+    if (y > 690) newPage();
     doc.line(margin + 100, y, pageWidth - margin, y);
     y += 4;
     doc.setFont("helvetica", "bold");
@@ -370,6 +410,9 @@ export function generateOfferingSummary(s: OfferingSummary): jsPDF {
   }
 
   // ── Grand total ───────────────────────────────────────────────────────
+  // Keep the deposit box and the sign-off block together on one page —
+  // the sign-off needs ~120pt after the box, so break early if needed.
+  if (y > 600) newPage();
   doc.setFillColor(28, 25, 23);
   doc.rect(margin, y - 10, pageWidth - margin * 2, 32, "F");
   doc.setTextColor(255, 255, 255);
