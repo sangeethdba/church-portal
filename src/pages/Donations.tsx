@@ -389,6 +389,7 @@ export default function Donations() {
   const [donors, setDonors] = useState<{ id: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>("all");
+  const [filterMethod, setFilterMethod] = useState<string>("all");
   const [filterYear, setFilterYear] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -446,11 +447,12 @@ export default function Donations() {
       donations.filter(
         (d) =>
           (filterType === "all" || d.donation_type === filterType) &&
+          (filterMethod === "all" || d.payment_method === filterMethod) &&
           (filterYear === "all" || d.donation_date.startsWith(filterYear)) &&
           (!dateFrom || d.donation_date >= dateFrom) &&
           (!dateTo || d.donation_date <= dateTo),
       ),
-    [donations, filterType, filterYear, dateFrom, dateTo],
+    [donations, filterType, filterMethod, filterYear, dateFrom, dateTo],
   );
 
   const totalShown = filtered.reduce((s, d) => s + Number(d.amount || 0), 0);
@@ -728,6 +730,20 @@ export default function Donations() {
               <option value="building">Building</option>
               <option value="missions">Missions</option>
               <option value="other">Other</option>
+            </Select>
+          </div>
+          <div>
+            <Label>Method</Label>
+            <Select
+              value={filterMethod}
+              onChange={(e) => setFilterMethod(e.target.value)}
+              className="mt-1.5 w-36"
+            >
+              <option value="all">All</option>
+              <option value="cash">Cash</option>
+              <option value="check">Check</option>
+              <option value="online">Online</option>
+              <option value="card">Card</option>
             </Select>
           </div>
           <div>
