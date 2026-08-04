@@ -200,18 +200,20 @@ export default function Expenses() {
   }, []);
 
   const [showOnlyDirection, setShowOnlyDirection] = useState<"all" | ExpenseSource>("all");
+  const [filterMethod, setFilterMethod] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
   const filtered = useMemo(
     () => expenses.filter((e) => {
       if (showOnlyDirection !== "all" && e.source !== showOnlyDirection) return false;
+      if (filterMethod !== "all" && e.payment_method !== filterMethod) return false;
       const d = (e.submitted_at ?? "").slice(0, 10);
       if (dateFrom && d < dateFrom) return false;
       if (dateTo && d > dateTo) return false;
       return true;
     }),
-    [expenses, showOnlyDirection, dateFrom, dateTo],
+    [expenses, showOnlyDirection, filterMethod, dateFrom, dateTo],
   );
   const total = filtered.reduce((s, e) => s + Number(e.amount || 0), 0);
   const pending = expenses.filter((e) => e.status === "pending").length;
@@ -368,6 +370,7 @@ export default function Expenses() {
           p_description: baseRow.description ?? null,
           p_notes: baseRow.notes ?? null,
           p_event_name: baseRow.event_name ?? null,
+          p_payment_method: paymentMethod ?? null,
           p_line_items: lineItemsData.length > 0 ? lineItemsData : null,
         });
         expenseId = rpcResult.data as string | null;
@@ -500,7 +503,7 @@ export default function Expenses() {
                   </div>
                 )}
 
-                {/* Payment method (church-direct only) */}
+                {/* Payment method (church-direct) */}
                 {form.source === "church_direct" && (
                   <>
                   <div>
@@ -535,6 +538,18 @@ export default function Expenses() {
                     required
                   />
                 </div>
+                )}
+                {/* Member reimbursement: how they paid out of pocket */}
+                {form.source === "member_submitted" && (
+                  <div className="col-span-2">
+                    <Label>How did you pay?</Label>
+                    <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="mt-1.5">
+                      <option value="cash">Cash</option>
+                      <option value="check">Check</option>
+                      <option value="card">Debit / Credit card</option>
+                      <option value="online">Online / Bank transfer</option>
+                    </Select>
+                  </div>
                 )}
                 <div>
                   <Label htmlFor="cat">Category</Label>
@@ -850,12 +865,12 @@ export default function Expenses() {
         onOpenChange={(v) => { if (!v) setViewExpense(null); }}
       />
 
-      {/* ── Date range filter ──────────────────────────────────────────── */}
+      {/* ── Date range & method filter ─────────────────────────────────── */}
       <Card className="mb-4">
         <CardHeader className="border-b border-stone-100">
           <div className="flex items-center gap-2 text-sm">
             <CalendarRange className="h-4 w-4 text-stone-400" />
-            <span className="text-stone-500">Filter by date range</span>
+            <span className="text-stone-500">Filter by date range & method</span>
           </div>
         </CardHeader>
         <CardBody>
@@ -870,8 +885,20 @@ export default function Expenses() {
               <Input id="exp-to" type="date" value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)} className="mt-1.5 w-44" />
             </div>
-            {(dateFrom || dateTo) && (
-              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+            <div>
+              <Label htmlFor="exp-method">Payment method</Label>
+              <Select id="exp-method" value={filterMethod}
+                onChange={(e) => setFilterMethod(e.target.value)} className="mt-1.5 w-36">
+                <option value="all">All methods</option>
+                <option value="online">Online</option>
+                <option value="check">Check</option>
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="debit">Debit</option>
+              </Select>
+            </div>
+            {(dateFrom || dateTo || filterMethod !== "all") && (
+              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setFilterMethod("all"); }}>
                 Clear
               </Button>
             )}
@@ -982,6 +1009,7 @@ function ExpenseList({
               <Th>Title</Th>
               <Th>Category</Th>
               {!hideSource && <Th>Source</Th>}
+              <Th>Method</Th>
               <Th>Status</Th>
               <Th className="text-right">Amount</Th>
               <Th>Actions</Th>
@@ -1031,6 +1059,9 @@ function ExpenseList({
                     </Badge>
                   </Td>
                 )}
+                <Td>
+                  <span className="text-xs text-stone-500 capitalize">{e.payment_method || "—"}</span>
+                </Td>
                 <Td>
                   <Badge tone={statusTone(e.status)}>{e.status.replace("_", " ")}</Badge>
                 </Td>
