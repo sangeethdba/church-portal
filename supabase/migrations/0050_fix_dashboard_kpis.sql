@@ -36,13 +36,12 @@ declare
 begin
   -- ── YTD Giving: sum of all donations this year + offering totals ──
   -- Offerings already insert child donation rows (via record_offering),
-  -- so we sum offerings.total_amount for deposited offerings and add
-  -- non-offering-linked donations to avoid double-counting.
+  -- so we sum offerings.total_amount and add non-offering-linked donations
+  -- to avoid double-counting. Include all offerings regardless of deposit status.
   select coalesce(
     (select sum(o.total_amount)
        from public.offerings o
-      where o.service_date >= year_start
-        and o.deposit_status = 'deposited'),
+      where o.service_date >= year_start),
     0
   ) + coalesce(
     (select sum(d.amount)
