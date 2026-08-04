@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote, CalendarRange, FileDown, BarChart3, Download } from "lucide-react";
+import { HandCoins, Receipt, Wallet, FileText, CircleDollarSign, ArrowRight, Eye, Paperclip, Banknote, CalendarRange, FileDown, BarChart3, Download, Filter } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Tile, Badge, Label, Select, EmptyState } from "@/components/ui";
 import { downloadMemberReport } from "@/lib/pdf";
 import { PageHeader } from "@/components/Layout";
@@ -45,6 +45,8 @@ export function MemberOverview() {
   const [billFrom, setBillFrom] = useState("");
   const [billTo, setBillTo] = useState("");
   const [period, setPeriod] = useState<ReportPeriod>("this_year");
+  const [donFilterType, setDonFilterType] = useState<string>("all");
+  const [donFilterMethod, setDonFilterMethod] = useState<string>("all");
   const range = memberPeriodRange(period);
 
   useEffect(() => {
@@ -82,6 +84,16 @@ export function MemberOverview() {
   const reimbursed = expenses.filter((e) => e.status === "paid" || e.status === "auto_paid").reduce((s, e) => s + Number(e.amount ?? 0), 0);
   const openBills = expenses.filter((e) => e.status === "pending").length;
   const periodGiving = donations.reduce((s, d) => s + Number(d.amount ?? 0), 0);
+
+  // Client-side type + method filters on top of the period-range query
+  const filteredDonations = useMemo(
+    () => donations.filter((d) =>
+      (donFilterType === "all" || d.donation_type === donFilterType) &&
+      (donFilterMethod === "all" || d.payment_method === donFilterMethod)
+    ),
+    [donations, donFilterType, donFilterMethod],
+  );
+  const filteredGiving = filteredDonations.reduce((s, d) => s + Number(d.amount ?? 0), 0);
 
   // Monthly giving trend for bar chart
   const monthlyGiving = useMemo(() => {
@@ -226,7 +238,8 @@ export function MemberOverview() {
               <div>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">My donations</h2>
                 <p className="text-xs text-stone-500">
-                  {range.label} total: <span className="font-semibold text-stone-700">{formatCurrency(periodGiving)}</span>
+                  {range.label} total: <span className="font-semibold text-stone-700">{formatCurrency(filteredGiving)}</span>
+                  {(donFilterType !== "all" || donFilterMethod !== "all") && ` (filtered from ${formatCurrency(periodGiving)})`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -250,11 +263,35 @@ export function MemberOverview() {
                 <GivingBarChart data={monthlyGiving} />
               </div>
             )}
+            {/* Type + Method quick filters */}
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-stone-100 bg-stone-50/60 px-3 py-2">
+              <Filter className="h-4 w-4 text-stone-400" />
+              <Select value={donFilterType} onChange={(e) => setDonFilterType(e.target.value)} className="h-8 w-28 text-xs">
+                <option value="all">All types</option>
+                <option value="tithe">Tithe</option>
+                <option value="offering">Offering</option>
+                <option value="building">Building</option>
+                <option value="missions">Missions</option>
+                <option value="other">Other</option>
+              </Select>
+              <Select value={donFilterMethod} onChange={(e) => setDonFilterMethod(e.target.value)} className="h-8 w-28 text-xs">
+                <option value="all">All methods</option>
+                <option value="cash">Cash</option>
+                <option value="check">Check</option>
+                <option value="online">Online</option>
+                <option value="card">Card</option>
+              </Select>
+              {(donFilterType !== "all" || donFilterMethod !== "all") && (
+                <Button size="sm" variant="ghost" onClick={() => { setDonFilterType("all"); setDonFilterMethod("all"); }}>Clear</Button>
+              )}
+            </div>
             {!profile?.linked_donor_id ? (
               <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="Not linked to a donor record yet" description="Ask your treasurer to link your account to your donor record so your giving history appears here." />
+            ) : filteredDonations.length === 0 && donations.length > 0 ? (
+              <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No gifts match the filters" description="Try clearing the type or method filter above." />
             ) : donations.length === 0 ? (
               <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No donations yet" description="Gifts recorded under your donor record will appear here." />
-            ) : donations.map((d) => (
+            ) : filteredDonations.map((d) => (
               <div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 transition hover:border-purple-200 hover:bg-purple-50/30">
                 <div>
                   <div className="font-medium text-stone-900">{d.donor_name}</div>

@@ -261,6 +261,16 @@ export default function Reports() {
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredExp]);
 
+  // Expense breakdown by payment method
+  const expByMethod = useMemo(() => {
+    const m: Record<string, number> = {};
+    filteredExp.forEach((e) => {
+      const method = e.payment_method?.trim() || "unspecified";
+      m[method] = (m[method] ?? 0) + Number(e.amount);
+    });
+    return Object.entries(m).sort(([, a], [, b]) => b - a);
+  }, [filteredExp]);
+
   const totalExpenses = filteredExp.reduce((s, e) => s + Number(e.amount), 0);
   const reimbursedExp = filteredExp.filter((e) => e.source === "member_submitted").reduce((s, e) => s + Number(e.amount), 0);
   const accountExp = filteredExp.filter((e) => e.source === "church_direct").reduce((s, e) => s + Number(e.amount), 0);
@@ -544,6 +554,40 @@ export default function Reports() {
                           <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                )}
+              </CardBody>
+            </Card>
+
+            {/* By payment method */}
+            <Card>
+              <CardHeader>
+                <h2 className="font-serif text-lg font-semibold text-stone-900">By payment method</h2>
+                <p className="text-xs text-stone-500">Online/auto-debit, check, debit card, reimbursements — how money left the account</p>
+              </CardHeader>
+              <CardBody className="px-0 pb-0">
+                {expByMethod.length === 0 ? (
+                  <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No expenses in this period" /></div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-t border-stone-100 text-xs uppercase text-stone-500">
+                        <th className="px-6 py-2 text-left font-medium">Method</th>
+                        <th className="px-6 py-2 text-right font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expByMethod.map(([method, amt]) => (
+                        <tr key={method} className="border-t border-stone-50 hover:bg-stone-50/50">
+                          <td className="px-6 py-2 capitalize text-stone-800">{method}</td>
+                          <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
+                        <td className="px-6 py-3">Total</td>
+                        <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalExpenses)}</td>
+                      </tr>
                     </tbody>
                   </table>
                 )}
