@@ -118,3 +118,84 @@ a, button, input, select, textarea, [role="button"], [tabindex] {
 }
 
 .text-balance { text-wrap: balance; }
+
+/* ── Mobile-first improvements ───────────────────────────────────── */
+
+/* Prevent iOS zoom on input focus (must be >= 16px) */
+@media (max-width: 1023px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Horizontal scroll for wide tables on mobile */
+@media (max-width: 768px) {
+  .table-wrap-responsive {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-wrap-responsive table {
+    min-width: 640px;
+  }
+
+  /* Full-width dialogs on mobile */
+  [data-radix-dialog-content] {
+    width: calc(100vw - 32px) !important;
+    max-width: 100% !important;
+    margin: 16px !important;
+    border-radius: var(--radius-lg) !important;
+  }
+
+  /* Stack form fields vertically */
+  .form-stack-mobile {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Full-width buttons on mobile */
+  .btn-full-mobile {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* KPI tiles go 2-col on mobile */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Card padding reduction */
+  .card-compact-mobile {
+    padding: 12px !important;
+  }
+
+  /* Sidebar drawer overlay touch target */
+  .drawer-overlay {
+    min-height: 100dvh;
+  }
+}
+
+/* Extra small phones */
+@media (max-width: 400px) {
+  .kpi-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  [data-radix-dialog-content] {
+    width: calc(100vw - 16px) !important;
+    margin: 8px !important;
+  }
+}
+
+/* Touch-friendly tap targets */
+@media (pointer: coarse) {
+  button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  td button, th button, .table-wrap-responsive button {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}
