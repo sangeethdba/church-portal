@@ -84,20 +84,26 @@ export type ExpenseCategory =
   | "utilities"
   | "internet_phone"
   | "maintenance"
+  | "storage"
+  | "domain_hosting"
   | "supplies"
+  | "equipment"
   | "books"
   | "packaging"
   | "shipping"
   | "travel"
+  | "car_rental"
   | "hotel"
   | "tickets"
   | "salaries"
   | "benevolence"
+  | "love_gifts"
   | "church_support"
   | "missions"
   | "events"
   | "vbs"
   | "conference"
+  | "retreat"
   | "youth"
   | "sunday_snacks"
   | "sunday_school"
@@ -107,29 +113,35 @@ export type ExpenseCategory =
 
 /** Human-friendly labels + grouping for the expense category enum. */
 export const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string; group: string }[] = [
-  { value: "rent", label: "Church rent", group: "Facility" },
+  { value: "rent", label: "Church rental (weekly & special occasions)", group: "Facility" },
   { value: "utilities", label: "Utilities (power, water)", group: "Facility" },
   { value: "internet_phone", label: "Internet & phone", group: "Facility" },
   { value: "maintenance", label: "Maintenance & repairs", group: "Facility" },
+  { value: "storage", label: "Storage unit rental", group: "Facility" },
+  { value: "domain_hosting", label: "Domain renewal & web hosting", group: "Facility" },
+  { value: "equipment", label: "Church equipment & instruments", group: "Ministry" },
   { value: "salaries", label: "Pastor & staff salaries", group: "People" },
   { value: "benevolence", label: "Benevolence / helping families", group: "People" },
+  { value: "love_gifts", label: "Love gifts for pastors & guest speakers", group: "People" },
   { value: "church_support", label: "Supporting other pastors & churches", group: "People" },
   { value: "missions", label: "Missions & outreach", group: "Ministry" },
   { value: "books", label: "Book room & media", group: "Ministry" },
   { value: "packaging", label: "India packaging & goods", group: "Ministry" },
   { value: "shipping", label: "Shipping & courier", group: "Ministry" },
+  { value: "supplies", label: "General supplies", group: "Ministry" },
   { value: "vbs", label: "VBS (Vacation Bible School)", group: "Events" },
   { value: "conference", label: "Annual conference", group: "Events" },
+  { value: "retreat", label: "Retreat center bookings", group: "Events" },
   { value: "youth", label: "Youth ministry", group: "Events" },
   { value: "sunday_snacks", label: "Sunday snacks & fellowship meals", group: "Events" },
   { value: "sunday_school", label: "Sunday school ministry", group: "Events" },
   { value: "events", label: "Other events", group: "Events" },
-  { value: "travel", label: "Travel (fuel, local)", group: "Travel & booking" },
-  { value: "hotel", label: "Hotel booking (conferences / youth)", group: "Travel & booking" },
-  { value: "tickets", label: "Tickets (flights, events)", group: "Travel & booking" },
+  { value: "travel", label: "Travel (fuel, local)", group: "Travel & transport" },
+  { value: "car_rental", label: "Car rental (pickup/drop for events)", group: "Travel & transport" },
+  { value: "hotel", label: "Hotel booking (conferences, speakers, youth)", group: "Travel & transport" },
+  { value: "tickets", label: "Tickets (flights, events)", group: "Travel & transport" },
   { value: "reimbursements", label: "Member reimbursements", group: "People" },
   { value: "bank_fees", label: "Bank & service fees", group: "Facility" },
-  { value: "supplies", label: "General supplies", group: "Ministry" },
   { value: "other", label: "Other", group: "Other" },
 ];
 
