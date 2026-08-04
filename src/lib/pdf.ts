@@ -671,6 +671,13 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   const donorFull = `${s.donor.first_name} ${s.donor.last_name}`;
   let y = margin;
 
+  // Column positions (5-column layout: Date | Type | Method | Memo | Amount)
+  const colDate = margin + 8;
+  const colType = margin + 98;
+  const colMethod = margin + 185;
+  const colMemo = margin + 268;
+  const colAmount = pageWidth - margin - 8;
+
   // Helper: draw the statement table header
   const drawTableHeader = () => {
     doc.setFillColor(245, 243, 240);
@@ -678,9 +685,11 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     doc.setTextColor(87, 83, 78);
-    doc.text("Date", margin + 10, y);
-    doc.text("Type", margin + 140, y);
-    doc.text("Amount", pageWidth - margin - 10, y, { align: "right" });
+    doc.text("Date", colDate, y);
+    doc.text("Type", colType, y);
+    doc.text("Method", colMethod, y);
+    doc.text("Memo", colMemo, y);
+    doc.text("Amount", colAmount, y, { align: "right" });
     y += 14;
     doc.setFont("helvetica", "normal");
     doc.setTextColor(28, 25, 23);
@@ -724,15 +733,15 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   // Table
   drawTableHeader();
 
-  // Helper: build a readable type label for the table
-  const typeLabel = (d: Donation) => {
+  // Helper: build a readable type label (always the gift category)
+  const typeLabel = (d: Donation) => capitalizeWords(d.donation_type);
+
+  // Helper: build the memo (check number, notes, or empty)
+  const memoLabel = (d: Donation) => {
     const method = d.payment_method?.toLowerCase() || "";
-    if (method === "check" && d.check_number) {
-      return `Check #${d.check_number}`;
-    }
-    if (method === "check") return "Check";
-    if (method === "cash") return "Cash";
-    return capitalizeWords(d.donation_type);
+    if (method === "check" && d.check_number) return `#${d.check_number}`;
+    if (d.notes) return d.notes.slice(0, 28);
+    return "";
   };
 
   const sorted = [...s.donations].sort((a, b) =>
@@ -740,9 +749,12 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   );
   for (const d of sorted) {
     if (y > 680) newPage();
-    doc.text(formatDateLong(d.donation_date), margin + 10, y);
-    doc.text(typeLabel(d), margin + 140, y);
-    doc.text(formatCurrency(d.amount), pageWidth - margin - 10, y, { align: "right" });
+    doc.text(formatDateLong(d.donation_date), colDate, y);
+    doc.text(typeLabel(d), colType, y);
+    doc.text(capitalizeWords(d.payment_method), colMethod, y);
+    const memo = memoLabel(d);
+    if (memo) doc.text(memo, colMemo, y);
+    doc.text(formatCurrency(d.amount), colAmount, y, { align: "right" });
     y += 18;
   }
 
