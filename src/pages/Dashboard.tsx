@@ -134,6 +134,9 @@ export default function Dashboard() {
   const [ytdExpenses, setYtdExpenses] = useState(0);
   const [ytdNet, setYtdNet] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [myPendingExpenses, setMyPendingExpenses] = useState(0);
+  const [myPendingTotal, setMyPendingTotal] = useState(0);
+  const [myPaidTotal, setMyPaidTotal] = useState(0);
 
   const isAdmin = isAdminRole(profile?.role);
   // The pastor gets the church-wide snapshot (read-only) — the KPI RPC returns
@@ -269,6 +272,22 @@ export default function Dashboard() {
           setPendingDepositTotal(Number(d.pendingDepositTotal ?? 0));
           const giving = (d.recentGiving as Array<{ id: string; date: string; name: string; meta: string; amount: number }>) ?? [];
           setRecentItems(giving);
+          // Fetch current user's own pending expenses for "My reimbursements" KPI
+          if (profile?.id) {
+            supabase
+              .from("expenses")
+              .select("id, amount, status")
+              .eq("user_id", profile.id)
+              .eq("source", "member_submitted")
+              .then(({ data: myExp }) => {
+                if (myExp) {
+                  const typed = myExp as { id: string; amount: number; status: string }[];
+                  setMyPendingExpenses(typed.filter((e) => e.status === "pending").length);
+                  setMyPendingTotal(typed.filter((e) => e.status === "pending").reduce((s, e) => s + Number(e.amount || 0), 0));
+                  setMyPaidTotal(typed.filter((e) => e.status === "paid").reduce((s, e) => s + Number(e.amount || 0), 0));
+                }
+              });
+          }
           const exp = (d.recentExpenses as Array<Record<string, unknown>>) ?? [];
           setRecentExpenses(exp.map((e) => ({
             id: e.id as string,
@@ -412,10 +431,10 @@ export default function Dashboard() {
         </motion.button>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         {loading ? (
           <>
-            <KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton />
+            <KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton />
           </>
         ) : (
           <>
@@ -426,6 +445,16 @@ export default function Dashboard() {
               onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} index={3} />
             <MotionTile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}
               onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} index={4} />
+            {isAdmin && (
+              <MotionTile
+                label="My reimbursements"
+                value={myPendingExpenses > 0 ? `${myPendingExpenses} · ${formatCurrency(myPendingTotal)}` : myPaidTotal > 0 ? `${formatCurrency(myPaidTotal)} paid` : "0"}
+                accent={myPendingExpenses > 0 ? "amber" : "emerald"}
+                icon={<Banknote className="h-5 w-5" />}
+                onClick={() => navigate("/expenses")}
+                index={5}
+              />
+            )}
           </>
         )}
       </div>
