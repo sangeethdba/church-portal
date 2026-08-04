@@ -279,6 +279,7 @@ export default function Dashboard() {
             description: (e.description as string) ?? null,
             receipt_paths: (e.receipt_paths as string[]) ?? [],
             transfer_receipt_path: (e.transfer_receipt_path as string) ?? null,
+            payment_method: (e.payment_method as string) ?? null,
             user_id: (e.user_id as string) ?? null,
             status: (e.status as Expense["status"]) ?? "pending",
             submitted_at: (e.submitted_at as string) ?? new Date().toISOString(),
@@ -445,7 +446,7 @@ export default function Dashboard() {
           <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-[#3C2A1E]">Recent expenses</h2><Badge tone="amber">{recentExpenses.length}</Badge></div></CardHeader>
           <CardBody className="space-y-3">
             {recentExpenses.length === 0 ? <EmptyState icon={<Receipt className="h-6 w-6" />} title="No expenses logged"/>
-            : recentExpenses.map((e) => (<div key={e.id} className="flex items-center justify-between rounded-lg border border-[#F5F0E8] px-4 py-3 hover:bg-[#FDF2E9]/60"><div className="min-w-0"><div className="truncate font-medium text-[#3C2A1E]">{e.title ?? e.description ?? "—"}</div><div className="text-xs text-[#78716C]">{formatDate(e.submitted_at)} · {e.source === "church_direct" ? "Direct" : "Submitted"} · <Badge tone={e.status === "auto_paid" || e.status === "paid" ? "emerald" : e.status === "rejected" ? "rose" : e.status === "approved" ? "indigo" : "amber"}>{e.status.replace("_", " ")}</Badge></div></div><div className="font-serif text-lg font-semibold text-[#3C2A1E]">{formatCurrency(e.amount)}</div></div>))}
+            : recentExpenses.map((e) => (<div key={e.id} className="flex items-center justify-between rounded-lg border border-[#F5F0E8] px-4 py-3 hover:bg-[#FDF2E9]/60"><div className="min-w-0"><div className="truncate font-medium text-[#3C2A1E]">{e.title ?? e.description ?? "—"}</div><div className="text-xs text-[#78716C]">{formatDate(e.submitted_at)} · {e.source === "church_direct" ? "Direct" : "Submitted"}{e.payment_method ? ` · ${e.payment_method}` : ""} · <Badge tone={e.status === "auto_paid" || e.status === "paid" ? "emerald" : e.status === "rejected" ? "rose" : e.status === "approved" ? "indigo" : "amber"}>{e.status.replace("_", " ")}</Badge></div></div><div className="font-serif text-lg font-semibold text-[#3C2A1E]">{formatCurrency(e.amount)}</div></div>))}
           </CardBody>
         </Card>
       </div>

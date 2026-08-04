@@ -191,6 +191,7 @@ export function MemberOverview() {
                     <div className="font-medium text-stone-900">{e.title ?? e.description ?? "Expense"}</div>
                     <div className="text-xs text-stone-500">
                       {formatDate(e.submitted_at)}
+                      {e.payment_method ? ` · ${e.payment_method}` : ""}
                       {lineItems.length > 1 ? ` · ${lineItems.length} bills` : ""}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
