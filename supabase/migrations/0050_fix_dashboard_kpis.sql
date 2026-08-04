@@ -87,25 +87,31 @@ begin
 
   -- ── Recent giving: latest 5 donations ──
   select coalesce(jsonb_agg(
-    row_to_json(r.*)
-    order by r.donation_date desc, r.created_at desc
-  ) filter (where r.id is not null), '[]'::jsonb)
-  into v_recent_giving
-  from (
-    select
-      d.id,
-      d.donation_date as date,
-      d.donor_name   as name,
-      (d.donation_type || ' · ' || d.payment_method) as meta,
-      d.amount
-    from public.donations d
+    jsonb_build_object(
+      'id',     d.id,
+      'date',   d.donation_date,
+      'name',   d.donor_name,
+      'meta',   d.donation_type || ' · ' || d.payment_method,
+      'amount', d.amount
+    )
     order by d.donation_date desc, d.created_at desc
-    limit 5
-  ) r;
+  ) filter (where d.id is not null), '[]'::jsonb)
+  into v_recent_giving
+  from public.donations d
+  order by d.donation_date desc, d.created_at desc
+  limit 5;
 
   -- ── Recent expenses: latest 5 expenses ──
   select coalesce(jsonb_agg(
-    row_to_json(e.*)
+    jsonb_build_object(
+      'id', e.id, 'title', e.title, 'amount', e.amount, 'status', e.status,
+      'source', e.source, 'submitted_at', e.submitted_at, 'category', e.category,
+      'description', e.description, 'receipt_paths', e.receipt_paths,
+      'transfer_receipt_path', e.transfer_receipt_path, 'user_id', e.user_id,
+      'approved_by', e.approved_by, 'approved_at', e.approved_at,
+      'paid_at', e.paid_at, 'paid_by', e.paid_by, 'notes', e.notes,
+      'created_at', e.created_at
+    )
     order by e.submitted_at desc, e.created_at desc
   ) filter (where e.id is not null), '[]'::jsonb)
   into v_recent_expenses
