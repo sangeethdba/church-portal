@@ -12,6 +12,8 @@ import {
   TrendingUp,
   UserCheck,
   Download,
+  ChevronDown,
+  BarChart3,
 } from "lucide-react";
 import {
   Button,
@@ -103,6 +105,9 @@ export default function Donors() {
   const [donations, setDonations] = useState<DonationStatRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [expandedDonor, setExpandedDonor] = useState<string | null>(null);
+  const [donorMonthly, setDonorMonthly] = useState<{ month: string; amount: number; label: string }[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
 
   // new-donor dialog state
   const [open, setOpen] = useState(false);
@@ -448,6 +453,42 @@ export default function Donors() {
     </div>
   );
 
+  // Expand a donor row to show their 12-month giving trend
+  const toggleExpand = async (donor: Donor) => {
+    if (expandedDonor === donor.id) {
+      setExpandedDonor(null);
+      return;
+    }
+    setExpandedDonor(donor.id);
+    setChartLoading(true);
+    const months: Record<string, number> = {};
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months[d.toISOString().slice(0, 7)] = 0;
+    }
+    const yearStart = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 10);
+    if (supabase) {
+      const { data } = await supabase
+        .from("donations")
+        .select("amount, donation_date")
+        .eq("donor_id", donor.id)
+        .gte("donation_date", yearStart);
+      (data ?? []).forEach((d: { amount: number; donation_date: string }) => {
+        const key = d.donation_date.slice(0, 7);
+        if (months[key] !== undefined) months[key] += Number(d.amount ?? 0);
+      });
+    }
+    setDonorMonthly(
+      Object.entries(months).map(([month, amt]) => ({
+        month,
+        amount: amt,
+        label: new Date(month + "-01").toLocaleDateString("en-US", { month: "short" }),
+      })),
+    );
+    setChartLoading(false);
+  };
+
   const exportCsv = () => {
     const headers = ["First Name","Last Name","Email","Phone","Address","City","State","ZIP","Type","Total Given","Last Gift","Notes"];
     const rows = filtered.map((d) => {
@@ -590,8 +631,10 @@ export default function Donors() {
           <tbody>
             {filtered.map((d) => {
               const st = statsFor(d);
+              const isExpanded = expandedDonor === d.id;
               return (
-                <Tr key={d.id}>
+                <>
+                <Tr key={d.id} className={isExpanded ? "bg-indigo-50/30" : ""}>
                   <Td>
                     <div className="font-medium text-stone-900">
                       {d.first_name} {d.last_name}
@@ -636,18 +679,45 @@ export default function Donors() {
                     {formatCurrency(st.total)}
                   </Td>
                   <Td className="text-right">
-                    {isAdmin && (
+                    <div className="flex items-center justify-end gap-1">
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        iconLeft={<Pencil className="h-3.5 w-3.5" />}
-                        onClick={() => openEdit(d)}
+                        iconLeft={<ChevronDown className={`h-3.5 w-3.5 transition ${isExpanded ? "rotate-180" : ""}`} />}
+                        onClick={() => toggleExpand(d)}
                       >
-                        Edit
+                        {isExpanded ? "Hide" : "Trend"}
                       </Button>
-                    )}
+                      {isAdmin && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          iconLeft={<Pencil className="h-3.5 w-3.5" />}
+                          onClick={() => openEdit(d)}
+                        >
+                          Edit
+                        </Button>
+                      )}
+                    </div>
                   </Td>
                 </Tr>
+                {isExpanded && (
+                  <tr key={`${d.id}-chart`}>
+                    <td colSpan={6} className="bg-indigo-50/20 px-4 py-3">
+                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-stone-500 mb-2">
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        12-month giving trend
+                        {chartLoading && <span className="text-stone-400"> · loading…</span>}
+                      </div>
+                      {donorMonthly.some((m) => m.amount > 0) ? (
+                        <DonorBarChart data={donorMonthly} />
+                      ) : (
+                        <p className="text-xs text-stone-400 py-4">No gifts recorded in the past 12 months.</p>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </>
               );
             })}
           </tbody>
@@ -679,6 +749,41 @@ export default function Donors() {
 
       </>
       )}
+    </div>
+  );
+}
+
+/* ── Donor monthly giving bar chart (inline SVG) ──────────────────── */
+function DonorBarChart({ data }: { data: { month: string; amount: number; label: string }[] }) {
+  const maxVal = Math.max(...data.map((d) => d.amount), 1);
+  const h = 100;
+  const w = Math.max(data.length * 38, 280);
+  const pad = { top: 8, right: 8, bottom: 26, left: 8 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+  const barW = Math.min((chartW / data.length) * 0.7, 20);
+  const gap = chartW / data.length;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Donor giving trend" className="mx-auto">
+        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + chartH} stroke="#d6d3d1" strokeWidth={1} />
+        <line x1={pad.left} y1={pad.top + chartH} x2={w - pad.right} y2={pad.top + chartH} stroke="#d6d3d1" strokeWidth={1} />
+        {data.map((d, i) => {
+          const barH = d.amount > 0 ? (d.amount / maxVal) * chartH : 0;
+          const x = pad.left + i * gap + (gap - barW) / 2;
+          const y = pad.top + chartH - barH;
+          const step = Math.max(1, Math.floor(data.length / 7));
+          const showLabel = i % step === 0 || i === data.length - 1;
+          return (
+            <g key={d.month}>
+              <title>{`${d.label}: ${formatCurrency(d.amount)}`}</title>
+              <rect x={x} y={y} width={barW} height={Math.max(barH, d.amount > 0 ? 2 : 0)} rx={3} fill={d.amount > 0 ? "#6366F1" : "#e7e5e4"} opacity={d.amount > 0 ? 0.85 : 0.4} />
+              {showLabel && <text x={x + barW / 2} y={h - pad.bottom + 13} textAnchor="middle" style={{ fontSize: 9 }} fill="#78716c">{d.label}</text>}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }

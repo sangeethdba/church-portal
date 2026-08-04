@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NavLink, Outlet, useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import {
@@ -16,8 +16,11 @@ import {
   Shield,
   Wallet,
   Upload,
+  Calculator,
+  Search,
 } from "lucide-react";
 import Logo from "./Logo";
+import SearchModal from "./SearchModal";
 import { Button, Badge } from "./ui";
 import { signOut } from "@/lib/auth";
 import { isAdminRole, isPastorRole, type Profile } from "@/lib/supabase";
@@ -33,12 +36,14 @@ const allItems = [
   { to: "/reports", label: "Reports", icon: BarChart3, roles: ["admin"] as string[] },
   { to: "/import", label: "Import", icon: Upload, roles: ["admin"] as string[] },
   { to: "/annual-report", label: "Annual report", icon: FileText, roles: ["admin"] as string[] },
+  { to: "/reconciliation", label: "Reconciliation", icon: Calculator, roles: ["admin"] as string[] },
 ];
 
 export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const ctx = useOutletContext<{ profile: Profile | null; isCounter: boolean }>();
   const isAdmin = isAdminRole(ctx.profile?.role);
   // The pastor is a read-only overseer — every ledger page except Import,
@@ -58,18 +63,39 @@ export default function AppShell() {
     navigate("/", { replace: true });
   };
 
+  // Global search keyboard shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#FEF7ED] text-[#3C2A1E]">
       {/* Mobile top bar */}
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-[#EDE4D8] bg-[#FFFBF5]/95 px-4 py-3 backdrop-blur lg:hidden">
         <Logo size={28} />
-        <button
-          aria-label="Open menu"
-          onClick={() => setDrawerOpen(true)}
-          className="rounded-md p-2 text-[#78716C] hover:bg-[#FDF2E9]"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            aria-label="Search"
+            onClick={() => setSearchOpen(true)}
+            className="rounded-md p-2 text-[#78716C] hover:bg-[#FDF2E9]"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Open menu"
+            onClick={() => setDrawerOpen(true)}
+            className="rounded-md p-2 text-[#78716C] hover:bg-[#FDF2E9]"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       <div className="grid min-h-screen lg:grid-cols-[260px_1fr]">
@@ -121,7 +147,19 @@ export default function AppShell() {
             ))}
           </nav>
 
-          <div className="mt-8 rounded-xl border border-[#EDE4D8] bg-[#FDF2E9]/50 p-4 transition hover:border-[#C67B5C]/30">
+          {/* Global search — desktop */}
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="mt-6 flex w-full items-center gap-2.5 rounded-lg border border-[#EDE4D8] bg-white px-3 py-2.5 text-sm text-[#78716C] transition hover:border-[#C67B5C]/40 hover:text-[#C67B5C]"
+          >
+            <Search className="h-4 w-4" />
+            <span className="flex-1 text-left">Search…</span>
+            <kbd className="hidden rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[10px] font-medium text-stone-400 lg:inline">
+              {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}K
+            </kbd>
+          </button>
+
+          <div className="mt-4 rounded-xl border border-[#EDE4D8] bg-[#FDF2E9]/50 p-4 transition hover:border-[#C67B5C]/30">
             <div className="flex items-center gap-2 font-serif font-semibold text-stone-900">
               <Church className="h-4 w-4 text-[#C67B5C]" />
               {ctx.profile?.church_name && ctx.profile.church_name !== "Grace Community Church" ? ctx.profile.church_name : "Atlanta Little Flock Church"}
@@ -169,6 +207,9 @@ export default function AppShell() {
           className="fixed inset-0 z-40 bg-[#3C2A1E]/30 backdrop-blur-sm lg:hidden"
         />
       )}
+
+      {/* Global search modal */}
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 }
