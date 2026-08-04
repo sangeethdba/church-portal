@@ -51,11 +51,13 @@ begin
     0
   ) into v_ytd_giving;
 
-  -- ── YTD Expenses: total of all expenses this year ──
+  -- ── YTD Expenses: only paid / auto_paid expenses (actual cash outlay).
+  --    Pending/approved bills are shown separately in pendingExpenses.
   select coalesce(sum(e.amount), 0)
     into v_ytd_expenses
     from public.expenses e
-   where e.created_at::date >= year_start;
+   where e.created_at::date >= year_start
+     and e.status in ('paid', 'auto_paid');
 
   -- ── Donor count: active donors ──
   select coalesce(count(*), 0)
