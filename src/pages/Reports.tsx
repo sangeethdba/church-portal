@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { BarChart3, TrendingUp, CircleDollarSign, Receipt, PieChart, CalendarDays, Download, Mail } from "lucide-react";
+import { BarChart3, TrendingUp, CircleDollarSign, Receipt, PieChart, CalendarDays, Download, Mail, LayoutGrid, Columns } from "lucide-react";
 import {
-  Button, Card, CardBody, CardHeader, Select,
+  Button, Card, CardBody, CardHeader, Select, Input, Label,
   Badge, EmptyState, TableWrap, THead, Tr, Th, Td, Tabs, TabsList, TabsTrigger, TabsContent, toast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { supabase, isOversightRole, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { buildIncomeByMethod, buildWeeklyLedgerDetail } from "@/lib/accounting";
+import { buildIncomeByMethod, buildWeeklyLedgerDetail, type WeeklyLedgerDetail } from "@/lib/accounting";
 import { notifyWeeklySummary } from "@/lib/notify";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
@@ -133,6 +133,9 @@ export default function Reports() {
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("this_year");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [detailGrouping, setDetailGrouping] = useState<"weekly" | "monthly">("weekly");
 
   const sendWeeklySummary = async () => {
     setSendingSummary(true);
@@ -181,18 +184,23 @@ export default function Reports() {
   }, []);
 
   const range = periodRange(period);
+  const effectiveFrom = dateFrom || range.start;
+  const effectiveTo = dateTo || "9999-12-31";
 
   const filteredDon = useMemo(
-    () => donations.filter((d) => d.donation_date >= range.start),
-    [donations, range.start],
+    () => donations.filter((d) => d.donation_date >= effectiveFrom && d.donation_date <= effectiveTo),
+    [donations, effectiveFrom, effectiveTo],
   );
   const filteredExp = useMemo(
-    () => expenses.filter((e) => e.submitted_at?.slice(0, 10) >= range.start),
-    [expenses, range.start],
+    () => expenses.filter((e) => {
+      const d = e.submitted_at?.slice(0, 10) ?? "";
+      return d >= effectiveFrom && d <= effectiveTo;
+    }),
+    [expenses, effectiveFrom, effectiveTo],
   );
   const filteredOff = useMemo(
-    () => offerings.filter((o) => o.service_date >= range.start),
-    [offerings, range.start],
+    () => offerings.filter((o) => o.service_date >= effectiveFrom && o.service_date <= effectiveTo),
+    [offerings, effectiveFrom, effectiveTo],
   );
 
   // Standalone gifts (not part of a weekly offering). Weekly offering checks
@@ -293,6 +301,68 @@ export default function Reports() {
     [weeklyLedger],
   );
 
+  // Monthly aggregation (same shape as weekly, keyed by YYYY-MM)
+  const monthlyLedger = useMemo(() => {
+    const months = new Map<string, WeeklyLedgerDetail>();
+    const zero = (): WeeklyLedgerDetail => ({ anonymous: 0, named: 0, checks: 0, pastor: 0, online: 0, other: 0 });
+    for (const [week, v] of weeklyLedger) {
+      const mKey = week.slice(0, 7);
+      const cur = months.get(mKey) ?? zero();
+      cur.anonymous += v.anonymous; cur.named += v.named; cur.checks += v.checks;
+      cur.pastor += v.pastor; cur.online += v.online; cur.other += v.other;
+      months.set(mKey, cur);
+    }
+    return Array.from(months.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [weeklyLedger]);
+
+  const monthlyOff = useMemo(
+    () => monthlyLedger.map(([month, v]) => [month, { cash: v.anonymous + v.named + v.pastor, check: v.checks, other: v.online + v.other }] as const),
+    [monthlyLedger],
+  );
+
+  // Expenses monthly trend
+  const expMonthlyTrend = useMemo(() => {
+    const months = new Map<string, { reimbursed: number; direct: number }>();
+    for (const e of filteredExp) {
+      const d = e.submitted_at?.slice(0, 7) ?? "";
+      if (!d) continue;
+      const cur = months.get(d) ?? { reimbursed: 0, direct: 0 };
+      if (e.source === "member_submitted") cur.reimbursed += Number(e.amount);
+      else cur.direct += Number(e.amount);
+      months.set(d, cur);
+    }
+    return Array.from(months.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [filteredExp]);
+
+  // Yearly comparison (all-time, for Summary tab)
+  const yearlyComparison = useMemo(() => {
+    const years = new Map<string, { income: number; expenses: number; offerings: number }>();
+    for (const d of donations) {
+      const y = d.donation_date?.slice(0, 4);
+      if (!y) continue;
+      const cur = years.get(y) ?? { income: 0, expenses: 0, offerings: 0 };
+      cur.income += Number(d.amount);
+      years.set(y, cur);
+    }
+    for (const o of offerings) {
+      const y = o.service_date?.slice(0, 4);
+      if (!y) continue;
+      const cur = years.get(y) ?? { income: 0, expenses: 0, offerings: 0 };
+      cur.offerings += Number(o.total_amount ?? 0);
+      cur.income += Number(o.total_amount ?? 0);
+      years.set(y, cur);
+    }
+    for (const e of expenses) {
+      const d = e.submitted_at?.slice(0, 4) ?? "";
+      if (!d) continue;
+      if (e.status !== "paid" && e.status !== "auto_paid") continue;
+      const cur = years.get(d) ?? { income: 0, expenses: 0, offerings: 0 };
+      cur.expenses += Number(e.amount);
+      years.set(d, cur);
+    }
+    return Array.from(years.entries()).sort(([a], [b]) => b.localeCompare(a));
+  }, [donations, expenses, offerings]);
+
   const statusTone = (s: string) =>
     s === "paid" || s === "auto_paid" ? "emerald" : s === "rejected" ? "rose" : s === "approved" ? "indigo" : "amber";
 
@@ -302,14 +372,24 @@ export default function Reports() {
         title="Reports"
         subtitle="Weekly, monthly, and yearly summaries of offerings, expenses, and net position."
         badge={`${filteredOff.length} offerings · ${filteredExp.length} expenses`}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="w-36">
+        actions={            <div className="flex flex-wrap items-center gap-2">
+            <Select value={period} onChange={(e) => { setPeriod(e.target.value as Period); setDateFrom(""); setDateTo(""); }} className="w-36">
               <option value="this_week">This week</option>
               <option value="this_month">This month</option>
               <option value="this_year">This year</option>
               <option value="all">All time</option>
             </Select>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-[11px]">From</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPeriod("all"); }} className="h-9 w-36 text-xs" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-[11px]">To</Label>
+              <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPeriod("all"); }} className="h-9 w-36 text-xs" />
+            </div>
+            {(dateFrom || dateTo) && (
+              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setPeriod("this_year"); }}>Clear dates</Button>
+            )}
             {canSendWeekly && (
               <Button
                 variant="outline"
@@ -326,7 +406,7 @@ export default function Reports() {
       />
 
       <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50 p-3 text-center text-sm text-stone-600">
-        Showing data from <strong>{range.label}</strong>
+        Showing data from <strong>{dateFrom || dateTo ? `${dateFrom || "earliest"} – ${dateTo || "today"}` : range.label}</strong>
       </div>
 
       {/* KPI row */}
@@ -499,6 +579,19 @@ export default function Reports() {
               </CardBody>
             </Card>
 
+            {/* Expenses monthly trend */}
+            {expMonthlyTrend.length > 0 && (
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <h2 className="font-serif text-lg font-semibold text-stone-900">Monthly expense trend</h2>
+                  <p className="text-xs text-stone-500">Stacked reimbursed (amber) vs. direct (indigo) — hover for details</p>
+                </CardHeader>
+                <CardBody>
+                  <ExpenseTrendChart data={expMonthlyTrend} />
+                </CardBody>
+              </Card>
+            )}
+
             {/* By event */}
             <Card>
               <CardHeader>
@@ -642,28 +735,48 @@ export default function Reports() {
                   <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly offering collections</h2>
                   <p className="text-xs text-stone-500">Per-Sunday ledger: gross anonymous plate cash, named envelope gifts, checks, minus pastor-gift deductions — online gifts kept separate</p>
                 </div>
-                {weeklyOff.length > 0 && (
-                  <Button size="sm" variant="outline" onClick={() => {
-                    const csv = ["Week,Anonymous cash,Named cash,Checks,Pastor gifts,Online,Total", ...weeklyLedger.map(([week, v]) => {
-                      const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
-                      return `${weekRangeLabel(week)},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total}`;
-                    })].join("\n");
-                    const blob = new Blob([csv], { type: "text/csv" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a"); a.href = url; a.download = `weekly-offerings-${range.label.replace(/\s/g, "-").toLowerCase()}.csv`; a.click();
-                    URL.revokeObjectURL(url);
-                  }} iconLeft={<Download className="h-3.5 w-3.5" />}>Export CSV</Button>
-                )}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setDetailGrouping("weekly")}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${detailGrouping === "weekly" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-700"}`}
+                    >
+                      <LayoutGrid className="mr-1 inline h-3 w-3" /> Weekly
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDetailGrouping("monthly")}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${detailGrouping === "monthly" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-700"}`}
+                    >
+                      <Columns className="mr-1 inline h-3 w-3" /> Monthly
+                    </button>
+                  </div>
+                  {weeklyOff.length > 0 && (
+                    <Button size="sm" variant="outline" onClick={() => {
+                      const ledger = detailGrouping === "weekly" ? weeklyLedger : monthlyLedger;
+                      const csv = [`${detailGrouping === "weekly" ? "Week" : "Month"},Anonymous cash,Named cash,Checks,Pastor gifts,Online,Total`, ...ledger.map(([k, v]) => {
+                        const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
+                        const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(k) : new Date(k + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                        return `${rowLabel},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total}`;
+                      })].join("\n");
+                      const blob = new Blob([csv], { type: "text/csv" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a"); a.href = url; a.download = `${detailGrouping === "weekly" ? "weekly" : "monthly"}-offerings-${range.label.replace(/\s/g, "-").toLowerCase()}.csv`; a.click();
+                      URL.revokeObjectURL(url);
+                    }} iconLeft={<Download className="h-3.5 w-3.5" />}>Export CSV</Button>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardBody className="px-0 pb-0">
-              {weeklyOff.length === 0 ? (
+              {(detailGrouping === "weekly" ? weeklyLedger : monthlyLedger).length === 0 ? (
                 <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No offerings in this period" /></div>
               ) : (
                 <TableWrap className="min-w-[760px] border-0 shadow-none">
                   <THead>
                     <Tr>
-                      <Th>Week of</Th>
+                      <Th>{detailGrouping === "weekly" ? "Week of" : "Month"}</Th>
                       <Th className="text-right">Anonymous cash</Th>
                       <Th className="text-right">Named cash</Th>
                       <Th className="text-right">Checks</Th>
@@ -673,11 +786,12 @@ export default function Reports() {
                     </Tr>
                   </THead>
                   <tbody>
-                    {weeklyLedger.map(([week, v]) => {
+                    {(detailGrouping === "weekly" ? weeklyLedger : monthlyLedger).map(([key, v]) => {
                       const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
+                      const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(key) : new Date(key + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" });
                       return (
-                        <Tr key={week}>
-                          <Td className="font-medium">{weekRangeLabel(week)}</Td>
+                        <Tr key={key}>
+                          <Td className="font-medium">{rowLabel}</Td>
                           <Td className="text-right font-mono text-sm">{formatCurrency(v.anonymous)}</Td>
                           <Td className="text-right font-mono text-sm text-lime-700">{formatCurrency(v.named)}</Td>
                           <Td className="text-right font-mono text-sm">{formatCurrency(v.checks)}</Td>
@@ -742,6 +856,45 @@ export default function Reports() {
                 </div>
               </CardBody>
             </Card>
+
+            {/* Yearly comparison */}
+            {yearlyComparison.length > 1 && (
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <h2 className="font-serif text-lg font-semibold text-stone-900">Yearly comparison</h2>
+                  <p className="text-xs text-stone-500">Year-over-year income, offerings, expenses, and net — all years on record</p>
+                </CardHeader>
+                <CardBody className="px-0 pb-0">
+                  <TableWrap className="min-w-[600px] border-0 shadow-none">
+                    <THead>
+                      <Tr>
+                        <Th>Year</Th>
+                        <Th className="text-right">Income</Th>
+                        <Th className="text-right">Offerings</Th>
+                        <Th className="text-right">Expenses</Th>
+                        <Th className="text-right">Net</Th>
+                      </Tr>
+                    </THead>
+                    <tbody>
+                      {yearlyComparison.map(([year, v]) => {
+                        const net = v.income - v.expenses;
+                        return (
+                          <Tr key={year}>
+                            <Td className="font-medium text-stone-900">{year}</Td>
+                            <Td className="text-right font-mono text-sm">{formatCurrency(v.income)}</Td>
+                            <Td className="text-right font-mono text-sm text-emerald-700">{formatCurrency(v.offerings)}</Td>
+                            <Td className="text-right font-mono text-sm text-rose-700">{formatCurrency(v.expenses)}</Td>
+                            <Td className={`text-right font-serif font-semibold ${net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                              {net >= 0 ? "+" : ""}{formatCurrency(net)}
+                            </Td>
+                          </Tr>
+                        );
+                      })}
+                    </tbody>
+                  </TableWrap>
+                </CardBody>
+              </Card>
+            )}
 
             <Card className="lg:col-span-2">
               <CardHeader>
@@ -856,5 +1009,58 @@ function WeeklyBarChart({ data, maxBars }: { data: readonly (readonly [string, {
         </div>
       </CardBody>
     </Card>
+  );
+}
+
+/* ── Stacked bar chart for monthly expenses ────────────────────────── */
+function ExpenseTrendChart({ data }: { data: readonly (readonly [string, { reimbursed: number; direct: number }])[] }) {
+  const maxVal = Math.max(...data.map(([, v]) => v.reimbursed + v.direct), 1);
+  const h = 200;
+  const w = Math.max(data.length * 52, 320);
+  const pad = { top: 20, right: 10, bottom: 50, left: 50 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+  const barW = Math.min((chartW / data.length) * 0.65, 32);
+  const gap = chartW / data.length;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Monthly expense trend" className="mx-auto">
+        {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+          const y = pad.top + chartH * (1 - pct);
+          return (
+            <g key={pct}>
+              <line x1={pad.left} y1={y} x2={w - pad.right} y2={y} stroke="#e7e5e4" strokeWidth={pct === 0 ? 1 : 0.5} strokeDasharray={pct === 0 ? "" : "3 3"} />
+              <text x={pad.left - 4} y={y + 3} textAnchor="end" style={{ fontSize: 9 }} fill="#a8a29e">{formatCurrency(maxVal * pct)}</text>
+            </g>
+          );
+        })}
+        {data.map(([month, v], i) => {
+          const x = pad.left + i * gap + (gap - barW) / 2;
+          const total = v.reimbursed + v.direct;
+          const barH = total > 0 ? (total / maxVal) * chartH : 0;
+          const y = pad.top + chartH - barH;
+          const reimbH = total > 0 ? (v.reimbursed / total) * barH : 0;
+          const directH = total > 0 ? (v.direct / total) * barH : 0;
+          const label = new Date(month + "-01").toLocaleDateString("en-US", { month: "short" });
+          return (
+            <g key={month} className="group">
+              <title>{`${label}: Reimbursed ${formatCurrency(v.reimbursed)} · Direct ${formatCurrency(v.direct)} · Total ${formatCurrency(total)}`}</title>
+              {directH > 0 && <rect x={x} y={y} width={barW} height={directH} rx={2} fill="#6366f1" opacity={0.8} />}
+              {reimbH > 0 && <rect x={x} y={y + directH} width={barW} height={reimbH} rx={directH === 0 ? 2 : 0} fill="#f59e0b" opacity={0.8} />}
+              <text x={x + barW / 2} y={h - pad.bottom + 14} textAnchor="middle" style={{ fontSize: 9 }} fill="#78716c" transform={`rotate(-35 ${x + barW / 2} ${h - pad.bottom + 14})`}>{label}</text>
+            </g>
+          );
+        })}
+        <g transform={`translate(${pad.left}, ${h - 4})`}>
+          {[{ label: "Reimbursed", color: "#f59e0b" }, { label: "Direct", color: "#6366f1" }].map((item, i) => (
+            <g key={item.label} transform={`translate(${i * 72}, 0)`}>
+              <rect x={0} y={-8} width={10} height={10} rx={2} fill={item.color} opacity={0.8} />
+              <text x={14} y={0} style={{ fontSize: 10 }} fill="#78716c">{item.label}</text>
+            </g>
+          ))}
+        </g>
+      </svg>
+    </div>
   );
 }
