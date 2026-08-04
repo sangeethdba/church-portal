@@ -11,8 +11,10 @@
 -- catches and silently falls back to demo data. This migration adds the
 -- missing helper so all three RPCs start returning real data.
 --
--- Idempotent: safe to re-run (creates or replaces).
+-- Idempotent: safe to re-run (drops first, then recreates).
 -- ============================================================================
+
+drop function if exists public._get_caller_info();
 
 create or replace function public._get_caller_info()
 returns table (
