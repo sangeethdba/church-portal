@@ -14,6 +14,7 @@ import TaxReport from "@/pages/TaxReport";
 import Offerings from "@/pages/Offerings";
 import Reports from "@/pages/Reports";
 import ImportStatements from "@/pages/ImportStatements";
+import AnnualReport from "@/pages/AnnualReport";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/offerings" element={<Offerings />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/import" element={<ImportStatements />} />
+          <Route path="/annual-report" element={<AnnualReport />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

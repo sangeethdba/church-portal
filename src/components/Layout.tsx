@@ -32,6 +32,7 @@ const allItems = [
   { to: "/tax-report", label: "Tax report", icon: FileText, roles: ["admin"] as string[] },
   { to: "/reports", label: "Reports", icon: BarChart3, roles: ["admin"] as string[] },
   { to: "/import", label: "Import", icon: Upload, roles: ["admin"] as string[] },
+  { to: "/annual-report", label: "Annual report", icon: FileText, roles: ["admin"] as string[] },
 ];
 
 export default function AppShell() {
