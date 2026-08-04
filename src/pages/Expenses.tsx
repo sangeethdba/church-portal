@@ -219,6 +219,14 @@ export default function Expenses() {
   const total = filtered.reduce((s, e) => s + Number(e.amount || 0), 0);
   const pending = expenses.filter((e) => e.status === "pending").length;
 
+  // ── My expenses (current user's submissions) ──────────────────────────
+  const myExpenses = useMemo(
+    () => filtered.filter((e) => e.source === "member_submitted" && e.user_id === ctx.profile?.id),
+    [filtered, ctx.profile?.id],
+  );
+  const myPending = myExpenses.filter((e) => e.status === "pending").length;
+  const myReimbursed = myExpenses.filter((e) => e.status === "paid").reduce((s, e) => s + Number(e.amount || 0), 0);
+
   const transition = async (id: string, status: ExpenseStatus) => {
     const patch: Partial<Expense> = { status };
     if (status === "approved") patch.approved_at = new Date().toISOString();
@@ -908,6 +916,19 @@ export default function Expenses() {
       <Tabs defaultValue="all">
         <TabsList>
           <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="my">
+            My expenses
+            {(myPending > 0 || myReimbursed > 0) && (
+              <span className="ml-1.5 inline-flex items-center gap-1 text-[10px]">
+                {myPending > 0 && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">{myPending} pending</span>
+                )}
+                {myReimbursed > 0 && (
+                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700">{formatCurrency(myReimbursed)} paid</span>
+                )}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="member_submitted">Member-side</TabsTrigger>
           {isAdmin && <TabsTrigger value="church_direct">Church-direct</TabsTrigger>}
         </TabsList>
@@ -923,6 +944,19 @@ export default function Expenses() {
             onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
             statusTone={statusTone}
             hideSource={!canSeeAll}
+          />
+        </TabsContent>
+        <TabsContent value="my">
+          <ExpenseList
+            rows={myExpenses}
+            canAct={isAdmin}
+            title={`My reimbursements${myExpenses.length > 0 ? ` \u00b7 ${formatCurrency(myExpenses.reduce((s, e) => s + Number(e.amount || 0), 0))} total` : ""}`}
+            onTransition={transition}
+            onMarkPaid={openPayDialog}
+            onView={setViewExpense}
+            onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
+            statusTone={statusTone}
+            hideSource
           />
         </TabsContent>
         <TabsContent value="member_submitted">
