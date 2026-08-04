@@ -86,38 +86,40 @@ begin
    where o.deposit_status = 'pending_deposit';
 
   -- ── Recent giving: latest 5 donations ──
-  select coalesce(jsonb_agg(
-    jsonb_build_object(
-      'id',     d.id,
-      'date',   d.donation_date,
-      'name',   d.donor_name,
-      'meta',   d.donation_type || ' · ' || d.payment_method,
-      'amount', d.amount
-    )
-    order by d.donation_date desc, d.created_at desc
-  ) filter (where d.id is not null), '[]'::jsonb)
-  into v_recent_giving
-  from public.donations d
-  order by d.donation_date desc, d.created_at desc
-  limit 5;
+  select coalesce((
+    select jsonb_agg(t.obj)
+    from (
+      select jsonb_build_object(
+        'id',     d.id,
+        'date',   d.donation_date,
+        'name',   d.donor_name,
+        'meta',   d.donation_type || ' · ' || d.payment_method,
+        'amount', d.amount
+      ) as obj
+      from public.donations d
+      order by d.donation_date desc, d.created_at desc
+      limit 5
+    ) t
+  ), '[]'::jsonb) into v_recent_giving;
 
   -- ── Recent expenses: latest 5 expenses ──
-  select coalesce(jsonb_agg(
-    jsonb_build_object(
-      'id', e.id, 'title', e.title, 'amount', e.amount, 'status', e.status,
-      'source', e.source, 'submitted_at', e.submitted_at, 'category', e.category,
-      'description', e.description, 'receipt_paths', e.receipt_paths,
-      'transfer_receipt_path', e.transfer_receipt_path, 'user_id', e.user_id,
-      'approved_by', e.approved_by, 'approved_at', e.approved_at,
-      'paid_at', e.paid_at, 'paid_by', e.paid_by, 'notes', e.notes,
-      'created_at', e.created_at
-    )
-    order by e.submitted_at desc, e.created_at desc
-  ) filter (where e.id is not null), '[]'::jsonb)
-  into v_recent_expenses
-  from public.expenses e
-  order by e.submitted_at desc, e.created_at desc
-  limit 5;
+  select coalesce((
+    select jsonb_agg(t.obj)
+    from (
+      select jsonb_build_object(
+        'id', e.id, 'title', e.title, 'amount', e.amount, 'status', e.status,
+        'source', e.source, 'submitted_at', e.submitted_at, 'category', e.category,
+        'description', e.description, 'receipt_paths', e.receipt_paths,
+        'transfer_receipt_path', e.transfer_receipt_path, 'user_id', e.user_id,
+        'approved_by', e.approved_by, 'approved_at', e.approved_at,
+        'paid_at', e.paid_at, 'paid_by', e.paid_by, 'notes', e.notes,
+        'created_at', e.created_at
+      ) as obj
+      from public.expenses e
+      order by e.submitted_at desc, e.created_at desc
+      limit 5
+    ) t
+  ), '[]'::jsonb) into v_recent_expenses;
 
   -- ── Return as a single jsonb object ──
   return jsonb_build_object(
