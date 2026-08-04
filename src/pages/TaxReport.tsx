@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { FileDown, FileText, Shield } from "lucide-react";
+import { FileDown, FileText, Shield, Download } from "lucide-react";
 import {
   Button,
   Card,
@@ -85,6 +85,56 @@ export default function TaxReport() {
   );
 
   const totalAmount = filtered.reduce((s, d) => s + Number(d.amount || 0), 0);
+
+  // ── Bulk download all donor statements for the selected year ──────────
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const donorsWithGifts = useMemo(
+    () => donors.filter((d) => {
+      const name = `${d.first_name} ${d.last_name}`;
+      return donations.some((don) =>
+        (don.donor_id === d.id || don.donor_name === name) &&
+        Number(don.donation_date.slice(0, 4)) === year
+      );
+    }),
+    [donors, donations, year],
+  );
+
+  const onBulkDownload = async () => {
+    if (!supabase || donorsWithGifts.length === 0) return;
+    setBulkGenerating(true);
+    const yearDonations = donations.filter((d) => Number(d.donation_date.slice(0, 4)) === year);
+    // Generate each donor's statement sequentially
+    for (const donor of donorsWithGifts) {
+      const name = `${donor.first_name} ${donor.last_name}`;
+      const donorGifts = yearDonations.filter((d) => d.donor_id === donor.id || d.donor_name === name);
+      const total = donorGifts.reduce((s, d) => s + Number(d.amount || 0), 0);
+      if (donorGifts.length === 0) continue;
+      const stmt: AnnualStatement = {
+        donor: {
+          ...(donor as unknown as Donor),
+          is_family: false,
+          family_members: [],
+          notes: null,
+          is_active: true,
+          total_donations: total,
+          last_donation_date: donorGifts[0]?.donation_date ?? null,
+          linked_user_id: null,
+          created_by: null,
+          created_at: new Date().toISOString(),
+        },
+        year,
+        donations: donorGifts as Donation[],
+        total,
+        churchName:
+          (typeof window !== "undefined" && localStorage.getItem("church_name")) ||
+          "Atlanta Little Flock Church",
+      };
+      downloadStatement(stmt);
+      // Small delay between downloads so the browser doesn't throttle
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    setBulkGenerating(false);
+  };
 
   const onIssue = () => {
     if (!donor) return;
@@ -182,6 +232,28 @@ export default function TaxReport() {
           </div>
         </CardBody>
       </Card>
+
+      {/* Bulk download all */}
+      {donorsWithGifts.length > 0 && (
+        <Card className="mb-6 border-dashed border-indigo-200 bg-indigo-50/30">
+          <CardBody>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-serif text-sm font-semibold text-indigo-900">Bulk download {year} statements</h3>
+                <p className="text-xs text-indigo-600">{donorsWithGifts.length} donor{donorsWithGifts.length === 1 ? "" : "s"} with gifts in {year} — each statement will download as a separate PDF.</p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={onBulkDownload}
+                disabled={bulkGenerating}
+                iconLeft={<Download className="h-4 w-4" />}
+              >
+                {bulkGenerating ? `Generating ${donorsWithGifts.length}…` : `Download all ${donorsWithGifts.length} statement${donorsWithGifts.length === 1 ? "" : "s"}`}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {!selectedDonor ? (
         <EmptyState

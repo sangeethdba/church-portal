@@ -11,6 +11,7 @@ import {
   HandCoins,
   TrendingUp,
   UserCheck,
+  Download,
 } from "lucide-react";
 import {
   Button,
@@ -447,6 +448,25 @@ export default function Donors() {
     </div>
   );
 
+  const exportCsv = () => {
+    const headers = ["First Name","Last Name","Email","Phone","Address","City","State","ZIP","Type","Total Given","Last Gift","Notes"];
+    const rows = filtered.map((d) => {
+      const st = statsFor(d);
+      return [
+        d.first_name, d.last_name, d.email ?? "", d.phone ?? "",
+        d.address ?? "", d.city ?? "", d.state ?? "", d.zip_code ?? "",
+        d.is_family ? "Family" : "Individual",
+        st.total.toString(), st.last ?? "", (d.notes ?? "").replace(/"/g, '""'),
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`);
+    });
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `donors-export-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       {!canAccess && (
@@ -539,6 +559,9 @@ export default function Donors() {
             onChange={(e) => setSearch(e.target.value)}
             className="border-0 shadow-none focus-visible:ring-0"
           />
+          <Button variant="outline" size="sm" onClick={exportCsv} iconLeft={<Download className="h-4 w-4" />}>
+            CSV
+          </Button>
         </CardBody>
       </Card>
 
