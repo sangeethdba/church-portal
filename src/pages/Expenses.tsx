@@ -184,6 +184,7 @@ export default function Expenses() {
   const [payExpenseId, setPayExpenseId] = useState<string | null>(null);
   const [transferFile, setTransferFile] = useState<File | null>(null);
   const [paySaving, setPaySaving] = useState(false);
+  const [payMethod, setPayMethod] = useState("online");
   const transferInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -264,6 +265,7 @@ export default function Expenses() {
       await supabase.rpc("admin_update_expense", {
         p_expense_id: payExpenseId,
         p_status: "paid",
+        p_payment_method: payMethod,
         p_transfer_receipt_path: transferPath,
       });
       // Best-effort email notification
@@ -370,7 +372,6 @@ export default function Expenses() {
           p_description: baseRow.description ?? null,
           p_notes: baseRow.notes ?? null,
           p_event_name: baseRow.event_name ?? null,
-          p_payment_method: paymentMethod ?? null,
           p_line_items: lineItemsData.length > 0 ? lineItemsData : null,
         });
         expenseId = rpcResult.data as string | null;
@@ -450,6 +451,7 @@ export default function Expenses() {
   const openPayDialog = (id: string) => {
     setPayExpenseId(id);
     setTransferFile(null);
+    setPayMethod("online");
     setPayOpen(true);
   };
 
@@ -539,18 +541,7 @@ export default function Expenses() {
                   />
                 </div>
                 )}
-                {/* Member reimbursement: how they paid out of pocket */}
-                {form.source === "member_submitted" && (
-                  <div className="col-span-2">
-                    <Label>How did you pay?</Label>
-                    <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="mt-1.5">
-                      <option value="cash">Cash</option>
-                      <option value="check">Check</option>
-                      <option value="card">Debit / Credit card</option>
-                      <option value="online">Online / Bank transfer</option>
-                    </Select>
-                  </div>
-                )}
+
                 <div>
                   <Label htmlFor="cat">Category</Label>
                   <Select
@@ -805,6 +796,14 @@ export default function Expenses() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>How is the church paying this reimbursement?</Label>
+              <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} className="mt-1.5">
+                <option value="online">Online / Direct bank transfer</option>
+                <option value="check">Check</option>
+                <option value="cash">Cash</option>
+              </Select>
+            </div>
             <div>
               <Label>Bank transfer receipt</Label>
               <div className="mt-1.5">
