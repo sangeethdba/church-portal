@@ -957,7 +957,7 @@ function WeeklyBarChart({ data, maxBars }: { data: readonly (readonly [string, {
     <Card className="mb-6 overflow-hidden">
       <CardHeader>
         <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly trend</h2>
-        <p className="text-xs text-stone-500">Stacked cash · checks · other gifts — hover for details</p>
+        <p className="text-xs text-stone-500">Stacked cash · checks · online gifts — hover for details</p>
       </CardHeader>
       <CardBody>
         <div className="overflow-x-auto">
@@ -988,7 +988,7 @@ function WeeklyBarChart({ data, maxBars }: { data: readonly (readonly [string, {
               const label = new Date(week + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
               return (
                 <g key={week} className="group">
-                  <title>{`${label}: Cash ${formatCurrency(v.cash)} · Checks ${formatCurrency(v.check)} · Other ${formatCurrency(v.other)} · Total ${formatCurrency(total)}`}</title>
+                  <title>{`${label}: Cash ${formatCurrency(v.cash)} · Checks ${formatCurrency(v.check)} · Online ${formatCurrency(v.other)} · Total ${formatCurrency(total)}`}</title>
                   {otherH > 0 && <rect x={x} y={y} width={barW} height={otherH} rx={2} fill="#6366f1" opacity={0.85} />}
                   {checkH > 0 && <rect x={x} y={y + otherH} width={barW} height={checkH} fill="#f59e0b" opacity={0.85} />}
                   {cashH > 0 && <rect x={x} y={y + otherH + checkH} width={barW} height={cashH} rx={otherH + checkH === 0 ? 2 : 0} fill="#10b981" opacity={0.85} />}
@@ -998,7 +998,7 @@ function WeeklyBarChart({ data, maxBars }: { data: readonly (readonly [string, {
             })}
             {/* Legend */}
             <g transform={`translate(${pad.left}, ${h - 4})`}>
-              {[{ label: "Cash", color: "#10b981" }, { label: "Check", color: "#f59e0b" }, { label: "Other", color: "#6366f1" }].map((item, i) => (
+              {[{ label: "Cash", color: "#10b981" }, { label: "Check", color: "#f59e0b" }, { label: "Online", color: "#6366f1" }].map((item, i) => (
                 <g key={item.label} transform={`translate(${i * 64}, 0)`}>
                   <rect x={0} y={-8} width={10} height={10} rx={2} fill={item.color} opacity={0.85} />
                   <text x={14} y={0} style={{ fontSize: 10 }} fill="#78716c">{item.label}</text>
