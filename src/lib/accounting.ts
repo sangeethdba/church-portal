@@ -240,3 +240,51 @@ export function buildIncomeByMethod(
     .map(([method, amount]) => ({ method, amount: Math.round(amount * 100) / 100 }))
     .sort((a, b) => b.amount - a.amount);
 }
+
+export interface MethodDisplayRow {
+  label: string;
+  amount: number;
+  /** Indented derivation line under a group (gross plate, pastor gift…). */
+  indent?: boolean;
+  /** Headline group/line — rendered bold. */
+  bold?: boolean;
+  /** Negative money (deduction) — rendered in red. */
+  neg?: boolean;
+}
+
+/**
+ * Human-friendly "By method" presentation. Cash is grouped so the headline
+ * number is the NET deposited figure, with indented lines showing how it's
+ * derived (gross plate → pastor-gift deduction → named envelope gifts).
+ * Checks and online giving keep their own rows. The rows always add up to
+ * the same total income as the flat `buildIncomeByMethod` view.
+ */
+export function buildIncomeMethodDisplay(
+  offerings: OfferingLike[],
+  standaloneDonations: DonationLike[],
+): MethodDisplayRow[] {
+  const m = new Map(buildIncomeByMethod(offerings, standaloneDonations).map((r) => [r.method, r.amount]));
+  const plateGross = m.get("cash (anonymous)") ?? 0;
+  const pastor = m.get("pastor gifts") ?? 0; // stored negative
+  const named = m.get("cash (named)") ?? 0;
+  const check = m.get("check") ?? 0;
+  const online = m.get("online") ?? 0;
+  const other = m.get("other") ?? 0;
+  const rows: MethodDisplayRow[] = [];
+  const hasPlate = plateGross !== 0 || pastor !== 0;
+  if (hasPlate || named !== 0) {
+    const netCash = plateGross + pastor + named;
+    if (hasPlate) {
+      rows.push({ label: "Cash received (net)", amount: netCash, bold: true });
+      if (plateGross !== 0) rows.push({ label: "Plate cash (gross)", amount: plateGross, indent: true });
+      if (pastor !== 0) rows.push({ label: "Pastor gift — deducted before deposit", amount: pastor, indent: true, neg: true });
+      if (named !== 0) rows.push({ label: "Named envelope gifts", amount: named, indent: true });
+    } else {
+      rows.push({ label: "Cash (named gifts)", amount: named, bold: true });
+    }
+  }
+  if (check !== 0) rows.push({ label: "Checks", amount: check });
+  if (online !== 0) rows.push({ label: "Online giving", amount: online });
+  if (other !== 0) rows.push({ label: "Other", amount: other });
+  return rows;
+}

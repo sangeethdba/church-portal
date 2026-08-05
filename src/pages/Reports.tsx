@@ -8,7 +8,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import { supabase, isOversightRole, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { buildIncomeByMethod, buildWeeklyLedgerDetail, type WeeklyLedgerDetail } from "@/lib/accounting";
+import { buildIncomeMethodDisplay, buildWeeklyLedgerDetail, type WeeklyLedgerDetail } from "@/lib/accounting";
 import { notifyWeeklySummary } from "@/lib/notify";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
@@ -222,11 +222,10 @@ export default function Reports() {
     return Object.entries(m).sort(([, a], [, b]) => b - a);
   }, [filteredStandalone, filteredOff]);
 
-  // Split cash into anonymous (plate, GROSS before pastor-gift deductions) vs
-  // named (envelope gifts + standalone) — pastor gifts shown as a negative
-  // deduction line, exactly like the weekly ledger, so both views reconcile.
+  // Cash grouped for humans: headline is the NET deposited figure, with the
+  // gross plate and pastor-gift deduction as indented derivation lines.
   const incomeByMethod = useMemo(
-    () => buildIncomeByMethod(filteredOff, filteredStandalone),
+    () => buildIncomeMethodDisplay(filteredOff, filteredStandalone),
     [filteredOff, filteredStandalone],
   );
 
@@ -492,7 +491,7 @@ export default function Reports() {
             <Card>
               <CardHeader>
                 <h2 className="font-serif text-lg font-semibold text-stone-900">By method</h2>
-                <p className="text-xs text-stone-500">Gross plate cash, named envelope gifts, checks — pastor gifts shown as a deduction</p>
+                <p className="text-xs text-stone-500">Cash shown net after the pastor-gift deduction — the indented lines show how it's derived. Online giving is tracked separately from Sunday collections.</p>
               </CardHeader>
               <CardBody className="px-0 pb-0">
                 {incomeByMethod.length === 0 ? (
@@ -501,19 +500,23 @@ export default function Reports() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-t border-stone-100 text-xs uppercase text-stone-500">
-                        <th className="px-6 py-2 text-left font-medium">Method</th>
+                        <th className="px-6 py-2 text-left font-medium">Income</th>
                         <th className="px-6 py-2 text-right font-medium">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {incomeByMethod.map(({ method, amount: amt }) => (
-                        <tr key={method} className="border-t border-stone-50 hover:bg-stone-50/50">
-                          <td className="px-6 py-2 capitalize text-stone-800">{method}</td>
-                          <td className={`px-6 py-2 text-right font-mono ${amt < 0 ? "text-rose-700" : "text-stone-700"}`}>{formatCurrency(amt)}</td>
+                      {incomeByMethod.map((row, i) => (
+                        <tr key={i} className={`border-t border-stone-50 ${row.indent ? "" : "hover:bg-stone-50/50"}`}>
+                          <td className={`px-6 py-2 ${row.bold ? "font-semibold text-stone-900" : row.indent ? "pl-14 text-stone-500" : "capitalize text-stone-800"}`}>
+                            {row.label}
+                          </td>
+                          <td className={`px-6 py-2 text-right font-mono ${row.neg ? "text-rose-700" : "text-stone-700"} ${row.bold ? "font-semibold" : ""}`}>
+                            {formatCurrency(row.amount)}
+                          </td>
                         </tr>
                       ))}
                       <tr className="border-t-2 border-stone-200 bg-stone-50 font-semibold">
-                        <td className="px-6 py-3">Total</td>
+                        <td className="px-6 py-3">Total income</td>
                         <td className="px-6 py-3 text-right font-serif text-base text-stone-900">{formatCurrency(totalIncome)}</td>
                       </tr>
                     </tbody>
@@ -755,7 +758,7 @@ export default function Reports() {
                   {weeklyOff.length > 0 && (
                     <Button size="sm" variant="outline" onClick={() => {
                       const ledger = detailGrouping === "weekly" ? weeklyLedger : monthlyLedger;
-                      const csv = [`${detailGrouping === "weekly" ? "Week" : "Month"},Anonymous cash,Named cash,Checks,Pastor gifts,Online,Total`, ...ledger.map(([k, v]) => {
+                      const csv = [`${detailGrouping === "weekly" ? "Week" : "Month"},Plate cash (gross),Named cash,Checks,Pastor gifts,Online,Total`, ...ledger.map(([k, v]) => {
                         const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
                         const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(k) : new Date(k + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" });
                         return `${rowLabel},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total}`;
@@ -777,7 +780,7 @@ export default function Reports() {
                   <THead>
                     <Tr>
                       <Th>{detailGrouping === "weekly" ? "Week of" : "Month"}</Th>
-                      <Th className="text-right">Anonymous cash</Th>
+                      <Th className="text-right">Plate cash (gross)</Th>
                       <Th className="text-right">Named cash</Th>
                       <Th className="text-right">Checks</Th>
                       <Th className="text-right">Pastor gifts</Th>

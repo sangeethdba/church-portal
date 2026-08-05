@@ -8,7 +8,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import { supabase, isAdminRole, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency } from "@/lib/utils";
-import { buildIncomeByMethod, buildWeeklyLedgerDetail } from "@/lib/accounting";
+import { buildIncomeByMethod, buildIncomeMethodDisplay, buildWeeklyLedgerDetail } from "@/lib/accounting";
 import { downloadAnnualReport, type AnnualReportData } from "@/lib/pdf";
 import { ALF_DOCUMENT_BRANDING } from "@/lib/pdf";
 
@@ -113,6 +113,13 @@ export default function AnnualReport() {
 
   const incomeByMethod = useMemo(
     () => buildIncomeByMethod(filteredOff, filteredStandalone),
+    [filteredOff, filteredStandalone],
+  );
+
+  // Human-friendly grouped view: cash net first, gross plate + pastor-gift
+  // deduction indented beneath — reads like a bank slip.
+  const methodDisplay = useMemo(
+    () => buildIncomeMethodDisplay(filteredOff, filteredStandalone),
     [filteredOff, filteredStandalone],
   );
 
@@ -381,10 +388,14 @@ export default function AnnualReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {incomeByMethod.map(({ method, amount: amt }) => (
-                      <tr key={method} className="border-t border-stone-50 hover:bg-stone-50/50">
-                        <td className="px-6 py-2 capitalize text-stone-800">{method}</td>
-                        <td className={`px-6 py-2 text-right font-mono ${amt < 0 ? "text-rose-700" : "text-stone-700"}`}>{formatCurrency(amt)}</td>
+                    {methodDisplay.map((row, i) => (
+                      <tr key={i} className={`border-t border-stone-50 ${row.indent ? "" : "hover:bg-stone-50/50"}`}>
+                        <td className={`px-6 py-2 ${row.bold ? "font-semibold text-stone-900" : row.indent ? "pl-14 text-stone-500" : "capitalize text-stone-800"}`}>
+                          {row.label}
+                        </td>
+                        <td className={`px-6 py-2 text-right font-mono ${row.neg ? "text-rose-700" : "text-stone-700"} ${row.bold ? "font-semibold" : ""}`}>
+                          {formatCurrency(row.amount)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

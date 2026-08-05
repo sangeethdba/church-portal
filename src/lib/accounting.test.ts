@@ -6,6 +6,7 @@ import {
   buildWeeklyBuckets,
   buildWeeklyLedgerDetail,
   buildIncomeByMethod,
+  buildIncomeMethodDisplay,
   sundayWeekKey,
 } from "./accounting";
 import { isAdminRole, normalizeLineItems, buildReceiptPath } from "./supabase";
@@ -225,6 +226,29 @@ describe("end-to-end: full-year data flow reconciles every report total", () => 
       { method: "cash (named)", amount: 225 },     // 200 envelope gifts + 25 walk-in
       { method: "pastor gifts", amount: -20 },     // the deduction, negative
     ]);
+  });
+
+  it("by-method display groups cash so the NET deposited figure is the headline and rows still sum to total income", () => {
+    const display = buildIncomeMethodDisplay(offerings, standalone);
+    // Cash group: net = gross(544) − pastor(20) + named(225) = 749, shown
+    // first and bold, with the derivation indented underneath.
+    expect(display).toEqual([
+      { label: "Cash received (net)", amount: 749, bold: true },
+      { label: "Plate cash (gross)", amount: 544, indent: true },
+      { label: "Pastor gift — deducted before deposit", amount: -20, indent: true, neg: true },
+      { label: "Named envelope gifts", amount: 225, indent: true },
+      { label: "Checks", amount: 300 },
+      { label: "Online giving", amount: 325 },
+    ]);
+    // The indented lines are the derivation — only the headline rows (group
+    // + checks + online) sum to total income.
+    expect(display.filter((r) => !r.indent).reduce((s, r) => s + r.amount, 0)).toBe(totalIncome);
+  });
+
+  it("by-method display shows a plain named-cash line when there is no plate", () => {
+    expect(
+      buildIncomeMethodDisplay([], [{ donation_date: "2026-08-03", payment_method: "cash", amount: 25 }]),
+    ).toEqual([{ label: "Cash (named gifts)", amount: 25, bold: true }]);
   });
 
   it("weekly trend chart view (deposited cash) ties to the ledger's cash-equivalent", () => {

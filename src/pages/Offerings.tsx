@@ -873,7 +873,7 @@ export default function Offerings() {
       />
 
       {/* ── Summary cards ────────────────────────────────────────────────── */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardBody className="flex items-center gap-4 py-5">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
@@ -902,7 +902,7 @@ export default function Offerings() {
               <Gift className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Cash gifts</div>
+              <div className="text-xs font-medium uppercase tracking-wider text-stone-500">Named cash gifts</div>
               <div className="font-serif text-xl font-semibold text-stone-900">{formatCurrency(totals.gifts)}</div>
             </div>
           </CardBody>
@@ -919,6 +919,9 @@ export default function Offerings() {
           </CardBody>
         </Card>
       </div>
+      <p className="mb-6 mt-2 text-xs text-stone-500">
+        Sunday collection cards only — online gifts are entered under <strong>Donations</strong> and roll into <strong>Reports</strong> &amp; annual totals, not the offering slip. Cash shown is net after pastor-gift deductions.
+      </p>
 
       {/* ── Filter ───────────────────────────────────────────────────────── */}
       <Card className="mb-4">
