@@ -308,7 +308,12 @@ export default function Offerings() {
   };
 
   const addDonation = (method: "check" | "cash") => {
-    setDonations((prev) => [...prev, { key: `d${Date.now()}`, donorName: "", donorId: "", method, checkNumber: "", amount: "" }]);
+    const key = `d${Date.now()}`;
+    setDonations((prev) => [...prev, { key, donorName: "", donorId: "", method, checkNumber: "", amount: "" }]);
+    // Focus the new row's donor field right away so counters can keep typing
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLInputElement>(`[data-donor-key="${key}"] input`)?.focus();
+    });
   };
 
   const removeDonation = (key: string) => setDonations((prev) => prev.filter((d) => d.key !== key));
@@ -654,9 +659,12 @@ export default function Offerings() {
                 {donations.length === 0 && (
                   <p className="text-xs text-stone-400">No donations yet. Add checks with donor names + check numbers, or cash envelopes for named givers.</p>
                 )}
+                {donations.length > 0 && (
+                  <p className="mb-1 text-xs text-stone-400">Tip: press <kbd className="rounded border border-stone-300 bg-stone-100 px-1 text-[10px]">Enter</kbd> in the Amount field to add the next donation instantly.</p>
+                )}
                 {donations.map((d) => (
                   <div key={d.key} className="mt-2 flex flex-wrap items-center gap-2 rounded border border-amber-100 bg-white p-2">
-                    <div className="flex-1 min-w-[160px]">
+                    <div className="flex-1 min-w-[160px]" data-donor-key={d.key}>
                       <Label className="text-xs">Donor</Label>
                       <div className="relative">
                         <input
@@ -727,6 +735,12 @@ export default function Offerings() {
                         type="number" min="0" step="0.01" placeholder="0.00"
                         value={d.amount}
                         onChange={(e) => updateDonation(d.key, { amount: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addDonation(d.method === "cash" ? "cash" : "check");
+                          }
+                        }}
                         className="mt-1 h-9 text-sm"
                       />
                     </div>
@@ -736,6 +750,14 @@ export default function Offerings() {
                     </button>
                   </div>
                 ))}
+                {donations.length > 0 && (
+                  <button
+                    onClick={() => addDonation("check")}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-amber-300 bg-white/60 px-3 py-2.5 text-sm font-medium text-amber-700 transition hover:border-amber-400 hover:bg-amber-50 hover:text-amber-800"
+                  >
+                    <Plus className="h-4 w-4" /> Add another donation
+                  </button>
+                )}
                 {donations.length > 0 && (
                   <div className="mt-2 text-right text-sm text-stone-600 space-y-0.5">
                     {totalChecks > 0 && (
