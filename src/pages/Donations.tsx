@@ -414,7 +414,7 @@ export default function Donations() {
   const [bulkRaw, setBulkRaw] = useState("");
   const [bulkError, setBulkError] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
-  interface DonationRow { key: string; date: string; donorName: string; amount: string; paymentMethod: string; donationType: string; notes: string; }
+  interface DonationRow { key: string; date: string; donorName: string; amount: string; paymentMethod: string; donationType: string; notes: string; donorId?: string | null; }
   const [bulkRows, setBulkRows] = useState<DonationRow[]>([]);
 
   // Edit / delete saved donations (admin only)
@@ -562,7 +562,17 @@ export default function Donations() {
       setBulkRows([]);
       return;
     }
-    setBulkRows(rows);
+    // Match donor names against existing donors (case-insensitive)
+    const donorMap = new Map<string, string>();
+    for (const d of donors) {
+      const key = d.label.toLowerCase().replace(/\s+/g, " ").trim();
+      donorMap.set(key, d.id);
+    }
+    const matched = rows.map((r) => {
+      const nameKey = r.donorName.toLowerCase().replace(/\s+/g, " ").trim();
+      return { ...r, donorId: donorMap.get(nameKey) ?? null };
+    });
+    setBulkRows(matched);
   };
 
   const handleBulkImport = async () => {
@@ -576,7 +586,7 @@ export default function Donations() {
         if (supabase) {
           const { error } = await supabase.rpc("record_donation", {
             p_donor_name: row.donorName.trim(),
-            p_donor_id: null,
+            p_donor_id: row.donorId ?? null,
             p_amount: Math.abs(Number(row.amount)),
             p_donation_type: row.donationType || "offering",
             p_payment_method: row.paymentMethod || "online",
