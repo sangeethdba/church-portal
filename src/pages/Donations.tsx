@@ -489,7 +489,10 @@ export default function Donations() {
 
   // ── Parse BOA statement for deposits (Zelle payment from, deposits) ──
   const parseBoaDeposits = (raw: string): DonationRow[] => {
-    const lines = raw.split(/\n/);
+    // Normalize: insert newlines before dates that appear mid-text
+    // e.g. "800.0001/02/26" → "800.00\n01/02/26"
+    const normalized = raw.replace(/(\.\d{2})(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g, "$1\n$2");
+    const lines = normalized.split(/\n/);
     const entries: { date: string; desc: string; amount: string }[] = [];
     let i = 0;
     while (i < lines.length) {
@@ -509,7 +512,7 @@ export default function Donations() {
       if (!/zelle payment from\b|\bdeposit\b|purchase refund/i.test(desc)) { i++; continue; }
       // Skip Zelle payment TO (expenses)
       if (/zelle payment to\b/i.test(desc)) { i++; continue; }
-      // Find amount (at end of line or on next line)
+      // Find amount (at end of line, before next date, or on next line)
       let amount = "";
       const amtMatch = desc.match(/(-?\$?[\d,]+\.\d{2})\s*$/);
       if (amtMatch) {

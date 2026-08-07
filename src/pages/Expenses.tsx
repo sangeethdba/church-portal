@@ -482,7 +482,7 @@ export default function Expenses() {
   const parseBoaStatement = (raw: string): BulkRow[] => {
     // Normalize: insert newlines before dates that appear mid-text
     // e.g. "800.0001/02/26" → "800.00\n01/02/26"
-    const normalized = raw.replace(/(\d)(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g, "$1\n$2");
+    const normalized = raw.replace(/(\.\d{2})(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g, "$1\n$2");
     const lines = normalized.split(/\n/);
     const entries: { date: string; desc: string; amount: string }[] = [];
     let i = 0;
