@@ -493,7 +493,7 @@ export default function Donations() {
     // e.g. "800.0001/02/26" → "800.00\n01/02/26"
     const normalized = raw.replace(/(\.\d{2})(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g, "$1\n$2");
     const lines = normalized.split(/\n/);
-    const entries: { date: string; desc: string; amount: string }[] = [];
+    const entries: { date: string; desc: string; amount: string; donorName: string }[] = [];
     let i = 0;
     while (i < lines.length) {
       const line = lines[i].trim();
@@ -539,13 +539,13 @@ export default function Donations() {
       } else {
         donorName = ""; desc = desc.slice(0, 200);
       }
-      entries.push({ date, desc, amount: String(Math.abs(numAmt)) });
+      entries.push({ date, desc, amount: Math.abs(numAmt).toFixed(2), donorName });
       i++;
     }
     return entries.map((e, idx) => ({
       key: `don-${Date.now()}-${idx}`,
       date: e.date,
-      donorName: e.desc.includes("Online gift from") ? e.desc.replace("Online gift from ", "") : "",
+      donorName: e.donorName || (e.desc.includes("Online gift from") ? e.desc.replace("Online gift from ", "") : ""),
       amount: e.amount,
       paymentMethod: "online",
       donationType: "offering",
