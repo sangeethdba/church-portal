@@ -672,7 +672,7 @@ export default function Offerings() {
       const prompt = `Extract this church offering ledger and return ONLY valid JSON:{"serviceDate":"YYYY-MM-DD","serviceName":"Sunday Service","denominations":{"100":0,"50":0,"20":0,"10":0,"5":0,"2":0,"1":0},"deductions":[{"reason":"","amount":0}],"checks":[{"donorName":"","checkNumber":"","amount":0}],"cashGifts":[{"donorName":"","amount":0}],"notes":""} Rules: donor names and check numbers as written; count each bill denomination; amounts are numbers; empty arrays for missing data; no markdown.`;
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${API_KEY}`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: cleanBase64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 2048 } }) },
       );
 
