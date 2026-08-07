@@ -641,39 +641,68 @@ export default function Offerings() {
     setScanLoading(true);
     setScanError("");
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(scanFile);
-      });
+      // Compress image before sending (Edge Functions have a 6 MB payload limit)
+      const compressImage = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const MAX_W = 1200;
+            let w = img.width, h = img.height;
+            if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+            const canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext("2d")!;
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", 0.75));
+          };
+          img.onerror = () => reject(new Error("Failed to load image"));
+          img.src = URL.createObjectURL(file);
+        });
+      };
+      const base64 = await compressImage(scanFile);
+
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-ledger`,
         { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ imageBase64: base64 }) },
       );
-      const json = await res.json();
-      if (!json.success) { setScanError(json.error ?? "Scan failed."); setScanLoading(false); return; }
-      const d = json.data;
+
+      // Handle non-JSON responses (e.g. 413 payload too large, 502 bad gateway)
+      let json: { success?: boolean; error?: string; data?: Record<string, unknown> };
+      try {
+        json = await res.json();
+      } catch {
+        setScanError(`Server error (${res.status}). The image may be too large — try a smaller photo or lower resolution.`);
+        setScanLoading(false);
+        return;
+      }
+
+      if (!json.success) {
+        const msg = json.error ?? `Scan failed (${res.status})`;
+        setScanError(msg);
+        setScanLoading(false);
+        return;
+      }
+      const d = json.data!;
       const newDenoms = emptyDenoms();
-      if (d.denominations) for (const [k, v] of Object.entries(d.denominations)) if (k in newDenoms) newDenoms[Number(k)] = String(Math.max(0, Math.round(Number(v) || 0)));
-      const dedArray = (d.deductions ?? []).map((ded: { reason: string; amount: number }) => ({ reason: ded.reason || "", amount: String(Math.max(0, Number(ded.amount) || 0)) }));
+      if (d.denominations) for (const [k, v] of Object.entries(d.denominations as Record<string, unknown>)) if (k in newDenoms) newDenoms[Number(k)] = String(Math.max(0, Math.round(Number(v) || 0)));
+      const dedArray = ((d.deductions ?? []) as Array<{ reason: string; amount: number }>).map((ded) => ({ reason: ded.reason || "", amount: String(Math.max(0, Number(ded.amount) || 0)) }));
       const stamp = Date.now();
       const newDonations: IndividualDonation[] = [
-        ...(d.checks ?? []).map((c: { donorName: string; checkNumber: string; amount: number }, i: number) => ({ key: `scan-c-${stamp}-${i}`, donorName: c.donorName || "", donorId: "", method: "check" as const, checkNumber: c.checkNumber ? String(c.checkNumber) : "", amount: String(Math.max(0, Number(c.amount) || 0)) })),
-        ...(d.cashGifts ?? []).map((g: { donorName: string; amount: number }, i: number) => ({ key: `scan-g-${stamp}-${i}`, donorName: g.donorName || "", donorId: "", method: "cash" as const, checkNumber: "", amount: String(Math.max(0, Number(g.amount) || 0)) })),
+        ...((d.checks ?? []) as Array<{ donorName: string; checkNumber: string; amount: number }>).map((c, i) => ({ key: `scan-c-${stamp}-${i}`, donorName: c.donorName || "", donorId: "", method: "check" as const, checkNumber: c.checkNumber ? String(c.checkNumber) : "", amount: String(Math.max(0, Number(c.amount) || 0)) })),
+        ...((d.cashGifts ?? []) as Array<{ donorName: string; amount: number }>).map((g, i) => ({ key: `scan-g-${stamp}-${i}`, donorName: g.donorName || "", donorId: "", method: "cash" as const, checkNumber: "", amount: String(Math.max(0, Number(g.amount) || 0)) })),
       ];
       setScanOpen(false); setScanFile(null); setScanPreview(null); setScanLoading(false);
-      setSvcDate(d.serviceDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
-      setSvcName(d.serviceName || "Sunday Service");
-      setDenoms(newDenoms); setDeductions(dedArray); setDonations(newDonations); setNotes(d.notes ?? "");
+      setSvcDate((d.serviceDate as string)?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+      setSvcName((d.serviceName as string) || "Sunday Service");
+      setDenoms(newDenoms); setDeductions(dedArray); setDonations(newDonations); setNotes((d.notes as string) ?? "");
       setCounter1Pin(""); setCounter2Id(""); setCounter2Pin(""); setSignOffError(""); setEditingOffering(null);
       setOpen(true);
       toast("Ledger scanned! Review each entry, correct any OCR errors, then sign and save.", "success");
     } catch (err) {
       console.warn("Scan ledger failed:", err);
-      setScanError("Could not scan the ledger. Please try again or enter manually.");
+      setScanError(`Could not scan the ledger — ${err instanceof Error ? err.message : "please try again or enter manually."}`);
       setScanLoading(false);
     }
   };
