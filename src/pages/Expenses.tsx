@@ -190,7 +190,7 @@ export default function Expenses() {
 
   // ── Bulk import state ────────────────────────────────────────────────
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkTab, setBulkTab] = useState<"csv" | "paste">("paste");
+  const [bulkTab, setBulkTab] = useState<"csv" | "paste" | "boa">("paste");
   const [bulkRaw, setBulkRaw] = useState("");
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkError, setBulkError] = useState("");
@@ -478,6 +478,147 @@ export default function Expenses() {
   };
 
   // ── Bulk import: detect bank columns from header row ─────────────────
+  // ── BOA / plain-text statement parser (Zelle, card, check, transfers) ─
+  const parseBoaStatement = (raw: string): BulkRow[] => {
+    const lines = raw.split(/\n/);
+    const entries: { date: string; desc: string; amount: string }[] = [];
+    let i = 0;
+    // Only parse the withdrawals/debits section — skip the deposits section
+    let inDebits = false;
+    // First pass: detect the "Total withdrawals" or card account sections
+    for (let j = 0; j < lines.length; j++) {
+      if (/total withdrawals|card account|withdrawals and other debits/i.test(lines[j])) {
+        inDebits = true;
+      }
+      // Stop at next major section
+      if (inDebits && /^\s*(Deposits|Daily balance|Page \d|Your checking|Service charges|Overdraft)/i.test(lines[j]) && j > 0) {
+        break;
+      }
+    }
+
+    while (i < lines.length) {
+      const line = lines[i].trim();
+      if (!line) { i++; continue; }
+
+      // Skip section headers, page numbers, account numbers
+      if (/^(Page \d|ATLANTA LITTLE FLOCK|Account #|Subtotal|Total |Deposits|Your checking|Daily balance|Service charge|Beginning balance|Ending balance|Number of |Statement period|Card account #)/i.test(line)) {
+        i++; continue;
+      }
+
+      // Match: MM/DD/YY (or MM/DD/YYYY) at start
+      const dateMatch = line.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
+      if (!dateMatch) { i++; continue; }
+      const rawDate = dateMatch[1];
+      // Normalize to YYYY-MM-DD
+      const dateParts = rawDate.split("/");
+      let y = dateParts[2];
+      if (y.length === 2) y = "20" + y;
+      const date = `${y}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
+
+      let desc = line.slice(dateMatch[0].length).trim();
+
+      // Skip deposits (Zelle payment FROM, Deposit, REFUND)
+      if (/zelle payment from\b|\bdeposit\b|purchase refund/i.test(desc) && !/zelle payment to\b/i.test(desc)) {
+        i++; continue;
+      }
+
+      // Check if this line has an amount at the end (possibly negative)
+      let amount = "";
+      const amtMatch = desc.match(/(-?\$?[\d,]+\.\d{2})\s*$/);
+      if (amtMatch) {
+        amount = amtMatch[1].replace(/[$,\s]/g, "");
+        desc = desc.slice(0, amtMatch.index).trim();
+      } else {
+        // Amount might be on the next line
+        const nextLine = lines[i + 1]?.trim() || "";
+        const nextAmt = nextLine.match(/^(-?\$?[\d,]+\.\d{2})\s*$/);
+        if (nextAmt) {
+          amount = nextAmt[1].replace(/[$,\s]/g, "");
+          i++; // consume the amount line
+        }
+      }
+
+      if (!amount) { i++; continue; }
+
+      // Clean up description: remove confirmation numbers, card reference numbers
+      desc = desc
+        .replace(/;?\s*Conf#\s*\S+/g, "")
+        .replace(/CKCD\s*\d+\s*X+\d*/g, "")
+        .replace(/\d{15,}/g, "")  // long transaction IDs
+        .replace(/\b\d{2,4}\s+X+\s*\d{2,4}\b/g, "") // card masks
+        .replace(/\s{2,}/g, " ")
+        .trim();
+
+      // Skip if it's a deposit (positive amount and "payment from" in description)
+      const numAmt = parseFloat(amount);
+      if (numAmt > 0) { i++; continue; } // expenses should be negative in BOA statements
+
+      // Extract a clean title from the description
+      let title = desc;
+      // For Zelle: "Zelle payment to NAME for "REASON"" → use the reason or name
+      const zelleTo = desc.match(/Zelle payment to\s+([^f]+?)(?:\s+for\s+["']([^"']+)["'])?/i);
+      if (zelleTo) {
+        const name = zelleTo[1].trim();
+        const reason = zelleTo[2]?.trim();
+        title = reason || `Zelle to ${name}`;
+        // Truncate long titles
+        if (title.length > 200) title = title.slice(0, 197) + "...";
+      }
+
+      const absAmt = Math.abs(numAmt);
+
+      // Auto-categorize
+      let cat = "other";
+      const t = title.toLowerCase();
+      if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) cat = "events";
+      else if (/phone|internet|utility|electric|water|gas|power/.test(t)) cat = "utilities";
+      else if (/amazon|supply|office|staples|walmart|usps|postage/.test(t)) cat = "supplies";
+      else if (/insurance/.test(t)) cat = "insurance";
+      else if (/salary|stipend|payroll|gift/.test(t)) cat = "salaries";
+      else if (/travel|hotel|flight|baggage/.test(t)) cat = "travel";
+      else if (/software|subscription|zoom|hosting/.test(t)) cat = "software";
+      else if (/western union|transfer|wire/.test(t)) cat = "bank_fees";
+      else if (/kingswood|university|school|college/.test(t)) cat = "education";
+      else if (/reimburs/.test(t)) cat = "salaries";
+
+      entries.push({ date, desc: title, amount: String(absAmt) });
+      i++;
+    }
+
+    return entries.map((e) => ({
+      ...emptyBulkRow(),
+      date: e.date,
+      description: e.desc.slice(0, 200),
+      amount: e.amount,
+      category: (() => {
+        const t = e.desc.toLowerCase();
+        if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "events";
+        if (/phone|internet|utility|electric|water|gas|power/.test(t)) return "utilities";
+        if (/amazon|supply|office|staples|walmart|usps|postage/.test(t)) return "supplies";
+        if (/insurance/.test(t)) return "insurance";
+        if (/salary|stipend|payroll|gift/.test(t)) return "salaries";
+        if (/travel|hotel|flight|baggage/.test(t)) return "travel";
+        if (/software|subscription|zoom|hosting/.test(t)) return "software";
+        if (/western union|transfer|wire/.test(t)) return "bank_fees";
+        if (/kingswood|university|school|college/.test(t)) return "education";
+        if (/reimburs/.test(t)) return "salaries";
+        return "other";
+      })(),
+      method: (/zelle/i.test(e.desc) ? "online" : /checkcard|purchase|debit/i.test(e.desc) ? "card" : "online"),
+    }));
+  };
+
+  const handleParseBoa = () => {
+    setBulkError("");
+    const rows = parseBoaStatement(bulkRaw);
+    if (rows.length === 0) {
+      setBulkError("No expense entries detected. Paste the full BOA statement text including the withdrawals/debits section.");
+      setBulkRows([]);
+      return;
+    }
+    setBulkRows(rows);
+  };
+
   const COMMON_COLUMNS: Record<string, { dateCols: string[]; descCols: string[]; amtCols: string[] }> = {
     chase: { dateCols: ["Posting Date", "Post Date", "Transaction Date", "Date"], descCols: ["Description"], amtCols: ["Amount"] },
     bofa: { dateCols: ["Date", "Posted Date"], descCols: ["Description", "Payee"], amtCols: ["Amount", "Running Bal."] },
@@ -687,11 +828,11 @@ export default function Expenses() {
                   <DialogDescription>
                     Import church-direct expenses from your bank statement CSV or paste from a spreadsheet. All entries are created as <strong>church-direct</strong> (auto-settled).
                   </DialogDescription>
-                </DialogHeader>
-                <Tabs value={bulkTab} onValueChange={(v) => setBulkTab(v as "csv" | "paste")}>
+                </DialogHeader>                  <Tabs value={bulkTab} onValueChange={(v) => setBulkTab(v as "csv" | "paste" | "boa")}>
                   <TabsList className="mb-4">
                     <TabsTrigger value="paste">Paste spreadsheet</TabsTrigger>
                     <TabsTrigger value="csv">Upload CSV</TabsTrigger>
+                    <TabsTrigger value="boa">BOA statement</TabsTrigger>
                   </TabsList>
                   <TabsContent value="paste">
                     <div>
@@ -731,6 +872,28 @@ export default function Expenses() {
                           />
                         </label>
                       </div>
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="boa">
+                    <div>
+                      <Label htmlFor="bulk-boa">Paste Bank of America statement text</Label>
+                      <Textarea
+                        id="bulk-boa"
+                        rows={10}
+                        value={bulkRaw}
+                        onChange={(e) => setBulkRaw(e.target.value)}
+                        className="mt-1.5 font-mono text-xs"
+                        placeholder={`01/02/26 Zelle payment to Suved Akipogu for "Jan 1st Food expenses"; Conf# wuynd181l -800.00\n01/05/26 USPS PO 120410 01/05 #000903598 PURCHASE USPS PO 120410004 ATLANTA GA -21.95\n01/22/26 WESTERN UNION DES: CAPTURE ID:602281243601713 INDN:EPARAIM -500.99`}
+                      />
+                      <p className="mt-1 text-xs text-stone-400">Copy the full monthly statement from BOA's website and paste here. Parses Zelle payments, card purchases, checks, Western Union — skips deposits automatically.</p>
+                      <Button
+                        className="mt-3"
+                        onClick={handleParseBoa}
+                        disabled={!bulkRaw.trim()}
+                        iconLeft={<FileSpreadsheet className="h-4 w-4" />}
+                      >
+                        Parse BOA statement
+                      </Button>
                     </div>
                   </TabsContent>
                 </Tabs>
