@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange, AlertTriangle, MessageSquare } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange, AlertTriangle, MessageSquare, UploadCloud, FileSpreadsheet, Pencil, ChevronDown } from "lucide-react";
 import {
   Button,
   Card,
@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  toast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import ReceiptViewer from "@/components/ReceiptViewer";
@@ -186,6 +187,35 @@ export default function Expenses() {
   const [paySaving, setPaySaving] = useState(false);
   const [payMethod, setPayMethod] = useState("online");
   const transferInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Bulk import state ────────────────────────────────────────────────
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkTab, setBulkTab] = useState<"csv" | "paste">("paste");
+  const [bulkRaw, setBulkRaw] = useState("");
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
+  const [bulkError, setBulkError] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  interface BulkRow {
+    key: string;
+    date: string;
+    description: string;
+    amount: string;
+    category: string;
+    method: string;
+    checkNumber: string;
+    notes: string;
+  }
+
+  const emptyBulkRow = (): BulkRow => ({
+    key: `bk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    date: "",
+    description: "",
+    amount: "",
+    category: "utilities",
+    method: "online",
+    checkNumber: "",
+    notes: "",
+  });
 
   useEffect(() => {
     if (!supabase) {
@@ -447,6 +477,164 @@ export default function Expenses() {
     setLineItems([]);
   };
 
+  // ── Bulk import: detect bank columns from header row ─────────────────
+  const COMMON_COLUMNS: Record<string, { dateCols: string[]; descCols: string[]; amtCols: string[] }> = {
+    chase: { dateCols: ["Posting Date", "Post Date", "Transaction Date", "Date"], descCols: ["Description"], amtCols: ["Amount"] },
+    bofa: { dateCols: ["Date", "Posted Date"], descCols: ["Description", "Payee"], amtCols: ["Amount", "Running Bal."] },
+    wells: { dateCols: ["Date", "Transaction Date"], descCols: ["Description", "Memo"], amtCols: ["Amount"] },
+    generic: { dateCols: ["Date", "date", "DATE", "Posted", "Trans Date", "Transaction Date"], descCols: ["Description", "description", "DESCRIPTION", "Payee", "payee", "Narrative", "Memo", "Name", "Title"], amtCols: ["Amount", "amount", "AMOUNT", "Debit", "Credit", "Value", "Sum"] },
+  };
+
+  const parsePastedData = (raw: string): BulkRow[] => {
+    const lines = raw.split(/\n/).filter((l) => l.trim());
+    if (lines.length < 2) return [];
+    // Detect delimiter: tab or comma
+    const delim = lines[0].includes("\t") ? "\t" : ",";
+    const headers = lines[0].split(delim).map((h) => h.toLowerCase().replace(/^["']|["']$/g, "").trim());
+
+    // Detect bank format
+    let format = COMMON_COLUMNS.generic;
+    for (const [_, cfg] of Object.entries(COMMON_COLUMNS)) {
+      const match = cfg.dateCols.some((dc) => headers.some((h) => h.includes(dc.toLowerCase())));
+      if (match) { format = cfg; break; }
+    }
+
+    // Map columns
+    const dateIdx = headers.findIndex((h) => format.dateCols.some((dc) => h.includes(dc.toLowerCase())));
+    const descIdx = headers.findIndex((h) => format.descCols.some((dc) => h.includes(dc.toLowerCase())));
+    const amtIdx = headers.findIndex((h) => format.amtCols.some((dc) => h.includes(dc.toLowerCase())));
+
+    if (descIdx < 0 || amtIdx < 0) return [];
+
+    return lines.slice(1).map((line) => {
+      const cells = line.split(delim).map((c) => c.replace(/^["']|["']$/g, "").trim());
+      const desc = cells[descIdx] || "";
+      let amt = cells[amtIdx] || "";
+      // Clean amount: remove $, commas, spaces, handle parentheses (negative)
+      const isNeg = /^\(.*\)$/.test(amt);
+      amt = amt.replace(/[$,\s()]/g, "");
+      if (isNeg) amt = "-" + amt;
+      const dateRaw = dateIdx >= 0 ? cells[dateIdx] : "";
+      const date = dateRaw ? normalizeDate(dateRaw) : new Date().toISOString().slice(0, 10);
+      // Auto-detect category from description keywords
+      let cat = "other";
+      const dLower = desc.toLowerCase();
+      if (/electric|power|utility|water|gas|internet|phone/.test(dLower)) cat = "utilities";
+      else if (/amazon|walmart|target|costco|supply|office|staples/.test(dLower)) cat = "supplies";
+      else if (/rent|lease|mortgage/.test(dLower)) cat = "facility_rent";
+      else if (/insurance/.test(dLower)) cat = "insurance";
+      else if (/salary|payroll|stipend/.test(dLower)) cat = "salaries";
+      else if (/restaurant|catering|food|lunch|dinner/.test(dLower)) cat = "events";
+      else if (/travel|hotel|flight|airline|uber|lyft/.test(dLower)) cat = "travel";
+      else if (/software|subscription|hosting|domain|zoom|slack/.test(dLower)) cat = "software";
+      else if (/bank fee|service charge|wire|transfer fee/.test(dLower)) cat = "bank_fees";
+
+      return { ...emptyBulkRow(), date, description: desc.slice(0, 200), amount: amt, category: cat, method: "online" };
+    }).filter((r) => r.description && !isNaN(Number(r.amount)) && Number(r.amount) !== 0);
+  };
+
+  const handleParseData = () => {
+    setBulkError("");
+    const rows = parsePastedData(bulkRaw);
+    if (rows.length === 0) {
+      setBulkError("Could not detect columns. Paste a spreadsheet with headers like 'Date, Description, Amount' or upload a CSV file.");
+      setBulkRows([]);
+      return;
+    }
+    setBulkRows(rows);
+  };
+
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setBulkRaw(text);
+      const rows = parsePastedData(text);
+      if (rows.length === 0) {
+        setBulkError("Could not parse CSV. Make sure it has a header row with Date, Description, and Amount columns.");
+        setBulkRows([]);
+        return;
+      }
+      setBulkRows(rows);
+      setBulkError("");
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBulkImport = async () => {
+    const valid = bulkRows.filter((r) => r.description && r.amount && !isNaN(Number(r.amount)) && Number(r.amount) !== 0);
+    if (valid.length === 0) { setBulkError("No valid rows to import."); return; }
+    setBulkSaving(true);
+    setBulkError("");
+    let imported = 0;
+    let failed = 0;
+    const newExpenses: Expense[] = [];
+    for (const row of valid) {
+      const amount = Math.abs(Number(row.amount));
+      try {
+        if (supabase) {
+          const { data, error } = await supabase.rpc("admin_insert_expense", {
+            p_title: row.description.slice(0, 200),
+            p_amount: amount,
+            p_category: row.category,
+            p_description: row.description,
+            p_notes: row.notes || null,
+            p_event_name: null,
+            p_payment_method: row.method || "online",
+            p_check_number: row.checkNumber || null,
+          });
+          if (!error && data) {
+            const { data: inserted } = await supabase.from("expenses").select().eq("id", data as string).maybeSingle();
+            if (inserted) newExpenses.push(inserted as Expense);
+            imported++;
+          } else {
+            failed++;
+            console.warn("Bulk import row failed:", error, row.description);
+          }
+        } else {
+          newExpenses.push({
+            id: `local-bulk-${Date.now()}-${imported}`,
+            source: "church_direct",
+            title: row.description.slice(0, 200),
+            amount,
+            category: row.category as Expense["category"],
+            description: row.description,
+            receipt_paths: [],
+            transfer_receipt_path: null,
+            user_id: null,
+            status: "auto_paid",
+            submitted_at: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
+            approved_by: null,
+            approved_at: new Date().toISOString(),
+            paid_at: new Date().toISOString(),
+            paid_by: null,
+            notes: row.notes || null,
+            created_at: new Date().toISOString(),
+            payment_method: row.method || "online",
+          });
+          imported++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+    if (newExpenses.length > 0) setExpenses((rows) => [...newExpenses, ...rows]);
+    setBulkSaving(false);
+    const msg = imported > 0
+      ? `Imported ${imported} expense${imported === 1 ? "" : "s"}${failed > 0 ? ` (${failed} failed)` : ""}.`
+      : `Import failed for all ${failed} rows.`;
+    if (imported > 0 && failed === 0) {
+      setBulkOpen(false);
+      setBulkRaw("");
+      setBulkRows([]);
+      toast(msg, "success");
+    } else {
+      setBulkError(msg);
+    }
+  };
+
   const statusTone = (s: ExpenseStatus) =>
     s === "auto_paid" || s === "paid"
       ? "emerald"
@@ -463,6 +651,24 @@ export default function Expenses() {
     setPayOpen(true);
   };
 
+  // Normalize various date formats to YYYY-MM-DD
+  const normalizeDate = (raw: string): string => {
+    const d = raw.replace(/^["']|["']$/g, "").trim();
+    // Try MM/DD/YYYY or MM-DD-YYYY
+    const us = d.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (us) {
+      const y = us[3].length === 2 ? "20" + us[3] : us[3];
+      return `${y}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`;
+    }
+    // Try YYYY-MM-DD
+    const iso = d.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+    // Try DD/MM/YYYY
+    const dmy = d.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+    return d;
+  };
+
   return (
     <div>
       <PageHeader
@@ -470,7 +676,183 @@ export default function Expenses() {
         subtitle="Track what flows out — both member reimbursements and church-direct outlays."
         badge={`${formatCurrency(total)} total · ${pending} pending`}
         actions={
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setFormError(""); } }}>
+          <>
+            <Dialog open={bulkOpen} onOpenChange={(v) => { setBulkOpen(v); if (!v) { setBulkError(""); } }}>
+              <DialogTrigger asChild>
+                <Button variant="outline" iconLeft={<UploadCloud className="h-4 w-4" />}>Bulk import</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl">
+                <DialogHeader>
+                  <DialogTitle>Bulk import expenses</DialogTitle>
+                  <DialogDescription>
+                    Import church-direct expenses from your bank statement CSV or paste from a spreadsheet. All entries are created as <strong>church-direct</strong> (auto-settled).
+                  </DialogDescription>
+                </DialogHeader>
+                <Tabs value={bulkTab} onValueChange={(v) => setBulkTab(v as "csv" | "paste")}>
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="paste">Paste spreadsheet</TabsTrigger>
+                    <TabsTrigger value="csv">Upload CSV</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="paste">
+                    <div>
+                      <Label htmlFor="bulk-paste">Paste from spreadsheet (tab-separated or CSV)</Label>
+                      <Textarea
+                        id="bulk-paste"
+                        rows={6}
+                        value={bulkRaw}
+                        onChange={(e) => setBulkRaw(e.target.value)}
+                        className="mt-1.5 font-mono text-xs"
+                        placeholder={`Date\tDescription\tAmount\n2024-01-15\tElectric Company\t-184.32\n2024-01-16\tAmazon - Supplies\t-47.50\n2024-01-17\tChurch Insurance Co\t-320.00`}
+                      />
+                      <p className="mt-1 text-xs text-stone-400">Copy cells from Excel/Google Sheets and paste here. Best results if your sheet has Date, Description, and Amount columns.</p>
+                      <Button
+                        className="mt-3"
+                        onClick={handleParseData}
+                        disabled={!bulkRaw.trim()}
+                        iconLeft={<FileSpreadsheet className="h-4 w-4" />}
+                      >
+                        Parse data
+                      </Button>
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="csv">
+                    <div>
+                      <Label>Upload bank CSV file</Label>
+                      <div className="mt-2">
+                        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center hover:bg-stone-100 transition-colors">
+                          <UploadCloud className="h-8 w-8 text-stone-400" />
+                          <span className="text-sm text-stone-600">Click to upload a .csv file</span>
+                          <span className="text-xs text-stone-400">Works with Chase, Bank of America, Wells Fargo, and generic bank exports</span>
+                          <input
+                            type="file"
+                            accept=".csv,text/csv"
+                            className="hidden"
+                            onChange={handleCsvUpload}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+
+                {bulkError && (
+                  <div className="flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0" /> {bulkError}
+                  </div>
+                )}
+
+                {bulkRows.length > 0 && (
+                  <>
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-sm text-stone-600">
+                        {bulkRows.length} row{bulkRows.length === 1 ? "" : "s"} detected — review and edit before importing
+                      </span>
+                      <span className="text-sm font-medium text-stone-700">
+                        Total: {formatCurrency(bulkRows.reduce((s, r) => s + Math.abs(Number(r.amount) || 0), 0))}
+                      </span>
+                    </div>
+                    <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-stone-200">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-stone-50">
+                          <tr className="border-b border-stone-200 text-stone-500">
+                            <th className="px-2 py-2 text-left font-medium">Date</th>
+                            <th className="px-2 py-2 text-left font-medium">Description</th>
+                            <th className="px-2 py-2 text-right font-medium w-20">Amount</th>
+                            <th className="px-2 py-2 text-left font-medium w-28">Category</th>
+                            <th className="px-2 py-2 text-left font-medium w-20">Method</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkRows.map((row, i) => (
+                            <tr key={row.key} className="border-b border-stone-100 hover:bg-stone-50/50">
+                              <td className="px-2 py-1">
+                                <input
+                                  type="date"
+                                  value={row.date}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], date: e.target.value };
+                                    setBulkRows(next);
+                                  }}
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input
+                                  type="text"
+                                  value={row.description}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], description: e.target.value };
+                                    setBulkRows(next);
+                                  }}
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={row.amount}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], amount: e.target.value };
+                                    setBulkRows(next);
+                                  }}
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs text-right"
+                                />
+                              </td>
+                              <td className="px-2 py-1">
+                                <select
+                                  value={row.category}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], category: e.target.value };
+                                    setBulkRows(next);
+                                  }}
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
+                                >
+                                  {EXPENSE_CATEGORIES.map((c) => (
+                                    <option key={c.value} value={c.value}>{c.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-2 py-1">
+                                <select
+                                  value={row.method}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], method: e.target.value };
+                                    setBulkRows(next);
+                                  }}
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
+                                >
+                                  <option value="online">Online</option>
+                                  <option value="debit">Debit</option>
+                                  <option value="card">Card</option>
+                                  <option value="check">Check</option>
+                                  <option value="cash">Cash</option>
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-4 flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => { setBulkOpen(false); setBulkRaw(""); setBulkRows([]); setBulkError(""); }}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleBulkImport} disabled={bulkSaving}>
+                        {bulkSaving ? <>Importing…</> : <>Import {bulkRows.length} expense{bulkRows.length === 1 ? "" : "s"}</>}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </DialogContent>
+            </Dialog>
+            <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setFormError(""); } }}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>New expense</Button>
             </DialogTrigger>
@@ -759,6 +1141,7 @@ export default function Expenses() {
               </div>
             </DialogContent>
           </Dialog>
+          </>
         }
       />
 
