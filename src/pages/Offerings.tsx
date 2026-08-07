@@ -728,72 +728,114 @@ export default function Offerings() {
       const dataUrl = await compress(scanFile);
 
       const { data: { text } } = await Tesseract.recognize(dataUrl, "eng", {
-        logger: () => {},
+        logger: (m) => { if (m.status === "recognizing text") console.log(`OCR progress: ${Math.round((m.progress ?? 0) * 100)}%`); },
       });
 
-      // Parse the raw OCR text
-      const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+      console.log("=== RAW OCR TEXT ===\n", text, "\n=== END ===");
+
+      // ── Flexible parsing: find every dollar amount and its context ──
       const checks: Array<{ donorName: string; checkNumber: string; amount: number }> = [];
       const cashGifts: Array<{ donorName: string; amount: number }> = [];
       const denoms: Record<string, number> = {};
       let svcDate = new Date().toISOString().slice(0, 10);
       let pastorDeduction = 0;
 
-      for (const line of lines) {
-        // Try date patterns: MM/DD/YYYY or MM-DD-YYYY or YYYY-MM-DD
-        const dateMatch = line.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|(\d{4}[\-]\d{2}[\-]\d{2})/);
-        if (dateMatch) {
-          const d = new Date(dateMatch[0]);
-          if (!isNaN(d.getTime())) svcDate = d.toISOString().slice(0, 10);
-          continue;
+      // Strategy: find all amount patterns in the text, then look backwards
+      // for check numbers and names
+      const lines = text.split(/\n/).map((l) => l.trim());
+
+      // 1. Date detection — any date-like pattern
+      const dateMatch = text.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|(\d{4}[\-]\d{2}[\-]\d{2})/);
+      if (dateMatch) {
+        const d = new Date(dateMatch[0]);
+        if (!isNaN(d.getTime())) svcDate = d.toISOString().slice(0, 10);
+      }
+
+      // 2. Pastor gift
+      const pastorMatch = text.match(/pastor\b[^\n]*?\$?(\d+\.?\d{0,2})/i);
+      if (pastorMatch) pastorDeduction = parseFloat(pastorMatch[1]) || 0;
+
+      // 3. Denomination detection — broad patterns
+      for (const denom of [100, 50, 20, 10, 5, 2, 1]) {
+        // "100 x 5", "$100: 3", "100s = 2", "100:3", "100x5"
+        const re = new RegExp(`\\b${denom}\\s*[x:×=]\\s*(\\d+)\\b|\\$(?:${denom})\\s*[:=]?\\s*(\\d+)|(\\d+)\\s*\\$?${denom}\\b`, "i");
+        const m = text.match(re);
+        if (m) {
+          const cnt = parseInt(m[1] || m[2] || m[3]);
+          if (cnt > 0) denoms[String(denom)] = (denoms[String(denom)] || 0) + cnt;
         }
+      }
 
-        // Pastor gift: "pastor" + amount
-        const pastorMatch = line.match(/pastor.*?\$?(\d+\.?\d*)/i);
-        if (pastorMatch) { pastorDeduction = parseFloat(pastorMatch[1]) || 0; continue; }
+      // 4. Line-by-line: extract amounts + check numbers + names
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
 
-        // Denomination patterns: $100 x 5 or 100s: 3 or $100: 2
-        const denomMatch = line.match(/(\d{2,3})\s*[x:×]\s*(\d+)/i);
-        if (denomMatch) {
-          const val = parseInt(denomMatch[1]);
-          const cnt = parseInt(denomMatch[2]);
-          if ([100, 50, 20, 10, 5, 2, 1].includes(val)) denoms[String(val)] = cnt;
-          continue;
-        }
+        // Find dollar amounts: $XX.XX or XX.XX (standalone decimal) or XX (whole dollar)
+        const amountMatches = [...line.matchAll(/\$?(\d+(?:\.\d{2})?)\b/g)];
+        for (const am of amountMatches) {
+          const amt = parseFloat(am[1]);
+          if (isNaN(amt) || amt <= 0) continue;
+          // Skip very large numbers (likely dates, phone #s) and very small (< 0.50)
+          if (amt > 50000 || amt < 0.5) continue;
 
-        // Check/cash entry: Name [optional check#] amount
-        // Match lines with a dollar amount and optional check number
-        const entryMatch = line.match(/^(.+?)\s+(?:(\d{3,5})\s+)?\$?(\d+\.?\d{0,2})\s*$/);
-        if (entryMatch) {
-          const name = entryMatch[1].trim();
-          const checkNum = entryMatch[2] || "";
-          const amt = parseFloat(entryMatch[3]);
-          if (!isNaN(amt) && amt > 0 && name.length > 1) {
+          // Get text before the amount on this line
+          const idx = am.index ?? 0;
+          const before = line.slice(0, idx).trim();
+
+          // Try to find a check number (3-6 digits) in the text before the amount
+          const ckMatch = before.match(/(\d{3,6})\s*$/);
+          const checkNum = ckMatch ? ckMatch[1] : "";
+
+          // The name is whatever's left before the check number (or before the amount)
+          let namePart = checkNum ? before.slice(0, before.length - checkNum.length).trim() : before;
+          // Clean up: remove leading symbols, keep only letters/spaces/hyphens
+          namePart = namePart.replace(/^[^a-zA-Z]+/, "").replace(/[^a-zA-Z\s\-'.]/g, "").trim();
+
+          if (namePart.length > 1) {
             if (checkNum) {
-              checks.push({ donorName: name, checkNumber: checkNum, amount: amt });
+              checks.push({ donorName: namePart, checkNumber: checkNum, amount: amt });
             } else {
-              cashGifts.push({ donorName: name, amount: amt });
+              // If there's a name but no check number, treat as cash gift (unless it looks like a denomination count)
+              // Avoid confusing "100 5" as a $100 donation by "5" — skip common denom amounts
+              cashGifts.push({ donorName: namePart, amount: amt });
             }
           }
         }
       }
 
+      // Deduplicate: if two amounts are very close, keep the one with a check number
+      const dedupedChecks = checks.filter((c, ci) => {
+        return !checks.some((c2, cj) => cj < ci && Math.abs(c2.amount - c.amount) < 0.01 && c2.donorName === c.donorName);
+      });
+      const dedupedGifts = cashGifts.filter((g, gi) => {
+        return !cashGifts.some((g2, gj) => gj < gi && Math.abs(g2.amount - g.amount) < 0.01 && g2.donorName === g.donorName);
+      });
+
       // Pre-fill the form
       setSvcDate(svcDate);
       setSvcName("Sunday Service");
       const nd = emptyDenoms();
-      for (const [k, v] of Object.entries(denoms)) if (k in nd) nd[Number(k)] = String(v);
+      for (const [k, v] of Object.entries(denoms)) if (k in nd) nd[Number(k)] = String(Math.min(v, 999));
       setDenoms(nd);
       setDeductions(pastorDeduction > 0 ? [{ reason: "Pastor gift", amount: String(pastorDeduction) }] : []);
       const stamp = Date.now();
       setDonations([
-        ...checks.map((c, i) => ({ key: `ocr-c-${stamp}-${i}`, donorName: c.donorName, donorId: "", method: "check" as const, checkNumber: c.checkNumber, amount: String(c.amount) })),
-        ...cashGifts.map((g, i) => ({ key: `ocr-g-${stamp}-${i}`, donorName: g.donorName, donorId: "", method: "cash" as const, checkNumber: "", amount: String(g.amount) })),
+        ...dedupedChecks.map((c, i) => ({ key: `ocr-c-${stamp}-${i}`, donorName: c.donorName, donorId: "", method: "check" as const, checkNumber: c.checkNumber, amount: String(c.amount) })),
+        ...dedupedGifts.map((g, i) => ({ key: `ocr-g-${stamp}-${i}`, donorName: g.donorName, donorId: "", method: "cash" as const, checkNumber: "", amount: String(g.amount) })),
       ]);
       setCounter1Pin(""); setCounter2Id(""); setCounter2Pin(""); setSignOffError(""); setEditingOffering(null);
       setScanOpen(false); setScanFile(null); setScanPreview(null); setOcrLoading(false);
       setOpen(true);
-      toast(`OCR found ${checks.length + cashGifts.length} entries. Review carefully — OCR can miss-read handwriting.`, "success");
+
+      const total = dedupedChecks.length + dedupedGifts.length;
+      if (total === 0) {
+        // Show the raw text so the user can see what was read
+        const preview = text.slice(0, 300).replace(/\n/g, " | ");
+        toast(`No entries detected. OCR read: "${preview}…" — try a clearer photo or use AI Scan instead.`, "error");
+      } else {
+        toast(`OCR found ${total} entries. Review carefully — OCR can misread handwriting.`, "success");
+      }
     } catch (err) {
       console.warn("Basic OCR failed:", err);
       setScanError(`OCR failed — ${err instanceof Error ? err.message : "try a clearer photo"}`);
