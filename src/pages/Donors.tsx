@@ -465,9 +465,14 @@ export default function Donors() {
     const now = new Date();
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months[d.toISOString().slice(0, 7)] = 0;
+      // Use local-time formatting — toISOString() shifts to UTC and
+      // causes off-by-one month labels in timezones east of UTC.
+      months[`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`] = 0;
     }
-    const yearStart = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 10);
+    const y0 = now.getFullYear();
+    const m0 = now.getMonth() - 11;
+    const startDate = new Date(y0, m0, 1);
+    const yearStart = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-01`;
     if (supabase) {
       const fullName = `${donor.first_name} ${donor.last_name}`.trim();
       const [res1, res2] = await Promise.all([

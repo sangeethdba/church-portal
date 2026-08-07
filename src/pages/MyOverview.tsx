@@ -134,7 +134,9 @@ export function MemberOverview() {
     const now = new Date();
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = d.toISOString().slice(0, 7);
+      // Use local-time formatting — toISOString() shifts to UTC and
+      // causes off-by-one month labels in timezones east of UTC.
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       months[key] = 0;
     }
     donations.forEach((d) => {
