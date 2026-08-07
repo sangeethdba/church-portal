@@ -520,9 +520,12 @@ export default function Donations() {
         amount = amtMatch[1].replace(/[$,\s]/g, "");
         desc = desc.slice(0, amtMatch.index).trim();
       } else {
-        const nextLine = lines[i + 1]?.trim() || "";
-        const nextAmt = nextLine.match(/^(-?\$?[\d,]+\.\d{2})\s*$/);
-        if (nextAmt) { amount = nextAmt[1].replace(/[$,\s]/g, ""); i++; }
+        // Look ahead up to 3 lines for standalone amount (BOA splits amt after Conf#)
+        for (let look = 1; look <= 3 && i + look < lines.length; look++) {
+          const nextLine = lines[i + look]?.trim() || "";
+          const nextAmt = nextLine.match(/^(-?\$?[\d,]+\.\d{2})\s*$/);
+          if (nextAmt) { amount = nextAmt[1].replace(/[$,\s]/g, ""); i += look; break; }
+        }
       }
       if (!amount) { i++; continue; }
       const numAmt = parseFloat(amount);
