@@ -1,12 +1,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const GOOGLE_AI_KEY = Deno.env.get("GOOGLE_AI_KEY")!;
-
-// Models to try in order — first one that returns non-404 is used
-const MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-];
+const GEMINI_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 const SYSTEM_PROMPT = `Extract this church offering ledger and return ONLY valid JSON — no commentary, no markdown, no code fences.
 
@@ -40,31 +36,6 @@ function cors(resp: Response): Response {
   return resp;
 }
 
-async function tryModel(model: string, cleanBase64: string): Promise<Response> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_AI_KEY}`;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: SYSTEM_PROMPT },
-            { inlineData: { mimeType: "image/jpeg", data: cleanBase64 } },
-          ],
-        }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
-      }),
-    });
-    if (res.status === 429 && attempt < 2) {
-      await new Promise((r) => setTimeout(r, Math.pow(3, attempt) * 3000));
-      continue;
-    }
-    return res;
-  }
-  throw new Error("Rate limit exhausted");
-}
-
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return cors(new Response(null, { status: 204 }));
@@ -86,27 +57,34 @@ serve(async (req: Request) => {
 
     const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
 
-    // Try each model until one works
+    // Try up to 2 times with short backoff
     let geminiRes: Response | null = null;
-    let lastError = "";
-    for (const model of MODELS) {
-      try {
-        const res = await tryModel(model, cleanBase64);
-        if (res.status === 404) {
-          lastError = `${model}: 404`;
-          continue; // model doesn't exist, try next
-        }
-        geminiRes = res;
-        break;
-      } catch (e) {
-        lastError = `${model}: ${(e as Error).message}`;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_AI_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: SYSTEM_PROMPT },
+              { inlineData: { mimeType: "image/jpeg", data: cleanBase64 } },
+            ],
+          }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+        }),
+      });
+
+      if (res.status === 429 && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 5000)); // 5s for rate limit window
         continue;
       }
+      geminiRes = res;
+      break;
     }
 
     if (!geminiRes) {
       return cors(new Response(
-        JSON.stringify({ success: false, error: `All models failed — ${lastError}` }),
+        JSON.stringify({ success: false, error: "AI service is busy — please wait a moment and try again." }),
         { status: 502, headers: { "Content-Type": "application/json" } },
       ));
     }
