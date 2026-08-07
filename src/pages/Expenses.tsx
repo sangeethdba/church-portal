@@ -209,6 +209,8 @@ export default function Expenses() {
     /** Matched member profile id (Zelle payment made TO this member). */
     memberId: string | null;
     memberName: string | null;
+    /** Card last 4 from the "Card account # XXXX XXXX XXXX 5375" section. */
+    cardLast4: string;
   }
 
   const emptyBulkRow = (): BulkRow => ({
@@ -221,6 +223,7 @@ export default function Expenses() {
     recipient: "",
     memberId: null,
     memberName: null,
+    cardLast4: "",
     checkNumber: "",
     notes: "",
   });
@@ -495,8 +498,10 @@ export default function Expenses() {
       // Also break amounts glued to section footers: "-14.44Subtotal…" or "-$1,457.78Card account…"
       .replace(/(-?\$?[\d,]+\.\d{2})(?=Subtotal|Card account|Total |Daily balance|Your checking|Beginning balance|Ending balance)/gi, "$1\n");
     const lines = normalized.split(/\n/);
-    const entries: { date: string; desc: string; amount: string; method: string; recipient: string }[] = [];
+    const entries: { date: string; desc: string; amount: string; method: string; recipient: string; cardLast4: string }[] = [];
     let i = 0;
+    // Current card section — BOA groups purchases under "Card account # XXXX 5375".
+    let currentCard = "";
     // Only parse the withdrawals/debits section — skip the deposits section
     let inDebits = false;
     // First pass: detect the "Total withdrawals" or card account sections
@@ -513,6 +518,14 @@ export default function Expenses() {
     while (i < lines.length) {
       const line = lines[i].trim();
       if (!line) { i++; continue; }
+
+      // Track which card section we're in (last 4 digits of the card header)
+      // so every purchase below it is attributed to that card.
+      const cardHdr = line.match(/^Card account #.*?(\d{4})\s*$/i);
+      if (cardHdr) {
+        currentCard = cardHdr[1];
+        i++; continue;
+      }
 
       // Skip section headers, page numbers, account numbers
       if (/^(Page \d|ATLANTA LITTLE FLOCK|Account #|Subtotal|Total |Deposits|Your checking|Daily balance|Service charge|Beginning balance|Ending balance|Number of |Statement period|Card account #)/i.test(line)) {
@@ -599,7 +612,7 @@ export default function Expenses() {
       else if (/^check\b|check #|check no/i.test(desc)) method = "check";
       else if (/cash/i.test(desc)) method = "cash";
 
-      entries.push({ date, desc: title, amount: amount ? String(absAmt) : "", method, recipient: zelleRecipient });
+      entries.push({ date, desc: title, amount: amount ? String(absAmt) : "", method, recipient: zelleRecipient, cardLast4: currentCard });
       i++;
     }
 
@@ -609,11 +622,13 @@ export default function Expenses() {
       description: e.desc.slice(0, 200),
       amount: e.amount,
       recipient: e.recipient,
+      cardLast4: e.cardLast4,
       category: (() => {
         const t = e.desc.toLowerCase();
         if (/\bvbs\b|vacation bible/.test(t)) return "vbs";
         if (/sunday school/.test(t)) return "sunday_school";
         if (/book room|\bbooks\b/.test(t)) return "books";
+        if (/adjustment|correction|reversal/.test(t)) return "bank_fees";
         if (/amazon/.test(t)) return "amazon_purchases";
         if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "food_expenses";
         if (/phone|internet/.test(t)) return "internet_phone";
@@ -792,6 +807,7 @@ export default function Expenses() {
             p_event_name: null,
             p_payment_method: row.method || "online",
             p_check_number: row.checkNumber || null,
+            p_card_last4: row.cardLast4 || null,
           };
           if (row.memberId) rpcParams.p_user_id = row.memberId;
           const { data, error } = await supabase.rpc("admin_insert_expense", rpcParams);
@@ -815,6 +831,7 @@ export default function Expenses() {
             transfer_receipt_path: null,
             user_id: row.memberId || null,
             status: "auto_paid",
+            card_last4: row.cardLast4 || null,
             submitted_at: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
             approved_by: null,
             approved_at: new Date().toISOString(),
@@ -999,6 +1016,7 @@ export default function Expenses() {
                             <th className="px-2 py-2 text-right font-medium w-20">Amount</th>
                             <th className="px-2 py-2 text-left font-medium w-28">Category</th>
                             <th className="px-2 py-2 text-left font-medium w-20">Method</th>
+                            <th className="px-2 py-2 text-center font-medium w-14">Card</th>
                             <th className="px-2 py-2 w-8"></th>
                           </tr>
                         </thead>
@@ -1083,6 +1101,21 @@ export default function Expenses() {
                                   <option value="check">Check</option>
                                   <option value="cash">Cash</option>
                                 </select>
+                              </td>
+                              <td className="px-2 py-1">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={row.cardLast4}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], cardLast4: e.target.value.replace(/\D/g, "").slice(0, 4) };
+                                    setBulkRows(next);
+                                  }}
+                                  placeholder="••••"
+                                  title="Card used (last 4 digits)"
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-center text-xs"
+                                />
                               </td>
                               <td className="px-1 py-1 text-center">
                                 <button
@@ -1746,7 +1779,10 @@ function ExpenseList({
                   </Td>
                 )}
                 <Td>
-                  <span className="text-xs text-stone-500 capitalize">{e.payment_method || "—"}</span>
+                  <span className="text-xs text-stone-500 capitalize">
+                    {e.payment_method || "—"}
+                    {e.card_last4 ? ` · card ${e.card_last4}` : ""}
+                  </span>
                 </Td>
                 <Td>
                   <Badge tone={statusTone(e.status)}>{e.status.replace("_", " ")}</Badge>

@@ -229,6 +229,7 @@ export function MemberOverview() {
                     <div className="text-xs text-stone-500">
                       {formatDate(e.submitted_at)}
                       {e.payment_method ? ` · ${e.payment_method}` : ""}
+                      {e.card_last4 ? ` · card ${e.card_last4}` : ""}
                       {lineItems.length > 1 ? ` · ${lineItems.length} bills` : ""}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1.5">

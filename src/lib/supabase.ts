@@ -223,6 +223,7 @@ export interface Expense {
   transfer_receipt_path?: string | null;
   payment_method?: string | null;
   check_number?: string | null;
+  card_last4?: string | null;
   event_name?: string | null;
   line_items?: LineItem[] | null;
   user_id?: string | null;
