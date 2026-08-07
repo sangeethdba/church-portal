@@ -1,8 +1,10 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const GOOGLE_AI_KEY = Deno.env.get("GOOGLE_AI_KEY")!;
+// Gemini 1.5 Flash: 1,500 RPM free tier (vs 15 RPM for 2.0 Flash).
+// More than enough for weekly church ledger scans.
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 const SYSTEM_PROMPT = `You are an OCR assistant for a church finance app. You are given a photo of a paper Sunday offering ledger.
 
@@ -58,7 +60,7 @@ async function callGemini(cleanBase64: string): Promise<Response> {
 
     if (res.status === 429 && attempt < maxRetries - 1) {
       // Rate limited — wait and retry with exponential backoff
-      const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+      const delay = Math.pow(2, attempt) * 2000; // 2s, 4s, 8s
       console.log(`Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
       await new Promise((r) => setTimeout(r, delay));
       continue;
