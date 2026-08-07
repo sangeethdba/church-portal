@@ -80,6 +80,37 @@ const sampleDonorsForPick: { id: string; label: string }[] = [
   { id: "demo-d2", label: "The Reyes Family" },
 ];
 
+/**
+ * Find a donor by first+last name tokens (middle names ignored), creating a
+ * donor record when none exists. Returns null for anonymous/blank names so
+ * they stay unlinked. Used by every entry path (quick entry, form, bulk)
+ * so all giving shows up on the Donors page.
+ */
+const resolveDonorId = async (rawName: string): Promise<string | null> => {
+  if (!supabase) return null;
+  const name = (rawName || "").trim().replace(/\s+/g, " ");
+  if (!name || name.toLowerCase() === "anonymous") return null;
+  const parts = name.split(" ");
+  const first = parts[0] || name;
+  // Match on the LAST token as last name so middle names don't block linking
+  // ("JAHNAVI PRIYA BOMMAREDDY" → first "JAHNAVI", last "BOMMAREDDY").
+  const last = parts[parts.length - 1] || "";
+  const { data: existing } = await supabase
+    .from("donors")
+    .select("id")
+    .ilike("first_name", first)
+    .ilike("last_name", last)
+    .maybeSingle();
+  if (existing) return existing.id;
+  // Create with full name so no middle-name info is lost
+  const { data: created } = await supabase
+    .from("donors")
+    .insert({ first_name: first, last_name: parts.slice(1).join(" ") || "" })
+    .select("id")
+    .single();
+  return created?.id ?? null;
+};
+
 // ---------- Quick online giving (bulk entry) ----------
 interface QuickRow {
   key: number;
@@ -219,6 +250,9 @@ function QuickOnlineEntry({
     if (supabase) {
       await Promise.all(
         valid.map(async (r) => {
+          // Find-or-create the donor record so this gift also appears on the
+          // Donors page (submit_donation stores only the name text).
+          const donorId = r.donorId || (await resolveDonorId(r.query));
           const { error } = await supabase.rpc("submit_donation", {
             p_donor_name: r.query.trim() || "Anonymous",
             p_amount: Number(r.amount),
@@ -227,7 +261,7 @@ function QuickOnlineEntry({
             p_check_number: null,
             p_donation_date: r.date || date,
             p_notes: null,
-            p_donor_id: r.donorId || null,
+            p_donor_id: donorId,
           });
           if (error) failed++;
           else saved++;
@@ -600,34 +634,10 @@ export default function Donations() {
     for (const row of valid) {
       try {
         if (supabase) {
-          // Resolve donor: use pre-matched id, otherwise find-or-create a donor record
-          // so this giving shows on the Donors page (submit_donation stores only text).
-          let donorId = row.donorId ?? null;
-          if (!donorId) {
-            const name = row.donorName.trim();
-            const parts = name.split(/\s+/);
-            const first = parts[0] || name;
-            // Match on the LAST token as last name so middle names don't block
-            // linking ("JAHNAVI PRIYA BOMMAREDDY" → first "JAHNAVI", last "BOMMAREDDY").
-            const last = parts[parts.length - 1] || "";
-            const { data: existing } = await supabase
-              .from("donors")
-              .select("id")
-              .ilike("first_name", first)
-              .ilike("last_name", last)
-              .maybeSingle();
-            if (existing) {
-              donorId = existing.id;
-            } else {
-              // Create with full name so no middle-name info is lost
-              const { data: created } = await supabase
-                .from("donors")
-                .insert({ first_name: first, last_name: parts.slice(1).join(" ") || "" })
-                .select("id")
-                .single();
-              donorId = created?.id ?? null;
-            }
-          }
+          // Resolve donor: use pre-matched id, otherwise find-or-create a donor
+          // record so this giving shows on the Donors page (submit_donation
+          // stores only text).
+          const donorId = row.donorId ?? (await resolveDonorId(row.donorName));
           const { error } = await supabase.rpc("submit_donation", {
             p_donor_name: row.donorName.trim(),
             p_donor_id: donorId,
@@ -699,9 +709,12 @@ export default function Donations() {
     }
 
     // ── CREATE a new donation (existing behavior) ────────────────────────
+    // Walk-in names get a donor record created too, so they appear in the
+    // Donors directory — find-or-create unless a donor was already picked.
+    const resolvedDonorId = form.donor_id || (await resolveDonorId(donorName));
     const baseRow: Donation = {
       id: `local-${Date.now()}`,
-      donor_id: form.donor_id || null,
+      donor_id: resolvedDonorId,
       donor_name: donorName,
       donor_email: null,
       amount: value,
