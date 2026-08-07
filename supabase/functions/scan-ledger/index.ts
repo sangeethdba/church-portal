@@ -1,13 +1,14 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const GOOGLE_AI_KEY = Deno.env.get("GOOGLE_AI_KEY")!;
-// Gemini 2.5 Flash — confirmed working per real-time dashboard token counts
-const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent";
 
-const SYSTEM_PROMPT = `You are an OCR assistant for a church finance app. You are given a photo of a paper Sunday offering ledger.
+// Models to try in order — first one that returns non-404 is used
+const MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+];
 
-Extract the following structured data and return ONLY valid JSON — no commentary, no markdown, no code fences.
+const SYSTEM_PROMPT = `Extract this church offering ledger and return ONLY valid JSON — no commentary, no markdown, no code fences.
 
 The JSON shape:
 {
@@ -24,8 +25,8 @@ Rules:
 - serviceDate: use the date written on the ledger. Default to today if unclear.
 - serviceName: "Sunday Service" unless the ledger says otherwise.
 - denominations: count how many of each bill. Total of all subtotals equals gross cash.
-- deductions: list any deductions noted (pastor gift, etc.). If none, use empty array [].
-- checks: for each check, extract donor name, check number, and amount. Amounts in dollars.
+- deductions: list any deductions noted. If none, use empty array [].
+- checks: for each check, extract donor name, check number, and amount in dollars.
 - cashGifts: for named cash envelope gifts, extract donor name and amount.
 - If you cannot read a name, use "Unknown".
 - All amounts are numbers (not strings).
@@ -39,11 +40,10 @@ function cors(resp: Response): Response {
   return resp;
 }
 
-// Call Gemini with retry on 429 (rate limit)
-async function callGemini(cleanBase64: string): Promise<Response> {
-  const maxRetries = 3;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_AI_KEY}`, {
+async function tryModel(model: string, cleanBase64: string): Promise<Response> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_AI_KEY}`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -56,51 +56,62 @@ async function callGemini(cleanBase64: string): Promise<Response> {
         generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
       }),
     });
-
-    if (res.status === 429 && attempt < maxRetries - 1) {
-      // Rate limited — wait and retry with exponential backoff
-      const delay = Math.pow(3, attempt) * 3000; // 3s, 9s, 27s — let rate limit window pass
-      console.log(`Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-      await new Promise((r) => setTimeout(r, delay));
+    if (res.status === 429 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, Math.pow(3, attempt) * 3000));
       continue;
     }
-
     return res;
   }
-  // Shouldn't reach here, but fallback
-  throw new Error("Gemini API unavailable — rate limit exceeded after retries");
+  throw new Error("Rate limit exhausted");
 }
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return cors(new Response(null, { status: 204 }));
   }
-
   if (req.method !== "POST") {
     return cors(new Response(JSON.stringify({ success: false, error: "POST only" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
+      status: 405, headers: { "Content-Type": "application/json" },
     }));
   }
 
   try {
     const body = await req.json();
     const { imageBase64 } = body as { imageBase64?: string };
-
     if (!imageBase64) {
       return cors(new Response(JSON.stringify({ success: false, error: "Missing imageBase64" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
+        status: 400, headers: { "Content-Type": "application/json" },
       }));
     }
 
     const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
 
-    const geminiRes = await callGemini(cleanBase64);
+    // Try each model until one works
+    let geminiRes: Response | null = null;
+    let lastError = "";
+    for (const model of MODELS) {
+      try {
+        const res = await tryModel(model, cleanBase64);
+        if (res.status === 404) {
+          lastError = `${model}: 404`;
+          continue; // model doesn't exist, try next
+        }
+        geminiRes = res;
+        break;
+      } catch (e) {
+        lastError = `${model}: ${(e as Error).message}`;
+        continue;
+      }
+    }
+
+    if (!geminiRes) {
+      return cors(new Response(
+        JSON.stringify({ success: false, error: `All models failed — ${lastError}` }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      ));
+    }
 
     if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("Gemini API error:", geminiRes.status, errText.slice(0, 200));
       const msg = geminiRes.status === 429
         ? "AI service is busy — please wait a moment and try again."
         : `Gemini API error: ${geminiRes.status}`;
@@ -112,7 +123,6 @@ serve(async (req: Request) => {
 
     const geminiData = await geminiRes.json();
     const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-
     if (!rawText) {
       return cors(new Response(
         JSON.stringify({ success: false, error: "No text extracted from image" }),
@@ -122,8 +132,7 @@ serve(async (req: Request) => {
 
     let parsed: Record<string, unknown>;
     try {
-      const cleanText = rawText.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
-      parsed = JSON.parse(cleanText);
+      parsed = JSON.parse(rawText.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim());
     } catch {
       return cors(new Response(
         JSON.stringify({ success: false, error: "Failed to parse AI response", rawText }),
@@ -131,19 +140,18 @@ serve(async (req: Request) => {
       ));
     }
 
-    const result = {
-      serviceDate: (parsed.serviceDate as string) ?? new Date().toISOString().slice(0, 10),
-      serviceName: (parsed.serviceName as string) ?? "Sunday Service",
-      denominations: (parsed.denominations as Record<string, number>) ?? {},
-      deductions: (parsed.deductions as Array<{ reason: string; amount: number }>) ?? [],
-      checks: (parsed.checks as Array<{ donorName: string; checkNumber: string; amount: number }>) ?? [],
-      cashGifts: (parsed.cashGifts as Array<{ donorName: string; amount: number }>) ?? [],
-      notes: (parsed.notes as string) ?? "",
-    };
-
-    return cors(new Response(JSON.stringify({ success: true, data: result }), {
-      headers: { "Content-Type": "application/json" },
-    }));
+    return cors(new Response(JSON.stringify({
+      success: true,
+      data: {
+        serviceDate: (parsed.serviceDate as string) ?? new Date().toISOString().slice(0, 10),
+        serviceName: (parsed.serviceName as string) ?? "Sunday Service",
+        denominations: (parsed.denominations as Record<string, number>) ?? {},
+        deductions: (parsed.deductions as Array<{ reason: string; amount: number }>) ?? [],
+        checks: (parsed.checks as Array<{ donorName: string; checkNumber: string; amount: number }>) ?? [],
+        cashGifts: (parsed.cashGifts as Array<{ donorName: string; amount: number }>) ?? [],
+        notes: (parsed.notes as string) ?? "",
+      },
+    }), { headers: { "Content-Type": "application/json" } }));
   } catch (err) {
     console.error("scan-ledger error:", err);
     return cors(new Response(
