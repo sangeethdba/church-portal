@@ -588,9 +588,34 @@ export default function Donations() {
     for (const row of valid) {
       try {
         if (supabase) {
+          // Resolve donor: use pre-matched id, otherwise find-or-create a donor record
+          // so this giving shows on the Donors page (submit_donation stores only text).
+          let donorId = row.donorId ?? null;
+          if (!donorId) {
+            const name = row.donorName.trim();
+            const parts = name.split(/\s+/);
+            const first = parts[0] || name;
+            const last = parts.slice(1).join(" ") || "";
+            const { data: existing } = await supabase
+              .from("donors")
+              .select("id")
+              .ilike("first_name", first)
+              .ilike("last_name", last)
+              .maybeSingle();
+            if (existing) {
+              donorId = existing.id;
+            } else {
+              const { data: created } = await supabase
+                .from("donors")
+                .insert({ first_name: first, last_name: last })
+                .select("id")
+                .single();
+              donorId = created?.id ?? null;
+            }
+          }
           const { error } = await supabase.rpc("submit_donation", {
             p_donor_name: row.donorName.trim(),
-            p_donor_id: row.donorId ?? null,
+            p_donor_id: donorId,
             p_amount: Math.abs(Number(row.amount)),
             p_donation_type: row.donationType || "offering",
             p_payment_method: row.paymentMethod || "online",
