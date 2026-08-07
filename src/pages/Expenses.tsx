@@ -482,9 +482,12 @@ export default function Expenses() {
   const parseBoaStatement = (raw: string): BulkRow[] => {
     // Normalize: insert newlines before dates that appear mid-text
     // e.g. "800.0001/02/26" → "800.00\n01/02/26"
-    const normalized = raw.replace(/(\.\d{2})(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g, "$1\n$2");
+    const normalized = raw
+      .replace(/(\.\d{2})(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g, "$1\n$2")
+      // Also break amounts glued to section footers: "-14.44Subtotal…" or "-$1,457.78Card account…"
+      .replace(/(-?\$?[\d,]+\.\d{2})(?=Subtotal|Card account|Total |Daily balance|Your checking|Beginning balance|Ending balance)/gi, "$1\n");
     const lines = normalized.split(/\n/);
-    const entries: { date: string; desc: string; amount: string }[] = [];
+    const entries: { date: string; desc: string; amount: string; method: string }[] = [];
     let i = 0;
     // Only parse the withdrawals/debits section — skip the deposits section
     let inDebits = false;
@@ -532,10 +535,12 @@ export default function Expenses() {
         amount = amtMatch[1].replace(/[$,\s]/g, "");
         desc = desc.slice(0, amtMatch.index).trim();
       } else {
-        // Look ahead up to 3 lines for standalone amount (BOA splits amt after Conf#)
+        // Look ahead up to 3 lines for standalone amount (BOA splits amt after Conf#).
+        // Match an amount at the START of the line so it also catches glued
+        // footers like "-14.44Subtotal…" that normalization may have missed.
         for (let look = 1; look <= 3 && i + look < lines.length; look++) {
           const nextLine = lines[i + look]?.trim() || "";
-          const nextAmt = nextLine.match(/^(-?\$?[\d,]+\.\d{2})\s*$/);
+          const nextAmt = nextLine.match(/^(-?\$?[\d,]+\.\d{2})/);
           if (nextAmt) {
             amount = nextAmt[1].replace(/[$,\s]/g, "");
             i += look; // consume the amount line
@@ -550,6 +555,7 @@ export default function Expenses() {
       desc = desc
         .replace(/;?\s*Conf#\s*\S+/g, "")
         .replace(/CKCD\s*\d+\s*X+\d*/g, "")
+        .replace(/\bCKCD\b/g, "") // stray "CKCD" tokens left when digits are on the next line
         .replace(/\d{15,}/g, "")  // long transaction IDs
         .replace(/\b\d{2,4}\s+X+\s*\d{2,4}\b/g, "") // card masks
         .replace(/\s{2,}/g, " ")
@@ -559,10 +565,12 @@ export default function Expenses() {
       const numAmt = parseFloat(amount);
       if (numAmt > 0) { i++; continue; } // expenses should be negative in BOA statements
 
-      // Extract a clean title from the description
+      // Extract a clean title from the description. Two-pass like the Donations
+      // parser: first REQUIRE the "for" memo (so lazy matching can't stop at one
+      // char), then fall back to capturing the whole name for memos without one.
       let title = desc;
-      // For Zelle: "Zelle payment to NAME for "REASON"" → use the reason or name
-      const zelleTo = desc.match(/Zelle payment to\s+(.+?)(?:\s+for\s+["']([^"']+)["'])?/i);
+      let zelleTo = desc.match(/Zelle payment to\s+(.+?)\s+for\s+["']([^"']+)["']/i);
+      if (!zelleTo) zelleTo = desc.match(/Zelle payment to\s+(.+)/i);
       if (zelleTo) {
         const name = zelleTo[1].trim();
         const reason = zelleTo[2]?.trim();
@@ -573,22 +581,14 @@ export default function Expenses() {
 
       const absAmt = Math.abs(numAmt);
 
-      // Auto-categorize
-      let cat = "other";
-      const t = title.toLowerCase();
-      if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) cat = "food_expenses";
-      else if (/phone|internet|utility|electric|water|gas|power/.test(t)) cat = "utilities";
-      else if (/amazon/.test(t)) cat = "amazon_purchases";
-      else if (/supply|office|staples|walmart|usps|postage/.test(t)) cat = "supplies";
-      else if (/insurance/.test(t)) cat = "insurance";
-      else if (/salary|stipend|payroll|gift/.test(t)) cat = "salaries";
-      else if (/travel|hotel|flight|baggage/.test(t)) cat = "travel";
-      else if (/software|subscription|zoom|hosting/.test(t)) cat = "software";
-      else if (/western union|transfer|wire/.test(t)) cat = "bank_fees";
-      else if (/kingswood|university|school|college/.test(t)) cat = "education";
-      else if (/reimburs/.test(t)) cat = "salaries";
+      // Method detection from the raw description (title strips the "Zelle/CHECKCARD"
+      // prefixes, so method must be derived here before the title replaces desc).
+      let method = "online";
+      if (/checkcard|purchase|debit/i.test(desc)) method = "card";
+      else if (/^check\b|check #|check no/i.test(desc)) method = "check";
+      else if (/cash/i.test(desc)) method = "cash";
 
-      entries.push({ date, desc: title, amount: String(absAmt) });
+      entries.push({ date, desc: title, amount: String(absAmt), method });
       i++;
     }
 
@@ -599,20 +599,23 @@ export default function Expenses() {
       amount: e.amount,
       category: (() => {
         const t = e.desc.toLowerCase();
-        if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "food_expenses";
-        if (/phone|internet|utility|electric|water|gas|power/.test(t)) return "utilities";
         if (/amazon/.test(t)) return "amazon_purchases";
+        if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "food_expenses";
+        if (/phone|internet/.test(t)) return "internet_phone";
+        if (/utility|electric|water|gas|power/.test(t)) return "utilities";
         if (/supply|office|staples|walmart|usps|postage/.test(t)) return "supplies";
         if (/insurance/.test(t)) return "insurance";
-        if (/salary|stipend|payroll|gift/.test(t)) return "salaries";
+        if (/reimburs/.test(t)) return "reimbursements";
+        if (/salary|stipend|payroll/.test(t)) return "salaries";
+        if (/gift|benevolen|helping famil/.test(t)) return "benevolence";
         if (/travel|hotel|flight|baggage/.test(t)) return "travel";
         if (/software|subscription|zoom|hosting/.test(t)) return "software";
-        if (/western union|transfer|wire/.test(t)) return "bank_fees";
+        if (/western union|wire/.test(t)) return "benevolence";
         if (/kingswood|university|school|college/.test(t)) return "education";
-        if (/reimburs/.test(t)) return "salaries";
+        if (/rent|lease|mortgage/.test(t)) return "rent";
         return "other";
       })(),
-      method: (/zelle/i.test(e.desc) ? "online" : /checkcard|purchase|debit/i.test(e.desc) ? "card" : "online"),
+      method: e.method || "online",
     }));
   };
 
