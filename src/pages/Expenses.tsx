@@ -570,9 +570,10 @@ export default function Expenses() {
       // Auto-categorize
       let cat = "other";
       const t = title.toLowerCase();
-      if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) cat = "events";
+      if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) cat = "food_expenses";
       else if (/phone|internet|utility|electric|water|gas|power/.test(t)) cat = "utilities";
-      else if (/amazon|supply|office|staples|walmart|usps|postage/.test(t)) cat = "supplies";
+      else if (/amazon/.test(t)) cat = "amazon_purchases";
+      else if (/supply|office|staples|walmart|usps|postage/.test(t)) cat = "supplies";
       else if (/insurance/.test(t)) cat = "insurance";
       else if (/salary|stipend|payroll|gift/.test(t)) cat = "salaries";
       else if (/travel|hotel|flight|baggage/.test(t)) cat = "travel";
@@ -592,9 +593,10 @@ export default function Expenses() {
       amount: e.amount,
       category: (() => {
         const t = e.desc.toLowerCase();
-        if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "events";
+        if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "food_expenses";
         if (/phone|internet|utility|electric|water|gas|power/.test(t)) return "utilities";
-        if (/amazon|supply|office|staples|walmart|usps|postage/.test(t)) return "supplies";
+        if (/amazon/.test(t)) return "amazon_purchases";
+        if (/supply|office|staples|walmart|usps|postage/.test(t)) return "supplies";
         if (/insurance/.test(t)) return "insurance";
         if (/salary|stipend|payroll|gift/.test(t)) return "salaries";
         if (/travel|hotel|flight|baggage/.test(t)) return "travel";
@@ -661,11 +663,13 @@ export default function Expenses() {
       let cat = "other";
       const dLower = desc.toLowerCase();
       if (/electric|power|utility|water|gas|internet|phone/.test(dLower)) cat = "utilities";
-      else if (/amazon|walmart|target|costco|supply|office|staples/.test(dLower)) cat = "supplies";
+      else if (/food|grocery|restaurant|catering|lunch|dinner/.test(dLower)) cat = "food_expenses";
+      else if (/amazon/.test(dLower)) cat = "amazon_purchases";
+      else if (/walmart|target|costco|supply|office|staples/.test(dLower)) cat = "supplies";
       else if (/rent|lease|mortgage/.test(dLower)) cat = "facility_rent";
       else if (/insurance/.test(dLower)) cat = "insurance";
       else if (/salary|payroll|stipend/.test(dLower)) cat = "salaries";
-      else if (/restaurant|catering|food|lunch|dinner/.test(dLower)) cat = "events";
+      else if (/restaurant|catering|food|lunch|dinner/.test(dLower)) cat = "food_expenses";
       else if (/travel|hotel|flight|airline|uber|lyft/.test(dLower)) cat = "travel";
       else if (/software|subscription|hosting|domain|zoom|slack/.test(dLower)) cat = "software";
       else if (/bank fee|service charge|wire|transfer fee/.test(dLower)) cat = "bank_fees";

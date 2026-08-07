@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange, Globe, Search, Trash2, Check, Pencil, AlertTriangle } from "lucide-react";
+import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange, Globe, Search, Trash2, Check, Pencil, AlertTriangle, UploadCloud, FileSpreadsheet } from "lucide-react";
 import {
   Button,
   Card,
@@ -9,6 +9,7 @@ import {
   Input,
   Label,
   Select,
+  Textarea,
   Badge,
   EmptyState,
   TableWrap,
@@ -408,6 +409,14 @@ export default function Donations() {
   });
   const [saving, setSaving] = useState(false);
 
+  // ── Bulk import (BOA statement → online donations) ────────────────
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkRaw, setBulkRaw] = useState("");
+  const [bulkError, setBulkError] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  interface DonationRow { key: string; date: string; donorName: string; amount: string; paymentMethod: string; donationType: string; notes: string; }
+  const [bulkRows, setBulkRows] = useState<DonationRow[]>([]);
+
   // Edit / delete saved donations (admin only)
   const [editTarget, setEditTarget] = useState<Donation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Donation | null>(null);
@@ -476,6 +485,108 @@ export default function Donations() {
       notes: d.notes ?? "",
     });
     setOpen(true);
+  };
+
+  // ── Parse BOA statement for deposits (Zelle payment from, deposits) ──
+  const parseBoaDeposits = (raw: string): DonationRow[] => {
+    const lines = raw.split(/\n/);
+    const entries: { date: string; desc: string; amount: string }[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i].trim();
+      if (!line) { i++; continue; }
+      // Skip section headers
+      if (/^(Page \d|ATLANTA LITTLE FLOCK|Account #|Subtotal|Total |Your checking|Daily balance|Beginning balance|Ending balance|Number of |Statement period|Card account #|Deposits)/i.test(line)) { i++; continue; }
+      // Match date
+      const dateMatch = line.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
+      if (!dateMatch) { i++; continue; }
+      const rawDate = dateMatch[1];
+      const dateParts = rawDate.split("/");
+      let y = dateParts[2]; if (y.length === 2) y = "20" + y;
+      const date = `${y}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
+      let desc = line.slice(dateMatch[0].length).trim();
+      // Only keep deposits: Zelle payment FROM, Deposit, Purchase Refund
+      if (!/zelle payment from\b|\bdeposit\b|purchase refund/i.test(desc)) { i++; continue; }
+      // Skip Zelle payment TO (expenses)
+      if (/zelle payment to\b/i.test(desc)) { i++; continue; }
+      // Find amount (at end of line or on next line)
+      let amount = "";
+      const amtMatch = desc.match(/(-?\$?[\d,]+\.\d{2})\s*$/);
+      if (amtMatch) {
+        amount = amtMatch[1].replace(/[$,\s]/g, "");
+        desc = desc.slice(0, amtMatch.index).trim();
+      } else {
+        const nextLine = lines[i + 1]?.trim() || "";
+        const nextAmt = nextLine.match(/^(-?\$?[\d,]+\.\d{2})\s*$/);
+        if (nextAmt) { amount = nextAmt[1].replace(/[$,\s]/g, ""); i++; }
+      }
+      if (!amount) { i++; continue; }
+      const numAmt = parseFloat(amount);
+      if (numAmt <= 0) { i++; continue; }
+      // Clean description
+      desc = desc.replace(/;?\s*Conf#\s*\S+/g, "").replace(/\d{15,}/g, "").replace(/\s{2,}/g, " ").trim();
+      // Extract donor name
+      let donorName = "";
+      const zelleFrom = desc.match(/Zelle payment from\s+([^f]+?)(?:\s+for\s+["']([^"']+)["'])?/i);
+      if (zelleFrom) {
+        donorName = zelleFrom[1].trim();
+        desc = zelleFrom[2]?.trim() || `Online gift from ${donorName}`;
+      } else if (/\bdeposit\b/i.test(desc)) {
+        donorName = ""; desc = "Bank deposit";
+      } else {
+        donorName = ""; desc = desc.slice(0, 200);
+      }
+      entries.push({ date, desc, amount: String(Math.abs(numAmt)) });
+      i++;
+    }
+    return entries.map((e, idx) => ({
+      key: `don-${Date.now()}-${idx}`,
+      date: e.date,
+      donorName: e.desc.includes("Online gift from") ? e.desc.replace("Online gift from ", "") : "",
+      amount: e.amount,
+      paymentMethod: "online",
+      donationType: "offering",
+      notes: e.desc.includes("Online gift from") ? "" : e.desc.slice(0, 200),
+    }));
+  };
+
+  const handleParseBoa = () => {
+    setBulkError("");
+    const rows = parseBoaDeposits(bulkRaw);
+    if (rows.length === 0) {
+      setBulkError("No deposits detected. Paste the BOA statement text including Zelle payment from or Deposit entries.");
+      setBulkRows([]);
+      return;
+    }
+    setBulkRows(rows);
+  };
+
+  const handleBulkImport = async () => {
+    const valid = bulkRows.filter((r) => r.donorName && r.amount && !isNaN(Number(r.amount)) && Number(r.amount) > 0);
+    if (valid.length === 0) { setBulkError("Each row needs a donor name and amount. Fill in missing fields."); return; }
+    setBulkSaving(true);
+    setBulkError("");
+    let imported = 0; let failed = 0;
+    for (const row of valid) {
+      try {
+        if (supabase) {
+          const { error } = await supabase.rpc("record_donation", {
+            p_donor_name: row.donorName.trim(),
+            p_donor_id: null,
+            p_amount: Math.abs(Number(row.amount)),
+            p_donation_type: row.donationType || "offering",
+            p_payment_method: row.paymentMethod || "online",
+            p_donation_date: row.date || new Date().toISOString().slice(0, 10),
+            p_notes: row.notes || null,
+          });
+          if (!error) imported++; else { failed++; console.warn("Bulk donation row failed:", error); }
+        } else { imported++; }
+      } catch { failed++; }
+    }
+    setBulkSaving(false);
+    const msg = imported > 0 ? `Imported ${imported} online donation${imported === 1 ? "" : "s"}${failed > 0 ? ` (${failed} failed)` : ""}.` : `Import failed for all ${failed} rows.`;
+    if (imported > 0 && failed === 0) { setBulkOpen(false); setBulkRaw(""); setBulkRows([]); reloadDonations(); toast(msg, "success"); }
+    else setBulkError(msg);
   };
 
   const handleSave = async () => {
@@ -664,6 +775,98 @@ export default function Donations() {
           isAdmin && (
           <>
           <Button iconLeft={<Church className="h-4 w-4" />} variant="outline" onClick={() => navigate("/offerings")}>Record Sunday offering</Button>
+          <Dialog open={bulkOpen} onOpenChange={(v) => { setBulkOpen(v); if (!v) setBulkError(""); }}>
+            <DialogTrigger asChild>
+              <Button variant="outline" iconLeft={<UploadCloud className="h-4 w-4" />}>Bulk import</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Bulk import online offerings</DialogTitle>
+                <DialogDescription>
+                  Paste your Bank of America statement to extract Zelle payments and deposits. Each entry becomes an <strong>online offering</strong> — review and add donor names before importing.
+                </DialogDescription>
+              </DialogHeader>
+              <div>
+                <Label htmlFor="bulk-boa-donation">Paste BOA statement text</Label>
+                <Textarea
+                  id="bulk-boa-donation"
+                  rows={10}
+                  value={bulkRaw}
+                  onChange={(e) => setBulkRaw(e.target.value)}
+                  className="mt-1.5 font-mono text-xs"
+                  placeholder={`01/02/26 Zelle payment from RANI PENUMAKA for "Praise the Lord"; Conf# 0JKLL0Q0Y 800.00\n01/02/26 Zelle payment from JOEL MANGALAM for "Offering"; Conf# m0340pern 700.00\n01/12/26 Deposit 5,810.00`}
+                />
+                <p className="mt-1 text-xs text-stone-400">Copy the full monthly statement from BOA's website and paste here. Parses Zelle payment FROM, bank deposits, and purchase refunds — skips expenses automatically.</p>
+                <Button
+                  className="mt-3"
+                  onClick={handleParseBoa}
+                  disabled={!bulkRaw.trim()}
+                  iconLeft={<FileSpreadsheet className="h-4 w-4" />}
+                >
+                  Parse BOA statement
+                </Button>
+              </div>
+              {bulkError && (
+                <div className="flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  <AlertTriangle className="h-4 w-4 shrink-0" /> {bulkError}
+                </div>
+              )}
+              {bulkRows.length > 0 && (
+                <>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-sm text-stone-600">{bulkRows.length} deposit{bulkRows.length === 1 ? "" : "s"} detected — add donor names and review</span>
+                    <span className="text-sm font-medium text-stone-700">Total: {formatCurrency(bulkRows.reduce((s, r) => s + Math.abs(Number(r.amount) || 0), 0))}</span>
+                  </div>
+                  <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-stone-200">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-stone-50">
+                        <tr className="border-b border-stone-200 text-stone-500">
+                          <th className="px-2 py-2 text-left font-medium">Date</th>
+                          <th className="px-2 py-2 text-left font-medium">Donor name</th>
+                          <th className="px-2 py-2 text-right font-medium w-20">Amount</th>
+                          <th className="px-2 py-2 text-left font-medium w-24">Type</th>
+                          <th className="px-2 py-2 text-left font-medium w-44">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bulkRows.map((row, i) => (
+                          <tr key={row.key} className="border-b border-stone-100 hover:bg-stone-50/50">
+                            <td className="px-2 py-1">
+                              <input type="date" value={row.date} onChange={(e) => { const next = [...bulkRows]; next[i] = { ...next[i], date: e.target.value }; setBulkRows(next); }} className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs" />
+                            </td>
+                            <td className="px-2 py-1">
+                              <input type="text" value={row.donorName} onChange={(e) => { const next = [...bulkRows]; next[i] = { ...next[i], donorName: e.target.value }; setBulkRows(next); }} className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs" placeholder="Enter donor name" />
+                            </td>
+                            <td className="px-2 py-1">
+                              <input type="number" min="0" step="0.01" value={row.amount} onChange={(e) => { const next = [...bulkRows]; next[i] = { ...next[i], amount: e.target.value }; setBulkRows(next); }} className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs text-right" />
+                            </td>
+                            <td className="px-2 py-1">
+                              <select value={row.donationType} onChange={(e) => { const next = [...bulkRows]; next[i] = { ...next[i], donationType: e.target.value }; setBulkRows(next); }} className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs">
+                                <option value="tithe">Tithe</option>
+                                <option value="offering">Offering</option>
+                                <option value="building">Building</option>
+                                <option value="missions">Missions</option>
+                                <option value="other">Other</option>
+                              </select>
+                            </td>
+                            <td className="px-2 py-1">
+                              <input type="text" value={row.notes} onChange={(e) => { const next = [...bulkRows]; next[i] = { ...next[i], notes: e.target.value }; setBulkRows(next); }} className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { setBulkOpen(false); setBulkRaw(""); setBulkRows([]); setBulkError(""); }}>Cancel</Button>
+                    <Button onClick={handleBulkImport} disabled={bulkSaving || !bulkRows.some((r) => r.donorName && r.amount)}>
+                      {bulkSaving ? "Importing…" : `Import ${bulkRows.filter((r) => r.donorName && r.amount).length} donation${bulkRows.filter((r) => r.donorName && r.amount).length === 1 ? "" : "s"}`}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </DialogContent>
+          </Dialog>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>New donation</Button>

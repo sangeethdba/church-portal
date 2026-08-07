@@ -109,6 +109,10 @@ export type ExpenseCategory =
   | "sunday_school"
   | "reimbursements"
   | "bank_fees"
+  | "food_expenses"
+  | "amazon_purchases"
+  | "software"
+  | "education"
   | "other";
 
 /** Human-friendly labels + grouping for the expense category enum. */
@@ -142,6 +146,10 @@ export const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string; group:
   { value: "tickets", label: "Tickets (flights, events)", group: "Travel & transport" },
   { value: "reimbursements", label: "Member reimbursements", group: "People" },
   { value: "bank_fees", label: "Bank & service fees", group: "Facility" },
+  { value: "food_expenses", label: "Food expenses & grocery", group: "Events" },
+  { value: "amazon_purchases", label: "Amazon purchases", group: "Ministry" },
+  { value: "software", label: "Software subscriptions", group: "Facility" },
+  { value: "education", label: "Education & tuition", group: "Ministry" },
   { value: "other", label: "Other", group: "Other" },
 ];
 
