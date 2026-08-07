@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange, Globe, Search, Trash2, Check, Pencil, AlertTriangle, UploadCloud, FileSpreadsheet } from "lucide-react";
+import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange, Globe, Search, Trash2, Check, Pencil, AlertTriangle, UploadCloud, FileSpreadsheet, X } from "lucide-react";
 import {
   Button,
   Card,
@@ -510,7 +510,7 @@ export default function Donations() {
       const date = `${y}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
       let desc = line.slice(dateMatch[0].length).trim();
       // Only keep deposits: Zelle payment FROM, Deposit, Purchase Refund
-      if (!/zelle payment from\b|\bdeposit\b|purchase refund/i.test(desc)) { i++; continue; }
+      if (!/zelle payment from\b|purchase refund/i.test(desc)) { i++; continue; }
       // Skip Zelle payment TO (expenses)
       if (/zelle payment to\b/i.test(desc)) { i++; continue; }
       // Find amount (at end of line, before next date, or on next line)
@@ -842,6 +842,7 @@ export default function Donations() {
                           <th className="px-2 py-2 text-right font-medium w-20">Amount</th>
                           <th className="px-2 py-2 text-left font-medium w-24">Type</th>
                           <th className="px-2 py-2 text-left font-medium w-44">Notes</th>
+                          <th className="px-2 py-2 w-8"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -868,6 +869,11 @@ export default function Donations() {
                             </td>
                             <td className="px-2 py-1">
                               <input type="text" value={row.notes} onChange={(e) => { const next = [...bulkRows]; next[i] = { ...next[i], notes: e.target.value }; setBulkRows(next); }} className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs" />
+                            </td>
+                            <td className="px-2 py-1">
+                              <button type="button" onClick={() => { const next = [...bulkRows]; next.splice(i, 1); setBulkRows(next); }} className="rounded p-0.5 text-stone-400 hover:bg-rose-50 hover:text-rose-600" title="Remove row">
+                                <X className="h-3.5 w-3.5" />
+                              </button>
                             </td>
                           </tr>
                         ))}
