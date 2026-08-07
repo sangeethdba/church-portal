@@ -733,86 +733,128 @@ export default function Offerings() {
 
       console.log("=== RAW OCR TEXT ===\n", text, "\n=== END ===");
 
-      // ── Flexible parsing: find every dollar amount and its context ──
       const checks: Array<{ donorName: string; checkNumber: string; amount: number }> = [];
       const cashGifts: Array<{ donorName: string; amount: number }> = [];
       const denoms: Record<string, number> = {};
       let svcDate = new Date().toISOString().slice(0, 10);
       let pastorDeduction = 0;
 
-      // Strategy: find all amount patterns in the text, then look backwards
-      // for check numbers and names
       const lines = text.split(/\n/).map((l) => l.trim());
 
-      // 1. Date detection — any date-like pattern
+      // ── 1. Date detection ──
       const dateMatch = text.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|(\d{4}[\-]\d{2}[\-]\d{2})/);
       if (dateMatch) {
         const d = new Date(dateMatch[0]);
         if (!isNaN(d.getTime())) svcDate = d.toISOString().slice(0, 10);
       }
 
-      // 2. Pastor gift
-      const pastorMatch = text.match(/pastor\b[^\n]*?\$?(\d+\.?\d{0,2})/i);
-      if (pastorMatch) pastorDeduction = parseFloat(pastorMatch[1]) || 0;
-
-      // 3. Denomination detection — broad patterns
-      for (const denom of [100, 50, 20, 10, 5, 2, 1]) {
-        // "100 x 5", "$100: 3", "100s = 2", "100:3", "100x5"
-        const re = new RegExp(`\\b${denom}\\s*[x:×=]\\s*(\\d+)\\b|\\$(?:${denom})\\s*[:=]?\\s*(\\d+)|(\\d+)\\s*\\$?${denom}\\b`, "i");
-        const m = text.match(re);
-        if (m) {
-          const cnt = parseInt(m[1] || m[2] || m[3]);
-          if (cnt > 0) denoms[String(denom)] = (denoms[String(denom)] || 0) + cnt;
+      // ── 2. Two-pass line parsing ──
+      // First pass: find lines that look like check entries (have both a 3-6 digit # and a dollar amount)
+      // vs denomination lines (have denomination bill value × count pattern)
+      const DENOM_VALUES = [100, 50, 20, 10, 5, 2, 1];
+      const isDenomLine = (line: string) => {
+        for (const d of DENOM_VALUES) {
+          if (new RegExp(`\\b${d}\\s*[x×:=\\-]\\s*\\d+`, "i").test(line)) return true;
+          if (new RegExp(`\\$?${d}\\s+(?:bill|bills)`, "i").test(line)) return true;
         }
-      }
+        return false;
+      };
 
-      // 4. Line-by-line: extract amounts + check numbers + names
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (!line) continue;
+      for (const line of lines) {
+        if (!line || line.length < 3) continue;
 
-        // Find dollar amounts: $XX.XX or XX.XX (standalone decimal) or XX (whole dollar)
-        const amountMatches = [...line.matchAll(/\$?(\d+(?:\.\d{2})?)\b/g)];
-        for (const am of amountMatches) {
-          const amt = parseFloat(am[1]);
-          if (isNaN(amt) || amt <= 0) continue;
-          // Skip very large numbers (likely dates, phone #s) and very small (< 0.50)
-          if (amt > 50000 || amt < 0.5) continue;
-
-          // Get text before the amount on this line
-          const idx = am.index ?? 0;
-          const before = line.slice(0, idx).trim();
-
-          // Try to find a check number (3-6 digits) in the text before the amount
-          const ckMatch = before.match(/(\d{3,6})\s*$/);
-          const checkNum = ckMatch ? ckMatch[1] : "";
-
-          // The name is whatever's left before the check number (or before the amount)
-          let namePart = checkNum ? before.slice(0, before.length - checkNum.length).trim() : before;
-          // Clean up: remove leading symbols, keep only letters/spaces/hyphens
-          namePart = namePart.replace(/^[^a-zA-Z]+/, "").replace(/[^a-zA-Z\s\-'.]/g, "").trim();
-
-          if (namePart.length > 1) {
-            if (checkNum) {
-              checks.push({ donorName: namePart, checkNumber: checkNum, amount: amt });
-            } else {
-              // If there's a name but no check number, treat as cash gift (unless it looks like a denomination count)
-              // Avoid confusing "100 5" as a $100 donation by "5" — skip common denom amounts
-              cashGifts.push({ donorName: namePart, amount: amt });
+        // Skip denomination lines — handle them in pass 2
+        if (isDenomLine(line)) {
+          for (const d of DENOM_VALUES) {
+            // Match: "100 x 5", "$100: 3", "100s = 2", "100:3", "100x5", "100 × 5"
+            const m = line.match(new RegExp(`\\b${d}\\s*[x×:=\\-]\\s*(\\d+)`, "i"))
+              || line.match(new RegExp(`\\$?${d}\\s+(?:bill|bills)\\s*:?\\s*(\\d+)`, "i"));
+            if (m) {
+              const cnt = parseInt(m[1]);
+              if (cnt > 0 && cnt < 1000) denoms[String(d)] = cnt;
             }
+          }
+          continue;
+        }
+
+        // Pastor gift detection
+        if (/pastor/i.test(line)) {
+          const pm = line.match(/\$?(\d+\.?\d{0,2})/);
+          if (pm) pastorDeduction = parseFloat(pm[1]) || 0;
+          continue;
+        }
+
+        // Try to parse as a check/cash entry
+        // Strategy: extract all numbers from the line, figure out which is amount vs check#
+        const allNums = [...line.matchAll(/\$?(\d+(?:\.\d{2})?)\b/g)];
+        if (allNums.length < 2) continue; // Need at least a check# and an amount
+
+        // Find the amount: the last number with a $ sign, or the last decimal number, or the last number
+        let amountIdx = -1;
+        let amount = 0;
+        for (let i = allNums.length - 1; i >= 0; i--) {
+          const n = parseFloat(allNums[i][1]);
+          if (n > 0.5 && n <= 50000) { amountIdx = i; amount = n; break; }
+        }
+        if (amountIdx < 0) continue;
+
+        // Find check number: look for a 3-6 digit standalone number *before* the amount
+        let checkNum = "";
+        let nameStart = 0;
+        for (let i = 0; i < amountIdx; i++) {
+          const n = allNums[i][1];
+          if (/^\d{3,6}$/.test(n) && parseInt(n) > 100) {
+            checkNum = n;
+            nameStart = i + 1;
+            break;
+          }
+        }
+
+        // Extract name: everything between check number and amount
+        // Get the text between the check number match and the amount match
+        const ckIdx = checkNum ? line.indexOf(checkNum) : -1;
+        const amIdx = allNums[amountIdx].index ?? line.length;
+        let nameRaw = "";
+        if (ckIdx >= 0 && amIdx > ckIdx) {
+          nameRaw = line.slice(ckIdx + checkNum.length, amIdx);
+        } else if (amountIdx > 0) {
+          nameRaw = line.slice(0, amIdx);
+        } else {
+          nameRaw = line.slice(0, amIdx);
+        }
+
+        // Clean up the name: remove $, digits, punctuation, extra spaces
+        let donorName = nameRaw.replace(/[\$\d.,:;()\[\]{}]/g, " ").replace(/\s+/g, " ").trim();
+        // Remove leading/trailing non-letters
+        donorName = donorName.replace(/^[^a-zA-Z]+/, "").replace(/[^a-zA-Z]+$/, "");
+
+        if (donorName.length > 1 && amount > 0) {
+          if (checkNum) {
+            checks.push({ donorName, checkNumber: checkNum, amount });
+          } else {
+            cashGifts.push({ donorName, amount });
           }
         }
       }
 
-      // Deduplicate: if two amounts are very close, keep the one with a check number
-      const dedupedChecks = checks.filter((c, ci) => {
-        return !checks.some((c2, cj) => cj < ci && Math.abs(c2.amount - c.amount) < 0.01 && c2.donorName === c.donorName);
-      });
-      const dedupedGifts = cashGifts.filter((g, gi) => {
-        return !cashGifts.some((g2, gj) => gj < gi && Math.abs(g2.amount - g.amount) < 0.01 && g2.donorName === g.donorName);
+      // ── 3. Also try full-text denomination scanning (catches anything missed line-by-line) ──
+      for (const d of DENOM_VALUES) {
+        if (denoms[String(d)]) continue; // already found
+        // Look for "$100 × 5" anywhere in remaining text
+        const m = text.match(new RegExp(`\\$?${d}\\s*[x×]\\s*(\\d+)`, "i"));
+        if (m) { const cnt = parseInt(m[1]); if (cnt > 0 && cnt < 1000) denoms[String(d)] = cnt; }
+      }
+
+      // ── 4. Deduplicate ──
+      const seen = new Set<string>();
+      const dedupedChecks = checks.filter((c) => {
+        const key = `${c.checkNumber}|${c.amount.toFixed(2)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
 
-      // Pre-fill the form
+      // ── Pre-fill the form ──
       setSvcDate(svcDate);
       setSvcName("Sunday Service");
       const nd = emptyDenoms();
@@ -822,19 +864,22 @@ export default function Offerings() {
       const stamp = Date.now();
       setDonations([
         ...dedupedChecks.map((c, i) => ({ key: `ocr-c-${stamp}-${i}`, donorName: c.donorName, donorId: "", method: "check" as const, checkNumber: c.checkNumber, amount: String(c.amount) })),
-        ...dedupedGifts.map((g, i) => ({ key: `ocr-g-${stamp}-${i}`, donorName: g.donorName, donorId: "", method: "cash" as const, checkNumber: "", amount: String(g.amount) })),
+        ...cashGifts.map((g, i) => ({ key: `ocr-g-${stamp}-${i}`, donorName: g.donorName, donorId: "", method: "cash" as const, checkNumber: "", amount: String(g.amount) })),
       ]);
       setCounter1Pin(""); setCounter2Id(""); setCounter2Pin(""); setSignOffError(""); setEditingOffering(null);
       setScanOpen(false); setScanFile(null); setScanPreview(null); setOcrLoading(false);
       setOpen(true);
 
-      const total = dedupedChecks.length + dedupedGifts.length;
-      if (total === 0) {
-        // Show the raw text so the user can see what was read
+      const total = dedupedChecks.length + cashGifts.length;
+      const denomCount = Object.values(denoms).filter((v) => v > 0).length;
+      if (total === 0 && denomCount === 0) {
         const preview = text.slice(0, 300).replace(/\n/g, " | ");
         toast(`No entries detected. OCR read: "${preview}…" — try a clearer photo or use AI Scan instead.`, "error");
       } else {
-        toast(`OCR found ${total} entries. Review carefully — OCR can misread handwriting.`, "success");
+        const parts: string[] = [];
+        if (total > 0) parts.push(`${total} entries`);
+        if (denomCount > 0) parts.push(`${denomCount} denominations`);
+        toast(`OCR found ${parts.join(" + ")}. Review carefully — OCR can misread handwriting.`, "success");
       }
     } catch (err) {
       console.warn("Basic OCR failed:", err);
