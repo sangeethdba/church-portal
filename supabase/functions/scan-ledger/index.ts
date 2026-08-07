@@ -1,10 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const GOOGLE_AI_KEY = Deno.env.get("GOOGLE_AI_KEY")!;
-// Gemini 1.5 Flash: 1,500 RPM free tier (vs 15 RPM for 2.0 Flash).
-// More than enough for weekly church ledger scans.
+// Gemini 2.0 Flash-Lite: always enabled, higher free tier than 2.0 Flash
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent";
 
 const SYSTEM_PROMPT = `You are an OCR assistant for a church finance app. You are given a photo of a paper Sunday offering ledger.
 
