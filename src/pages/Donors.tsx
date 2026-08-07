@@ -469,12 +469,25 @@ export default function Donors() {
     }
     const yearStart = new Date(now.getFullYear(), now.getMonth() - 11, 1).toISOString().slice(0, 10);
     if (supabase) {
-      const { data } = await supabase
-        .from("donations")
-        .select("amount, donation_date")
-        .eq("donor_id", donor.id)
-        .gte("donation_date", yearStart);
-      (data ?? []).forEach((d: { amount: number; donation_date: string }) => {
+      const fullName = `${donor.first_name} ${donor.last_name}`.trim();
+      const [res1, res2] = await Promise.all([
+        supabase
+          .from("donations")
+          .select("amount, donation_date")
+          .eq("donor_id", donor.id)
+          .gte("donation_date", yearStart),
+        supabase
+          .from("donations")
+          .select("amount, donation_date")
+          .is("donor_id", null)
+          .ilike("donor_name", `%${fullName.replace(/'/g, "''")}%`)
+          .gte("donation_date", yearStart),
+      ]);
+      const allRows = [
+        ...(res1.data ?? []),
+        ...(res2.data ?? []),
+      ] as { amount: number; donation_date: string }[];
+      allRows.forEach((d) => {
         const key = d.donation_date.slice(0, 7);
         if (months[key] !== undefined) months[key] += Number(d.amount ?? 0);
       });
