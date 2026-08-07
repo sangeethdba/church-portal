@@ -667,19 +667,19 @@ export default function Offerings() {
         { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ imageBase64: base64 }) },
       );
 
-      let json: { success?: boolean; error?: string; data?: Record<string, unknown> };
+      let json: { ok?: boolean; error?: string; data?: Record<string, unknown> };
       try { json = await res.json(); } catch {
         setScanError(`Server error (${res.status}). Try again.`);
         setScanLoading(false);
         return;
       }
 
-      if (!json.success) {
+      if (!json.ok) {
         setScanError(json.error ?? `Scan failed (${res.status})`);
         setScanLoading(false);
         return;
       }
-      const d = json.data!;
+      const d = json.data ?? {};
       const newDenoms = emptyDenoms();
       if (d.denominations) for (const [k, v] of Object.entries(d.denominations as Record<string, unknown>)) if (k in newDenoms) newDenoms[Number(k)] = String(Math.max(0, Math.round(Number(v) || 0)));
       const dedArray = ((d.deductions ?? []) as Array<{ reason: string; amount: number }>).map((ded) => ({ reason: ded.reason || "", amount: String(Math.max(0, Number(ded.amount) || 0)) }));
