@@ -664,7 +664,7 @@ export default function Offerings() {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-ledger`,
+        `https://qjoxqfkdyugwmgzgjzir.supabase.co/functions/v1/scan-ledger`,
         { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ imageBase64: base64 }) },
       );
 
