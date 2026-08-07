@@ -468,7 +468,7 @@ export default function Dashboard() {
           <CardHeader><div className="flex items-center justify-between"><h2 className="font-serif text-lg font-semibold text-[#3C2A1E]">Recent giving</h2><Badge tone="indigo">{recentItems.length}</Badge></div></CardHeader>
           <CardBody className="space-y-3">
             {recentItems.length === 0 ? <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No giving yet" description="Once offerings and gifts are recorded, they'll show here."/>
-            : recentItems.map((d) => (<div key={d.id} className="flex items-center justify-between rounded-lg border border-[#F5F0E8] px-4 py-3 hover:bg-[#FDF2E9]/60"><div><div className="font-medium text-[#3C2A1E]">{d.name}</div><div className="text-xs text-[#78716C]">{formatDate(d.date)} · {d.meta}</div></div><div className="font-serif text-lg font-semibold text-[#3C2A1E]">{formatCurrency(d.amount)}</div></div>))}
+            : recentItems.map((d) => (<div key={d.id} className="flex items-center justify-between rounded-lg border border-[#F5F0E8] px-4 py-3 hover:bg-[#FDF2E9]/60"><div><div className="font-medium text-[#3C2A1E]">{d.name === "Sunday Service collection" ? "Sunday Service Offering" : d.name}</div><div className="text-xs text-[#78716C]">{formatDate(d.date)} · {d.meta}</div></div><div className="font-serif text-lg font-semibold text-[#3C2A1E]">{formatCurrency(d.amount)}</div></div>))}
           </CardBody>
         </Card>
         <Card>
