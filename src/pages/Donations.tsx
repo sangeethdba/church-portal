@@ -584,12 +584,13 @@ export default function Donations() {
     for (const row of valid) {
       try {
         if (supabase) {
-          const { error } = await supabase.rpc("record_donation", {
+          const { error } = await supabase.rpc("submit_donation", {
             p_donor_name: row.donorName.trim(),
             p_donor_id: row.donorId ?? null,
             p_amount: Math.abs(Number(row.amount)),
             p_donation_type: row.donationType || "offering",
             p_payment_method: row.paymentMethod || "online",
+            p_check_number: null,
             p_donation_date: row.date || new Date().toISOString().slice(0, 10),
             p_notes: row.notes || null,
           });
