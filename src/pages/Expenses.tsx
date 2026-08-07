@@ -204,6 +204,11 @@ export default function Expenses() {
     method: string;
     checkNumber: string;
     notes: string;
+    /** Payee name from "Zelle payment to <NAME>" — used to link member reimbursements. */
+    recipient: string;
+    /** Matched member profile id (Zelle payment made TO this member). */
+    memberId: string | null;
+    memberName: string | null;
   }
 
   const emptyBulkRow = (): BulkRow => ({
@@ -213,6 +218,9 @@ export default function Expenses() {
     amount: "",
     category: "utilities",
     method: "online",
+    recipient: "",
+    memberId: null,
+    memberName: null,
     checkNumber: "",
     notes: "",
   });
@@ -487,7 +495,7 @@ export default function Expenses() {
       // Also break amounts glued to section footers: "-14.44Subtotal…" or "-$1,457.78Card account…"
       .replace(/(-?\$?[\d,]+\.\d{2})(?=Subtotal|Card account|Total |Daily balance|Your checking|Beginning balance|Ending balance)/gi, "$1\n");
     const lines = normalized.split(/\n/);
-    const entries: { date: string; desc: string; amount: string; method: string }[] = [];
+    const entries: { date: string; desc: string; amount: string; method: string; recipient: string }[] = [];
     let i = 0;
     // Only parse the withdrawals/debits section — skip the deposits section
     let inDebits = false;
@@ -576,6 +584,8 @@ export default function Expenses() {
         // Truncate long titles
         if (title.length > 200) title = title.slice(0, 197) + "...";
       }
+      // Who did we pay? Used to link Zelle-to-member rows as reimbursements.
+      const zelleRecipient = zelleTo ? zelleTo[1].trim() : "";
 
       // No amount found (pasted fragment / unusual layout): keep the row with an
       // empty amount so the reviewer can type it in — never silently drop an expense.
@@ -588,7 +598,7 @@ export default function Expenses() {
       else if (/^check\b|check #|check no/i.test(desc)) method = "check";
       else if (/cash/i.test(desc)) method = "cash";
 
-      entries.push({ date, desc: title, amount: amount ? String(absAmt) : "", method });
+      entries.push({ date, desc: title, amount: amount ? String(absAmt) : "", method, recipient: zelleRecipient });
       i++;
     }
 
@@ -597,8 +607,12 @@ export default function Expenses() {
       date: e.date,
       description: e.desc.slice(0, 200),
       amount: e.amount,
+      recipient: e.recipient,
       category: (() => {
         const t = e.desc.toLowerCase();
+        if (/\bvbs\b|vacation bible/.test(t)) return "vbs";
+        if (/sunday school/.test(t)) return "sunday_school";
+        if (/book room|\bbooks\b/.test(t)) return "books";
         if (/amazon/.test(t)) return "amazon_purchases";
         if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "food_expenses";
         if (/phone|internet/.test(t)) return "internet_phone";
@@ -619,9 +633,37 @@ export default function Expenses() {
     }));
   };
 
-  const handleParseBoa = () => {
+  /**
+   * Link "Zelle payment to <NAME>" rows to the matching member profile so they
+   * import as that member's reimbursement (shows under "My giving & bills").
+   */
+  const enrichMemberReimbursements = async (rows: BulkRow[]): Promise<BulkRow[]> => {
+    if (!supabase || !rows.some((r) => r.recipient)) return rows;
+    const { data: profiles } = await supabase.from("profiles").select("id, full_name");
+    if (!profiles) return rows;
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+    const typed = profiles as { id: string; full_name: string | null }[];
+    const findProfile = (name: string) =>
+      typed.find((p) => {
+        const fn = norm(p.full_name ?? "");
+        const zn = norm(name);
+        if (!zn || !fn) return false;
+        if (fn === zn) return true;                       // exact
+        if (fn.startsWith(zn) || zn.startsWith(fn)) return true; // prefix / suffix
+        const f1 = zn.split(" ")[0];
+        const f2 = fn.split(" ")[0];
+        return f1 === f2 && f1.length >= 4;               // same first name (long enough)
+      });
+    return rows.map((r) => {
+      if (!r.recipient) return r;
+      const p = findProfile(r.recipient);
+      return p ? { ...r, memberId: p.id, memberName: p.full_name ?? r.recipient } : r;
+    });
+  };
+
+  const handleParseBoa = async () => {
     setBulkError("");
-    const rows = parseBoaStatement(bulkRaw);
+    const rows = await enrichMemberReimbursements(parseBoaStatement(bulkRaw));
     if (rows.length === 0) {
       setBulkError("No expense entries detected. Paste the full BOA statement text including the withdrawals/debits section.");
       setBulkRows([]);
@@ -729,7 +771,11 @@ export default function Expenses() {
       const amount = Math.abs(Number(row.amount));
       try {
         if (supabase) {
-          const { data, error } = await supabase.rpc("admin_insert_expense", {
+          // Zelle payments TO a matched member import as that member's
+          // reimbursement (auto-settled) instead of a church-direct outlay.
+          // p_user_id is only sent when a member matched, so plain church-direct
+          // imports keep working even before the RPC migration is applied.
+          const rpcParams: Record<string, unknown> = {
             p_title: row.description.slice(0, 200),
             p_amount: amount,
             p_category: row.category,
@@ -738,7 +784,9 @@ export default function Expenses() {
             p_event_name: null,
             p_payment_method: row.method || "online",
             p_check_number: row.checkNumber || null,
-          });
+          };
+          if (row.memberId) rpcParams.p_user_id = row.memberId;
+          const { data, error } = await supabase.rpc("admin_insert_expense", rpcParams);
           if (!error && data) {
             const { data: inserted } = await supabase.from("expenses").select().eq("id", data as string).maybeSingle();
             if (inserted) newExpenses.push(inserted as Expense);
@@ -941,6 +989,7 @@ export default function Expenses() {
                             <th className="px-2 py-2 text-right font-medium w-20">Amount</th>
                             <th className="px-2 py-2 text-left font-medium w-28">Category</th>
                             <th className="px-2 py-2 text-left font-medium w-20">Method</th>
+                            <th className="px-2 py-2 w-8"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -969,6 +1018,11 @@ export default function Expenses() {
                                   }}
                                   className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
                                 />
+                                {row.memberId && row.memberName && (
+                                  <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+                                    Reimbursement → {row.memberName}
+                                  </div>
+                                )}
                               </td>
                               <td className="px-2 py-1">
                                 <input
@@ -1019,6 +1073,20 @@ export default function Expenses() {
                                   <option value="check">Check</option>
                                   <option value="cash">Cash</option>
                                 </select>
+                              </td>
+                              <td className="px-1 py-1 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = [...bulkRows];
+                                    next.splice(i, 1);
+                                    setBulkRows(next);
+                                  }}
+                                  className="rounded p-1 text-stone-400 transition hover:bg-rose-50 hover:text-rose-600"
+                                  title="Remove row"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
                               </td>
                             </tr>
                           ))}
