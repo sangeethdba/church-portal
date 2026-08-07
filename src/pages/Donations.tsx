@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange, Globe, Search, Trash2, Check } from "lucide-react";
+import { Plus, HandCoins, FileDown, Filter, Shield, Church, CalendarRange, Globe, Search, Trash2, Check, Pencil, AlertTriangle } from "lucide-react";
 import {
   Button,
   Card,
@@ -408,6 +408,11 @@ export default function Donations() {
   });
   const [saving, setSaving] = useState(false);
 
+  // Edit / delete saved donations (admin only)
+  const [editTarget, setEditTarget] = useState<Donation | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Donation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     if (!supabase) {
       setDonors(sampleDonorsForPick);
@@ -457,7 +462,23 @@ export default function Donations() {
 
   const totalShown = filtered.reduce((s, d) => s + Number(d.amount || 0), 0);
 
-  const handleCreate = async () => {
+  /** Pre-fill the dialog from a saved donation for editing. */
+  const startEdit = (d: Donation) => {
+    setEditTarget(d);
+    setForm({
+      donor_id: d.donor_id ?? "",
+      donor_name: d.donor_name ?? "",
+      amount: String(d.amount ?? ""),
+      donation_type: d.donation_type,
+      payment_method: d.payment_method,
+      check_number: d.check_number ?? "",
+      donation_date: d.donation_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      notes: d.notes ?? "",
+    });
+    setOpen(true);
+  };
+
+  const handleSave = async () => {
     setSaving(true);
     const value = Number(form.amount);
     if (!value || value <= 0) {
@@ -465,18 +486,61 @@ export default function Donations() {
       return;
     }
     const donor = donors.find((d) => d.id === form.donor_id);
+    const donorName = donor?.label ?? form.donor_name?.trim() ?? "Anonymous";
+    const checkNumber = form.payment_method === "check" ? (form.check_number || null) : null;
+    const patch = {
+      donor_id: form.donor_id || null,
+      donor_name: donorName,
+      amount: value,
+      donation_type: form.donation_type as Donation["donation_type"],
+      payment_method: form.payment_method as Donation["payment_method"],
+      check_number: checkNumber,
+      donation_date: form.donation_date,
+      notes: form.notes?.trim() || null,
+    };
+
+    if (editTarget) {
+      // ── UPDATE an existing donation ─────────────────────────────────────
+      if (supabase) {
+        const { error } = await supabase
+          .from("donations")
+          .update(patch)
+          .eq("id", editTarget.id);
+        if (error) {
+          console.warn("Update donation failed:", error);
+          toast("Could not save changes — please try again.", "error");
+        } else {
+          setDonations((rows) => rows.map((r) => (r.id === editTarget.id ? { ...r, ...patch } as Donation : r)));
+          toast("Gift updated — every total, report & statement reflects it.", "success");
+        }
+      } else {
+        setDonations((rows) => rows.map((r) => (r.id === editTarget.id ? { ...r, ...patch } as Donation : r)));
+        toast("Gift updated (demo).", "success");
+      }
+      setEditTarget(null);
+      setSaving(false);
+      setOpen(false);
+      setForm({
+        donor_id: "", donor_name: "", amount: "", donation_type: "tithe",
+        payment_method: "check", check_number: "",
+        donation_date: new Date().toISOString().slice(0, 10), notes: "",
+      });
+      return;
+    }
+
+    // ── CREATE a new donation (existing behavior) ────────────────────────
     const baseRow: Donation = {
       id: `local-${Date.now()}`,
       donor_id: form.donor_id || null,
-      donor_name: donor?.label ?? form.donor_name ?? "Anonymous",
+      donor_name: donorName,
       donor_email: null,
       amount: value,
       donation_type: form.donation_type as Donation["donation_type"],
       payment_method: form.payment_method as Donation["payment_method"],
       donation_date: form.donation_date,
       entered_by: "demo",
-      check_number: form.check_number || null,
-      notes: form.notes || null,
+      check_number: checkNumber,
+      notes: form.notes?.trim() || null,
       created_at: new Date().toISOString(),
     };
     if (supabase) {
@@ -515,6 +579,26 @@ export default function Donations() {
       donation_date: new Date().toISOString().slice(0, 10),
       notes: "",
     });
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    if (supabase) {
+      const { error } = await supabase.from("donations").delete().eq("id", deleteTarget.id);
+      if (error) {
+        console.warn("Delete donation failed:", error);
+        toast("Could not delete — please try again.", "error");
+      } else {
+        toast("Gift deleted — totals & reports updated.", "success");
+        reloadDonations();
+      }
+    } else {
+      setDonations((rows) => rows.filter((r) => r.id !== deleteTarget.id));
+      toast("Gift deleted (demo).", "success");
+    }
+    setDeleting(false);
+    setDeleteTarget(null);
   };
 
   const reloadDonations = () => {
@@ -586,9 +670,9 @@ export default function Donations() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Record a donation</DialogTitle>
+                <DialogTitle>{editTarget ? "Edit donation" : "Record a donation"}</DialogTitle>
                 <DialogDescription>
-                  Pick a donor from the directory or add a new walk-in name.
+                  {editTarget ? "Correct the details below — totals, reports, and donor statements update automatically." : "Pick a donor from the directory or add a new walk-in name."}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -693,11 +777,11 @@ export default function Donations() {
                 </div>
               </div>
               <div className="mt-6 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setOpen(false)}>
+                <Button variant="outline" onClick={() => { setOpen(false); setEditTarget(null); }}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreate} disabled={saving}>
-                  {saving ? "Saving…" : "Record gift"}
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? "Saving…" : editTarget ? "Save changes" : "Record gift"}
                 </Button>
               </div>
             </DialogContent>
@@ -817,20 +901,70 @@ export default function Donations() {
                   {formatCurrency(d.amount)}
                 </Td>
                 <Td className="text-right">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => issueStatement(d.donor_name)}
-                    iconLeft={<FileDown className="h-3.5 w-3.5" />}
-                  >
-                    Statement
-                  </Button>
+                  <div className="flex items-center justify-end gap-1">
+                    {isAdmin && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={!!d.offering_id}
+                          title={d.offering_id ? "Part of a Sunday offering — edit from the Offerings page" : "Edit this gift"}
+                          onClick={() => startEdit(d)}
+                          iconLeft={<Pencil className="h-3.5 w-3.5" />}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={!!d.offering_id}
+                          title={d.offering_id ? "Part of a Sunday offering — delete from the Offerings page" : "Delete this gift"}
+                          onClick={() => setDeleteTarget(d)}
+                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                          iconLeft={<Trash2 className="h-3.5 w-3.5" />}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => issueStatement(d.donor_name)}
+                      iconLeft={<FileDown className="h-3.5 w-3.5" />}
+                    >
+                      Statement
+                    </Button>
+                  </div>
                 </Td>
               </Tr>
             ))}
           </tbody>
         </TableWrap>
       )}
+
+      {/* ── Delete confirmation ────────────────────────────────────────── */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(v) => { if (!v && !deleting) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this gift?</DialogTitle>
+            <DialogDescription>
+              {deleteTarget ? `${deleteTarget.donor_name} · ${formatCurrency(deleteTarget.amount)} · ${formatDate(deleteTarget.donation_date)}` : ""}
+              {" — "}this permanently removes the record. Reports, YTD totals, and donor statements update immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>This cannot be undone. If the gift belongs to a Sunday offering, use the Offerings page instead.</span>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { if (!deleting) setDeleteTarget(null); }}>Cancel</Button>
+            <Button className="bg-rose-600 hover:bg-rose-700" disabled={deleting} onClick={handleDelete}>
+              {deleting ? "Deleting…" : "Delete gift"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       </>
       )}
     </div>

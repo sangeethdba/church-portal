@@ -3,12 +3,13 @@ import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
   Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
-  Download, Printer, Receipt, CalendarRange, Gift,
+  Download, Printer, Receipt, CalendarRange, Gift, Pencil,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
   Badge, EmptyState, TableWrap, THead, Tr, Th, Td,
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+  toast,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { supabase, getReceiptUrl, isAdminRole, isOversightRole } from "@/lib/supabase";
@@ -101,6 +102,9 @@ export default function Offerings() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingOffering, setEditingOffering] = useState<Offering | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Offering | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [filterYear, setFilterYear] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -305,6 +309,7 @@ export default function Offerings() {
     setCounter2Id("");
     setCounter2Pin("");
     setSignOffError("");
+    setEditingOffering(null);
   };
 
   const addDonation = (method: "check" | "cash") => {
@@ -424,6 +429,39 @@ export default function Offerings() {
 
       // Atomic: insert offering + checks + cash gifts + PIN verify in one transaction.
       // If PIN is wrong the DB raises an exception and nothing is persisted.
+      if (editingOffering) {
+        const { error: updErr } = await supabase.rpc("update_offering", {
+          p_offering_id: editingOffering.id,
+          p_service_date: svcDate,
+          p_service_name: svcName,
+          p_cash_breakdown: denoms,
+          p_cash_deductions: deductions,
+          p_cash_net: netCash,
+          p_check_amount: totalChecks,
+          p_check_count: donations.filter((d) => d.method === "check").length,
+          p_total_amount: depositTotal,
+          p_notes: notes || null,
+          p_checks,
+          p_cash_gifts,
+          p_counter_1_id: counter1Id,
+          p_pin_1: counter1Pin,
+          p_counter_2_id: counter2Id,
+          p_pin_2: counter2Pin,
+        });
+        if (updErr) {
+          console.warn("Offering update failed:", updErr);
+          setSignOffError(updErr.message || "Could not update the offering. Check PINs and try again.");
+          setSaving(false);
+          return;
+        }
+        const { data: freshUpd } = await supabase
+          .from("offerings")
+          .select("*")
+          .order("service_date", { ascending: false });
+        if (freshUpd) setOfferings(freshUpd as Offering[]);
+        toast("Offering updated — every total and report reflects the change.", "success");
+        openLedgerPreview(buildSummary());
+      } else {
       const { error: rpcErr } = await supabase.rpc("record_offering", {
         p_service_date: svcDate,
         p_service_name: svcName,
@@ -456,11 +494,12 @@ export default function Offerings() {
         .order("service_date", { ascending: false });
       if (fresh) setOfferings(fresh as Offering[]);
       openLedgerPreview(buildSummary());
+      }
     } else {
       // Demo mode
-      const row: Offering = {
+      const baseRow: Offering = {
         ...payload,
-        id: `local-${Date.now()}`,
+        id: editingOffering?.id ?? `local-${Date.now()}`,
         recorded_by: "demo",
         created_at: new Date().toISOString(),
         cash_breakdown: payload.cash_breakdown as DenomCounts,
@@ -470,7 +509,11 @@ export default function Offerings() {
         counter_2_id: null,
         counter_2_signed_at: null,
       } as Offering;
-      setOfferings((prev) => [row, ...prev]);
+      if (editingOffering) {
+        setOfferings((prev) => prev.map((r) => (r.id === editingOffering.id ? baseRow : r)));
+      } else {
+        setOfferings((prev) => [baseRow, ...prev]);
+      }
 
       // Show the deposit slip / ledger in-app (replaces silent auto-download)
       openLedgerPreview(buildSummary());
@@ -478,6 +521,7 @@ export default function Offerings() {
 
     setSaving(false);
     setOpen(false);
+    setEditingOffering(null);
     resetForm();
   };
 
@@ -523,6 +567,68 @@ export default function Offerings() {
     setDepositOfferingId(null);
   };
 
+  // ── Edit / delete offering (admin only) ────────────────────────────────
+  const startEdit = async (o: Offering) => {
+    const [checksData, giftsData] = await Promise.all([
+      loadOfferingChecks(o),
+      loadOfferingCashGifts(o),
+    ]);
+    const stamp = Date.now();
+    setSvcDate(o.service_date);
+    setSvcName(o.service_name);
+    setDenoms((o.cash_breakdown as DenomCounts | null) ?? emptyDenoms());
+    setDeductions((o.cash_deductions as Deduction[] | null) ?? []);
+    setDonations([
+      ...checksData.map((c, i) => ({
+        key: `edit-c-${stamp}-${i}`,
+        donorName: c.donor_name ?? "",
+        donorId: "",
+        method: "check" as const,
+        checkNumber: c.check_number ?? "",
+        amount: String(c.amount ?? ""),
+      })),
+      ...giftsData.map((g, i) => ({
+        key: `edit-g-${stamp}-${i}`,
+        donorName: g.donor_name ?? "",
+        donorId: "",
+        method: "cash" as const,
+        checkNumber: "",
+        amount: String(g.amount ?? ""),
+      })),
+    ]);
+    setNotes(o.notes ?? "");
+    setCounter2Id(o.counter_2_id ?? "");
+    setCounter1Pin("");
+    setCounter2Pin("");
+    setSignOffError("");
+    setEditingOffering(o);
+    setOpen(true);
+  };
+
+  const handleDeleteOffering = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    if (supabase) {
+      const { error } = await supabase.rpc("delete_offering", { p_offering_id: deleteTarget.id });
+      if (error) {
+        console.warn("Delete offering failed:", error);
+        toast("Could not delete this offering — please try again.", "error");
+      } else {
+        toast(`Offering for ${formatDate(deleteTarget.service_date)} deleted — totals updated.`, "success");
+        const { data: fresh } = await supabase
+          .from("offerings")
+          .select("*")
+          .order("service_date", { ascending: false });
+        if (fresh) setOfferings(fresh as Offering[]);
+      }
+    } else {
+      setOfferings((rows) => rows.filter((r) => r.id !== deleteTarget.id));
+      toast("Offering deleted (demo).", "success");
+    }
+    setDeleting(false);
+    setDeleteTarget(null);
+  };
+
   return (
     <div>
       {!canAccess && (
@@ -549,11 +655,18 @@ export default function Offerings() {
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Record a service offering</DialogTitle>
+                <DialogTitle>{editingOffering ? "Edit service offering" : "Record a service offering"}</DialogTitle>
                 <DialogDescription>
-                  Enter cash by denomination, any deductions, and individual checks with donor names. Both counters must sign off with their PIN before the offering is recorded.
+                  {editingOffering ? "Correct the service collection details below — every total, report, and annual summary updates automatically." : "Enter cash by denomination, any deductions, and individual checks with donor names. Both counters must sign off with their PIN before the offering is recorded."}
                 </DialogDescription>
               </DialogHeader>
+
+              {editingOffering?.deposit_status === "deposited" && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>This offering was already marked as <strong>deposited</strong>. Changing it modifies the ledger, reports, and reconciliation — double-check against your bank records before saving.</span>
+                </div>
+              )}
 
               {/* Date & Service */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -863,7 +976,7 @@ export default function Offerings() {
               <div className="mt-6 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancel</Button>
                 <Button onClick={handleSave} disabled={saving || depositTotal <= 0}>
-                  {saving ? "Signing & saving…" : "Sign & record offering"}
+                  {saving ? "Saving…" : editingOffering ? "Save changes" : "Sign & record offering"}
                 </Button>
               </div>
             </DialogContent>
@@ -1013,6 +1126,29 @@ export default function Offerings() {
                 </Td>
                 <Td>
                   <div className="flex items-center gap-1.5">
+                    {isAdmin && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => startEdit(o)}
+                          iconLeft={<Pencil className="h-3.5 w-3.5" />}
+                          title="Edit this offering — totals and reports recompute automatically"
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setDeleteTarget(o)}
+                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                          iconLeft={<Trash2 className="h-3.5 w-3.5" />}
+                          title="Delete this offering"
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    )}
                     <Button size="sm" variant="ghost"
                       onClick={async () => {
                         const [checksData, giftsData] = await Promise.all([
@@ -1107,6 +1243,30 @@ export default function Offerings() {
             <Button variant="outline" onClick={() => setDepositOpen(false)}>Cancel</Button>
             <Button onClick={handleMarkDeposited} disabled={depositSaving}>
               {depositSaving ? "Marking…" : "Mark as deposited"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete offering confirmation ────────────────────────────────── */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(v) => { if (!v && !deleting) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this offering?</DialogTitle>
+            <DialogDescription>
+              {deleteTarget ? `${formatDate(deleteTarget.service_date)} · ${deleteTarget.service_name} · ${formatCurrency(deleteTarget.total_amount)}` : ""}
+              {" — "}this permanently removes the offering, every check, and its named cash gifts.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>The offering's donation rows are deleted (not left as standalone gifts), so Reports stays accurate. This cannot be undone.
+{deleteTarget?.deposit_status === "deposited" ? " Deleting a deposited offering will affect reconciliation records." : ""}</span>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { if (!deleting) setDeleteTarget(null); }}>Cancel</Button>
+            <Button className="bg-rose-600 hover:bg-rose-700" disabled={deleting} onClick={handleDeleteOffering}>
+              {deleting ? "Deleting…" : "Delete offering"}
             </Button>
           </div>
         </DialogContent>
