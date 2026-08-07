@@ -660,31 +660,48 @@ export default function Offerings() {
         });
       };
       const base64 = await compressImage(scanFile);
+      const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, "");
 
-      const { data: session } = await supabase.auth.getSession();
-      const token = session?.session?.access_token;
+      const API_KEY = (import.meta.env as Record<string, string>).VITE_GOOGLE_AI_KEY;
+      if (!API_KEY) {
+        setScanError("Google AI key not configured. Add VITE_GOOGLE_AI_KEY in API Keys.");
+        setScanLoading(false);
+        return;
+      }
+
+      const prompt = `Extract this church offering ledger and return ONLY valid JSON:{"serviceDate":"YYYY-MM-DD","serviceName":"Sunday Service","denominations":{"100":0,"50":0,"20":0,"10":0,"5":0,"2":0,"1":0},"deductions":[{"reason":"","amount":0}],"checks":[{"donorName":"","checkNumber":"","amount":0}],"cashGifts":[{"donorName":"","amount":0}],"notes":""} Rules: donor names and check numbers as written; count each bill denomination; amounts are numbers; empty arrays for missing data; no markdown.`;
+
       const res = await fetch(
-        `https://qjoxqfkdyugwmgzgjzir.supabase.co/functions/v1/scan-ledger`,
-        { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ imageBase64: base64 }) },
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: cleanBase64 } }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 2048 } }) },
       );
 
-      // Handle non-JSON responses (e.g. 413 payload too large, 502 bad gateway)
-      let json: { success?: boolean; error?: string; data?: Record<string, unknown> };
-      try {
-        json = await res.json();
-      } catch {
-        setScanError(`Server error (${res.status}). The image may be too large — try a smaller photo or lower resolution.`);
+      let json: Record<string, unknown>;
+      try { json = await res.json(); } catch {
+        setScanError(`Server error (${res.status}). Try again.`);
         setScanLoading(false);
         return;
       }
 
-      if (!json.success) {
-        const msg = json.error ?? `Scan failed (${res.status})`;
-        setScanError(msg);
+      if (!res.ok) {
+        setScanError(res.status === 429 ? "AI is busy — wait 30 seconds and try again." : `API error: ${res.status}`);
         setScanLoading(false);
         return;
       }
-      const d = json.data!;
+
+      const rawText = (json as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      if (!rawText) {
+        setScanError("No text extracted — try a clearer photo.");
+        setScanLoading(false);
+        return;
+      }
+
+      let d: Record<string, unknown>;
+      try { d = JSON.parse(rawText.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim()); } catch {
+        setScanError("AI didn't return valid data — try again with a clearer photo.");
+        setScanLoading(false);
+        return;
+      }
       const newDenoms = emptyDenoms();
       if (d.denominations) for (const [k, v] of Object.entries(d.denominations as Record<string, unknown>)) if (k in newDenoms) newDenoms[Number(k)] = String(Math.max(0, Math.round(Number(v) || 0)));
       const dedArray = ((d.deductions ?? []) as Array<{ reason: string; amount: number }>).map((ded) => ({ reason: ded.reason || "", amount: String(Math.max(0, Number(ded.amount) || 0)) }));
