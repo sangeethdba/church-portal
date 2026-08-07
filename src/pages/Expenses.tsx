@@ -498,7 +498,7 @@ export default function Expenses() {
       // Also break amounts glued to section footers: "-14.44Subtotal…" or "-$1,457.78Card account…"
       .replace(/(-?\$?[\d,]+\.\d{2})(?=Subtotal|Card account|Total |Daily balance|Your checking|Beginning balance|Ending balance)/gi, "$1\n");
     const lines = normalized.split(/\n/);
-    const entries: { date: string; desc: string; amount: string; method: string; recipient: string; cardLast4: string }[] = [];
+    const entries: { date: string; desc: string; amount: string; method: string; recipient: string; cardLast4: string; checkNumber: string }[] = [];
     let i = 0;
     // Current card section — BOA groups purchases under "Card account # XXXX 5375".
     let currentCard = "";
@@ -612,7 +612,10 @@ export default function Expenses() {
       else if (/^check\b|check #|check no/i.test(desc)) method = "check";
       else if (/cash/i.test(desc)) method = "cash";
 
-      entries.push({ date, desc: title, amount: amount ? String(absAmt) : "", method, recipient: zelleRecipient, cardLast4: currentCard });
+      // Extract check number from BOA check lines: "CHECK 1053 VENDOR…" / "Check 0001053"
+      const checkNo = desc.match(/\bcheck\s+#?\s*(\d+)/i)?.[1] ?? "";
+
+      entries.push({ date, desc: title, amount: amount ? String(absAmt) : "", method, recipient: zelleRecipient, cardLast4: currentCard, checkNumber: checkNo });
       i++;
     }
 
@@ -623,6 +626,7 @@ export default function Expenses() {
       amount: e.amount,
       recipient: e.recipient,
       cardLast4: e.cardLast4,
+      checkNumber: e.checkNumber,
       category: (() => {
         const t = e.desc.toLowerCase();
         if (/\bvbs\b|vacation bible/.test(t)) return "vbs";
@@ -1008,7 +1012,7 @@ export default function Expenses() {
                       </div>
                     )}
                     <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-stone-200">
-                      <table className="w-full text-xs">
+                      <table className="w-full min-w-[860px] text-xs">
                         <thead className="sticky top-0 bg-stone-50">
                           <tr className="border-b border-stone-200 text-stone-500">
                             <th className="px-2 py-2 text-left font-medium">Date</th>
@@ -1016,7 +1020,9 @@ export default function Expenses() {
                             <th className="px-2 py-2 text-right font-medium w-20">Amount</th>
                             <th className="px-2 py-2 text-left font-medium w-28">Category</th>
                             <th className="px-2 py-2 text-left font-medium w-20">Method</th>
+                            <th className="px-2 py-2 text-center font-medium w-16">Check #</th>
                             <th className="px-2 py-2 text-center font-medium w-14">Card</th>
+                            <th className="px-2 py-2 text-left font-medium w-32">Notes</th>
                             <th className="px-2 py-2 w-8"></th>
                           </tr>
                         </thead>
@@ -1115,6 +1121,34 @@ export default function Expenses() {
                                   placeholder="••••"
                                   title="Card used (last 4 digits)"
                                   className="w-full rounded border border-stone-200 px-1 py-0.5 text-center text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input
+                                  type="text"
+                                  value={row.checkNumber}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], checkNumber: e.target.value.replace(/\D/g, "").slice(0, 10) };
+                                    setBulkRows(next);
+                                  }}
+                                  placeholder="#"
+                                  title="Check number (check payments)"
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-center text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input
+                                  type="text"
+                                  value={row.notes}
+                                  onChange={(e) => {
+                                    const next = [...bulkRows];
+                                    next[i] = { ...next[i], notes: e.target.value };
+                                    setBulkRows(next);
+                                  }}
+                                  placeholder="Comment…"
+                                  title="Comment / what this expense is for"
+                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
                                 />
                               </td>
                               <td className="px-1 py-1 text-center">
@@ -1782,6 +1816,7 @@ function ExpenseList({
                   <span className="text-xs text-stone-500 capitalize">
                     {e.payment_method || "—"}
                     {e.card_last4 ? ` · card ${e.card_last4}` : ""}
+                    {e.check_number ? ` · check #${e.check_number}` : ""}
                   </span>
                 </Td>
                 <Td>
