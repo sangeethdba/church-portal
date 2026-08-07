@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
   Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
-  Download, Printer, Receipt, CalendarRange, Gift, Pencil,
+  Download, Printer, Receipt, CalendarRange, Gift, Pencil, ScanLine, Loader2,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -105,6 +105,12 @@ export default function Offerings() {
   const [editingOffering, setEditingOffering] = useState<Offering | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Offering | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // ── Scan ledger state ────────────────────────────────────────────────
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanFile, setScanFile] = useState<File | null>(null);
+  const [scanPreview, setScanPreview] = useState<string | null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState("");
   const [filterYear, setFilterYear] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -629,6 +635,49 @@ export default function Offerings() {
     setDeleteTarget(null);
   };
 
+  // ── Scan paper ledger via Gemini Vision ──────────────────────────────
+  const handleScanLedger = async () => {
+    if (!scanFile || !supabase) return;
+    setScanLoading(true);
+    setScanError("");
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(scanFile);
+      });
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-ledger`,
+        { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ imageBase64: base64 }) },
+      );
+      const json = await res.json();
+      if (!json.success) { setScanError(json.error ?? "Scan failed."); setScanLoading(false); return; }
+      const d = json.data;
+      const newDenoms = emptyDenoms();
+      if (d.denominations) for (const [k, v] of Object.entries(d.denominations)) if (k in newDenoms) newDenoms[Number(k)] = String(Math.max(0, Math.round(Number(v) || 0)));
+      const dedArray = (d.deductions ?? []).map((ded: { reason: string; amount: number }) => ({ reason: ded.reason || "", amount: String(Math.max(0, Number(ded.amount) || 0)) }));
+      const stamp = Date.now();
+      const newDonations: IndividualDonation[] = [
+        ...(d.checks ?? []).map((c: { donorName: string; checkNumber: string; amount: number }, i: number) => ({ key: `scan-c-${stamp}-${i}`, donorName: c.donorName || "", donorId: "", method: "check" as const, checkNumber: c.checkNumber ? String(c.checkNumber) : "", amount: String(Math.max(0, Number(c.amount) || 0)) })),
+        ...(d.cashGifts ?? []).map((g: { donorName: string; amount: number }, i: number) => ({ key: `scan-g-${stamp}-${i}`, donorName: g.donorName || "", donorId: "", method: "cash" as const, checkNumber: "", amount: String(Math.max(0, Number(g.amount) || 0)) })),
+      ];
+      setScanOpen(false); setScanFile(null); setScanPreview(null); setScanLoading(false);
+      setSvcDate(d.serviceDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+      setSvcName(d.serviceName || "Sunday Service");
+      setDenoms(newDenoms); setDeductions(dedArray); setDonations(newDonations); setNotes(d.notes ?? "");
+      setCounter1Pin(""); setCounter2Id(""); setCounter2Pin(""); setSignOffError(""); setEditingOffering(null);
+      setOpen(true);
+      toast("Ledger scanned! Review each entry, correct any OCR errors, then sign and save.", "success");
+    } catch (err) {
+      console.warn("Scan ledger failed:", err);
+      setScanError("Could not scan the ledger. Please try again or enter manually.");
+      setScanLoading(false);
+    }
+  };
+
   return (
     <div>
       {!canAccess && (
@@ -649,6 +698,10 @@ export default function Offerings() {
         badge={`${filtered.length} services`}
         actions={
           isAdmin && (
+          <div className="flex items-center gap-2">
+            <Button iconLeft={<ScanLine className="h-4 w-4" />} variant="outline" onClick={() => { setScanFile(null); setScanPreview(null); setScanError(""); setScanOpen(true); }}>
+              Scan ledger
+            </Button>
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
               <Button iconLeft={<Plus className="h-4 w-4" />}>Record offering</Button>
@@ -981,6 +1034,7 @@ export default function Offerings() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
           )
         }
       />
@@ -1210,6 +1264,65 @@ export default function Offerings() {
           </tbody>
         </TableWrap>
       )}
+
+      {/* ── Scan ledger dialog ─────────────────────────────────────────── */}
+      <Dialog open={scanOpen} onOpenChange={(v) => { setScanOpen(v); if (!v) { setScanFile(null); setScanPreview(null); setScanError(""); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Scan paper ledger</DialogTitle>
+            <DialogDescription>
+              Take a clear photo of your paper Sunday offering ledger. AI will read the handwriting and pre-fill the offering form for review.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* File input */}
+            <div>
+              <Label htmlFor="ledger-photo">Upload ledger photo</Label>
+              <input
+                id="ledger-photo"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setScanFile(file);
+                  setScanPreview(file ? URL.createObjectURL(file) : null);
+                  setScanError("");
+                }}
+                className="mt-1.5 block w-full text-sm text-stone-600 file:mr-3 file:rounded-md file:border-0 file:bg-amber-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-amber-700 hover:file:bg-amber-100"
+              />
+            </div>
+            {/* Preview */}
+            {scanPreview && (
+              <div className="overflow-hidden rounded-lg border border-stone-200">
+                <img src={scanPreview} alt="Ledger preview" className="max-h-64 w-full object-contain bg-stone-100" />
+              </div>
+            )}
+            {/* Tips */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <strong>Tips for best results:</strong>
+              <ul className="mt-1 list-inside list-disc space-y-0.5">
+                <li>Place the ledger on a flat surface with good lighting</li>
+                <li>Make sure all columns (name, check #, amount) are clearly visible</li>
+                <li>Avoid shadows and glare on the paper</li>
+                <li>You'll review and correct every entry before it's saved</li>
+              </ul>
+            </div>
+            {/* Error */}
+            {scanError && (
+              <div className="flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                <AlertTriangle className="h-4 w-4" /> {scanError}
+              </div>
+            )}
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setScanOpen(false); setScanFile(null); setScanPreview(null); setScanError(""); }}>Cancel</Button>
+            <Button onClick={handleScanLedger} disabled={!scanFile || scanLoading}>
+              {scanLoading ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Scanning…</> : "Scan & fill form"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Mark deposited dialog ──────────────────────────────────────── */}
       <Dialog open={depositOpen} onOpenChange={(v) => { setDepositOpen(v); if (!v) { setDepositFile(null); setDepositOfferingId(null); } }}>
