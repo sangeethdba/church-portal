@@ -31,7 +31,6 @@ Rules:
 - If no data, use empty array [] or 0.
 - Return raw JSON only — no markdown code fences.`;
 
-// CORS helper
 function cors(resp: Response): Response {
   resp.headers.set("Access-Control-Allow-Origin", "*");
   resp.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -39,38 +38,11 @@ function cors(resp: Response): Response {
   return resp;
 }
 
-serve(async (req: Request) => {
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    return cors(new Response(null, { status: 204 }));
-  }
-
-  // Only POST
-  if (req.method !== "POST") {
-    return cors(new Response(JSON.stringify({ success: false, error: "POST only" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    }));
-  }
-
-  // No JWT auth — the frontend gates behind admin role.
-  // Deploy with: supabase functions deploy scan-ledger --no-verify-jwt
-
-  try {
-    const body = await req.json();
-    const { imageBase64 } = body as { imageBase64?: string };
-
-    if (!imageBase64) {
-      return cors(new Response(JSON.stringify({ success: false, error: "Missing imageBase64" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }));
-    }
-
-    // Strip data URL prefix
-    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
-
-    const geminiRes = await fetch(`${GEMINI_URL}?key=${GOOGLE_AI_KEY}`, {
+// Call Gemini with retry on 429 (rate limit)
+async function callGemini(cleanBase64: string): Promise<Response> {
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const res = await fetch(`${GEMINI_URL}?key=${GOOGLE_AI_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -84,11 +56,55 @@ serve(async (req: Request) => {
       }),
     });
 
+    if (res.status === 429 && attempt < maxRetries - 1) {
+      // Rate limited — wait and retry with exponential backoff
+      const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+      console.log(`Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
+
+    return res;
+  }
+  // Shouldn't reach here, but fallback
+  throw new Error("Gemini API unavailable — rate limit exceeded after retries");
+}
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return cors(new Response(null, { status: 204 }));
+  }
+
+  if (req.method !== "POST") {
+    return cors(new Response(JSON.stringify({ success: false, error: "POST only" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    }));
+  }
+
+  try {
+    const body = await req.json();
+    const { imageBase64 } = body as { imageBase64?: string };
+
+    if (!imageBase64) {
+      return cors(new Response(JSON.stringify({ success: false, error: "Missing imageBase64" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }));
+    }
+
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
+    const geminiRes = await callGemini(cleanBase64);
+
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error("Gemini API error:", geminiRes.status, errText.slice(0, 200));
+      const msg = geminiRes.status === 429
+        ? "AI service is busy — please wait a moment and try again."
+        : `Gemini API error: ${geminiRes.status}`;
       return cors(new Response(
-        JSON.stringify({ success: false, error: `Gemini API error: ${geminiRes.status}` }),
+        JSON.stringify({ success: false, error: msg }),
         { status: 502, headers: { "Content-Type": "application/json" } },
       ));
     }
@@ -103,7 +119,6 @@ serve(async (req: Request) => {
       ));
     }
 
-    // Parse Gemini's JSON response
     let parsed: Record<string, unknown>;
     try {
       const cleanText = rawText.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
