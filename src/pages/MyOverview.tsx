@@ -146,7 +146,7 @@ export function MemberOverview() {
     return Object.entries(months).map(([month, amt]) => ({
       month,
       amount: amt,
-      label: new Date(month + "-01").toLocaleDateString("en-US", { month: "short" }),
+      label: new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
     }));
   }, [donations]);
 
