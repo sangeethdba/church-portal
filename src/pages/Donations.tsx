@@ -528,9 +528,10 @@ export default function Donations() {
       if (numAmt <= 0) { i++; continue; }
       // Clean description
       desc = desc.replace(/;?\s*Conf#\s*\S+/g, "").replace(/\d{15,}/g, "").replace(/\s{2,}/g, " ").trim();
-      // Extract donor name
+      // Extract donor name — two-pass: first try "for" note, then capture all
       let donorName = "";
-      const zelleFrom = desc.match(/Zelle payment from\s+(.+?)(?:\s+for\s+["']([^"']+)["'])?/i);
+      let zelleFrom = desc.match(/Zelle payment from\s+(.+?)\s+for\s+["']([^"']+)["']/i);
+      if (!zelleFrom) zelleFrom = desc.match(/Zelle payment from\s+(.+)/i);
       if (zelleFrom) {
         donorName = zelleFrom[1].trim();
         desc = zelleFrom[2]?.trim() || `Online gift from ${donorName}`;
