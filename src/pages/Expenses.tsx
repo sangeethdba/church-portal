@@ -556,7 +556,7 @@ export default function Expenses() {
       // Extract a clean title from the description
       let title = desc;
       // For Zelle: "Zelle payment to NAME for "REASON"" → use the reason or name
-      const zelleTo = desc.match(/Zelle payment to\s+([^f]+?)(?:\s+for\s+["']([^"']+)["'])?/i);
+      const zelleTo = desc.match(/Zelle payment to\s+(.+?)(?:\s+for\s+["']([^"']+)["'])?/i);
       if (zelleTo) {
         const name = zelleTo[1].trim();
         const reason = zelleTo[2]?.trim();

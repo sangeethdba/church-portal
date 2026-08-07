@@ -527,7 +527,7 @@ export default function Donations() {
       desc = desc.replace(/;?\s*Conf#\s*\S+/g, "").replace(/\d{15,}/g, "").replace(/\s{2,}/g, " ").trim();
       // Extract donor name
       let donorName = "";
-      const zelleFrom = desc.match(/Zelle payment from\s+([^f]+?)(?:\s+for\s+["']([^"']+)["'])?/i);
+      const zelleFrom = desc.match(/Zelle payment from\s+(.+?)(?:\s+for\s+["']([^"']+)["'])?/i);
       if (zelleFrom) {
         donorName = zelleFrom[1].trim();
         desc = zelleFrom[2]?.trim() || `Online gift from ${donorName}`;
