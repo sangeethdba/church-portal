@@ -1,7 +1,7 @@
 import jsPDF from "jspdf";
 import { formatCurrency, formatDateLong } from "./utils";
 import type { Donor, Donation } from "./supabase";
-import { donationTypeLabel } from "./accounting";
+import { donationTypeLabel, isCharitableGift } from "./accounting";
 
 /** Official Atlanta Little Flock Church details used on every generated document. */
 export const ALF_DOCUMENT_BRANDING = {
@@ -672,6 +672,11 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   const donorFull = `${s.donor.first_name} ${s.donor.last_name}`;
   let y = margin;
 
+  // Book room sales are purchases, not tax-deductible contributions — never
+  // put them on an annual statement no matter which screen issued it.
+  const statementDonations = (s.donations ?? []).filter((d) => isCharitableGift(d.donation_type));
+  const statementTotal = statementDonations.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+
   // Column positions (5-column layout: Date | Type | Method | Memo | Amount)
   const colDate = margin + 8;
   const colType = margin + 98;
@@ -745,7 +750,7 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
     return "";
   };
 
-  const sorted = [...s.donations].sort((a, b) =>
+  const sorted = [...statementDonations].sort((a, b) =>
     a.donation_date.localeCompare(b.donation_date),
   );
   for (const d of sorted) {
@@ -771,7 +776,7 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   doc.setTextColor(28, 25, 23);
   doc.text("Total contributions", margin + 10, y);
   doc.setFontSize(14);
-  doc.text(formatCurrency(s.total), pageWidth - margin - 10, y, { align: "right" });
+  doc.text(formatCurrency(statementTotal), pageWidth - margin - 10, y, { align: "right" });
   y += 28;
 
   // Closing text
@@ -911,7 +916,9 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
 
   drawMemberGivingHeader();
 
-  const sortedDon = [...m.donations].sort((a, b) => a.donation_date.localeCompare(b.donation_date));
+  // Keep book room purchases off member reports — they are sales, not giving.
+  const memberDonations = (m.donations ?? []).filter((d) => isCharitableGift(d.donation_type));
+  const sortedDon = [...memberDonations].sort((a, b) => a.donation_date.localeCompare(b.donation_date));
   if (sortedDon.length === 0) {
     doc.setFont("helvetica", "italic");
     doc.setTextColor(120, 113, 108);
