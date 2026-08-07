@@ -776,12 +776,19 @@ export default function Expenses() {
           // reimbursement (auto-settled) instead of a church-direct outlay.
           // p_user_id is only sent when a member matched, so plain church-direct
           // imports keep working even before the RPC migration is applied.
+          // Historical statement imports carry no receipt images — flag that on
+          // member reimbursements so an empty receipt is never mistaken for a
+          // missing upload.
+          const reimbNote =
+            row.memberId
+              ? [row.notes, "Imported from bank statement — no receipt on file"].filter(Boolean).join(" — ")
+              : row.notes || null;
           const rpcParams: Record<string, unknown> = {
             p_title: row.description.slice(0, 200),
             p_amount: amount,
             p_category: row.category,
             p_description: row.description,
-            p_notes: row.notes || null,
+            p_notes: reimbNote,
             p_event_name: null,
             p_payment_method: row.method || "online",
             p_check_number: row.checkNumber || null,
@@ -799,21 +806,23 @@ export default function Expenses() {
         } else {
           newExpenses.push({
             id: `local-bulk-${Date.now()}-${imported}`,
-            source: "church_direct",
+            source: row.memberId ? "member_submitted" : "church_direct",
             title: row.description.slice(0, 200),
             amount,
             category: row.category as Expense["category"],
             description: row.description,
             receipt_paths: [],
             transfer_receipt_path: null,
-            user_id: null,
+            user_id: row.memberId || null,
             status: "auto_paid",
             submitted_at: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
             approved_by: null,
             approved_at: new Date().toISOString(),
             paid_at: new Date().toISOString(),
             paid_by: null,
-            notes: row.notes || null,
+            notes: row.memberId
+              ? [row.notes, "Imported from bank statement — no receipt on file"].filter(Boolean).join(" — ")
+              : row.notes || null,
             created_at: new Date().toISOString(),
             payment_method: row.method || "online",
           });
