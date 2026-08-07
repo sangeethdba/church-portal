@@ -474,7 +474,7 @@ export default function Reports() {
                     <tbody>
                       {incomeByType.map(([type, amt]) => (
                         <tr key={type} className="border-t border-stone-50 hover:bg-stone-50/50">
-                          <td className="px-6 py-2 capitalize text-stone-800">{type}</td>
+                          <td className="px-6 py-2 capitalize text-stone-800">{type === "offering" ? "Online offering" : type}</td>
                           <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
                         </tr>
                       ))}
