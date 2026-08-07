@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const GOOGLE_AI_KEY = Deno.env.get("GOOGLE_AI_KEY")!;
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
 
 const SYSTEM_PROMPT = `Extract this church offering ledger and return ONLY valid JSON — no commentary, no markdown, no code fences.
 
