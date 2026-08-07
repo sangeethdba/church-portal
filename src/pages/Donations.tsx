@@ -553,10 +553,12 @@ export default function Donations() {
       let y = dateParts[2]; if (y.length === 2) y = "20" + y;
       const date = `${y}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
       let desc = line.slice(dateMatch[0].length).trim();
-      // Only keep deposits: Zelle payment FROM, Deposit, Purchase Refund
-      if (!/zelle payment from\b|purchase refund/i.test(desc)) { i++; continue; }
+      // Only keep deposits: Zelle payment FROM, Deposit, Purchase Refund.
+      // Match the optional "Recurring" qualifier too — BOA writes
+      // "Zelle Recurring payment from" for scheduled Zelle gifts.
+      if (!/zelle\s+(?:recurring\s+)?payment from\b|purchase refund/i.test(desc)) { i++; continue; }
       // Skip Zelle payment TO (expenses)
-      if (/zelle payment to\b/i.test(desc)) { i++; continue; }
+      if (/zelle\s+(?:recurring\s+)?payment to\b/i.test(desc)) { i++; continue; }
       // Find amount (at end of line, before next date, or on next line)
       let amount = "";
       const amtMatch = desc.match(/(-?\$?[\d,]+\.\d{2})\s*$/);
@@ -576,10 +578,11 @@ export default function Donations() {
       if (numAmt <= 0) { i++; continue; }
       // Clean description
       desc = desc.replace(/;?\s*Conf#\s*\S+/g, "").replace(/\d{15,}/g, "").replace(/\s{2,}/g, " ").trim();
-      // Extract donor name — two-pass: first try "for" note, then capture all
+      // Extract donor name — two-pass: first try "for" note, then capture all.
+      // ("Zelle Recurring payment from" is matched the same as "Zelle payment from".)
       let donorName = "";
-      let zelleFrom = desc.match(/Zelle payment from\s+(.+?)\s+for\s+["']([^"']+)["']/i);
-      if (!zelleFrom) zelleFrom = desc.match(/Zelle payment from\s+(.+)/i);
+      let zelleFrom = desc.match(/Zelle\s+(?:recurring\s+)?payment from\s+(.+?)\s+for\s+["']([^"']+)["']/i);
+      if (!zelleFrom) zelleFrom = desc.match(/Zelle\s+(?:recurring\s+)?payment from\s+(.+)/i);
       if (zelleFrom) {
         donorName = zelleFrom[1].trim();
         desc = zelleFrom[2]?.trim() || `Online gift from ${donorName}`;

@@ -531,8 +531,9 @@ export default function Expenses() {
 
       let desc = line.slice(dateMatch[0].length).trim();
 
-      // Skip deposits (Zelle payment FROM, Deposit, REFUND)
-      if (/zelle payment from\b|\bdeposit\b|purchase refund/i.test(desc) && !/zelle payment to\b/i.test(desc)) {
+      // Skip deposits (Zelle payment FROM, Deposit, REFUND) — including BOA's
+      // "Zelle Recurring payment from" qualifier for scheduled Zelle gifts.
+      if (/zelle\s+(?:recurring\s+)?payment from\b|\bdeposit\b|purchase refund/i.test(desc) && !/zelle\s+(?:recurring\s+)?payment to\b/i.test(desc)) {
         i++; continue;
       }
 
