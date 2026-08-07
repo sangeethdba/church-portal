@@ -566,14 +566,17 @@ export default function Donations() {
       setBulkRows([]);
       return;
     }
-    // Match donor names against existing donors (case-insensitive)
+    // Match donor names against existing donors (case-insensitive, first+last
+    // tokens so middle names from Zelle like "JAHNAVI PRIYA BOMMAREDDY" still
+    // link to a donor recorded as "Jahnavi Bommareddy").
+    const nameKeyOf = (n: string) => {
+      const parts = n.toLowerCase().replace(/\s+/g, " ").trim().split(" ");
+      return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : (parts[0] ?? "");
+    };
     const donorMap = new Map<string, string>();
-    for (const d of donors) {
-      const key = d.label.toLowerCase().replace(/\s+/g, " ").trim();
-      donorMap.set(key, d.id);
-    }
+    for (const d of donors) donorMap.set(nameKeyOf(d.label), d.id);
     const matched = rows.map((r) => {
-      const nameKey = r.donorName.toLowerCase().replace(/\s+/g, " ").trim();
+      const nameKey = nameKeyOf(r.donorName);
       return { ...r, donorId: donorMap.get(nameKey) ?? null };
     });
     setBulkRows(matched);
@@ -595,7 +598,9 @@ export default function Donations() {
             const name = row.donorName.trim();
             const parts = name.split(/\s+/);
             const first = parts[0] || name;
-            const last = parts.slice(1).join(" ") || "";
+            // Match on the LAST token as last name so middle names don't block
+            // linking ("JAHNAVI PRIYA BOMMAREDDY" → first "JAHNAVI", last "BOMMAREDDY").
+            const last = parts[parts.length - 1] || "";
             const { data: existing } = await supabase
               .from("donors")
               .select("id")
@@ -605,9 +610,10 @@ export default function Donations() {
             if (existing) {
               donorId = existing.id;
             } else {
+              // Create with full name so no middle-name info is lost
               const { data: created } = await supabase
                 .from("donors")
-                .insert({ first_name: first, last_name: last })
+                .insert({ first_name: first, last_name: parts.slice(1).join(" ") || "" })
                 .select("id")
                 .single();
               donorId = created?.id ?? null;
