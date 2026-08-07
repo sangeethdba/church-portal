@@ -54,14 +54,29 @@ export function MemberOverview() {
     async function load() {
       if (!supabase) { setLoading(false); return; }
       const myDonorId = profile?.linked_donor_id;
+      const myName = profile?.full_name;
       const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
-      const [donRes, ytdRes, expRes] = await Promise.all([
-        myDonorId
-          ? supabase.from("donations").select("*").eq("donor_id", myDonorId).gte("donation_date", range.start).order("donation_date", { ascending: false })
-          : Promise.resolve({ data: null as Donation[] | null }),
-        myDonorId
-          ? supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart)
-          : Promise.resolve({ data: null as { amount: number }[] | null }),
+
+      // Build donation queries: by donor_id + fallback by name for offering-created
+      // gifts where donor_id was never resolved.
+      const donQuery = myDonorId
+        ? supabase.from("donations").select("*").eq("donor_id", myDonorId).gte("donation_date", range.start).order("donation_date", { ascending: false })
+        : Promise.resolve({ data: null as Donation[] | null });
+      const donByNameQuery = myDonorId && myName
+        ? supabase.from("donations").select("*").is("donor_id", null).ilike("donor_name", myName).gte("donation_date", range.start).order("donation_date", { ascending: false })
+        : Promise.resolve({ data: null as Donation[] | null });
+      const ytdQuery = myDonorId
+        ? supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart)
+        : Promise.resolve({ data: null as { amount: number }[] | null });
+      const ytdByNameQuery = myDonorId && myName
+        ? supabase.from("donations").select("amount").is("donor_id", null).ilike("donor_name", myName).gte("donation_date", yearStart)
+        : Promise.resolve({ data: null as { amount: number }[] | null });
+
+      const [donRes, donByNameRes, ytdRes, ytdByNameRes, expRes] = await Promise.all([
+        donQuery,
+        donByNameQuery,
+        ytdQuery,
+        ytdByNameQuery,
         (() => {
           let q = supabase.from("expenses").select("*").eq("user_id", profile?.id).order("submitted_at", { ascending: false }).limit(200);
           if (billFrom) q = q.gte("submitted_at", billFrom);
@@ -70,8 +85,26 @@ export function MemberOverview() {
         })(),
       ]);
       if (!cancelled) {
-        if (donRes.data) setDonations(donRes.data as Donation[]);
-        if (ytdRes.data) setMyYtd((ytdRes.data as { amount: number }[]).reduce((s, r) => s + Number(r.amount ?? 0), 0));
+        // Merge by-id + by-name queries (dedupe on id)
+        const allDonations = [
+          ...(donRes.data ?? []),
+          ...(donByNameRes.data ?? []),
+        ];
+        const seen = new Set<string>();
+        const merged = allDonations.filter((d) => {
+          if (seen.has(d.id)) return false;
+          seen.add(d.id);
+          return true;
+        });
+        merged.sort((a, b) => (b.donation_date ?? "").localeCompare(a.donation_date ?? ""));
+        setDonations(merged);
+
+        // Two queries are disjoint (donor_id set vs null) — sum both directly
+        setMyYtd(
+          (ytdRes.data ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0) +
+          (ytdByNameRes.data ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0),
+        );
+
         if (expRes.data) setExpenses(expRes.data as Expense[]);
         setLoading(false);
       }
