@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 const GOOGLE_AI_KEY = Deno.env.get("GOOGLE_AI_KEY")!;
 // Gemini 2.5 Flash — confirmed working per real-time dashboard token counts
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent";
 
 const SYSTEM_PROMPT = `You are an OCR assistant for a church finance app. You are given a photo of a paper Sunday offering ledger.
 
