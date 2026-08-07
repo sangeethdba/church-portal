@@ -907,8 +907,7 @@ export default function Donations() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={!!d.offering_id}
-                          title={d.offering_id ? "Part of a Sunday offering — edit from the Offerings page" : "Edit this gift"}
+                          title="Edit this gift"
                           onClick={() => startEdit(d)}
                           iconLeft={<Pencil className="h-3.5 w-3.5" />}
                         >
@@ -917,8 +916,7 @@ export default function Donations() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={!!d.offering_id}
-                          title={d.offering_id ? "Part of a Sunday offering — delete from the Offerings page" : "Delete this gift"}
+                          title="Delete this gift"
                           onClick={() => setDeleteTarget(d)}
                           className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                           iconLeft={<Trash2 className="h-3.5 w-3.5" />}
@@ -955,7 +953,7 @@ export default function Donations() {
           </DialogHeader>
           <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>This cannot be undone. If the gift belongs to a Sunday offering, use the Offerings page instead.</span>
+            <span>This cannot be undone. Reports, YTD totals, and donor statements update immediately.</span>
           </div>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => { if (!deleting) setDeleteTarget(null); }}>Cancel</Button>
