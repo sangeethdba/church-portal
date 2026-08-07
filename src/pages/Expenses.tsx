@@ -549,8 +549,6 @@ export default function Expenses() {
         }
       }
 
-      if (!amount) { i++; continue; }
-
       // Clean up description: remove confirmation numbers, card reference numbers
       desc = desc
         .replace(/;?\s*Conf#\s*\S+/g, "")
@@ -562,8 +560,8 @@ export default function Expenses() {
         .trim();
 
       // Skip if it's a deposit (positive amount and "payment from" in description)
-      const numAmt = parseFloat(amount);
-      if (numAmt > 0) { i++; continue; } // expenses should be negative in BOA statements
+      const numAmt = amount ? parseFloat(amount) : 0;
+      if (amount && numAmt > 0) { i++; continue; } // expenses should be negative in BOA statements
 
       // Extract a clean title from the description. Two-pass like the Donations
       // parser: first REQUIRE the "for" memo (so lazy matching can't stop at one
@@ -579,7 +577,9 @@ export default function Expenses() {
         if (title.length > 200) title = title.slice(0, 197) + "...";
       }
 
-      const absAmt = Math.abs(numAmt);
+      // No amount found (pasted fragment / unusual layout): keep the row with an
+      // empty amount so the reviewer can type it in — never silently drop an expense.
+      const absAmt = amount ? Math.abs(numAmt) : NaN;
 
       // Method detection from the raw description (title strips the "Zelle/CHECKCARD"
       // prefixes, so method must be derived here before the title replaces desc).
@@ -588,7 +588,7 @@ export default function Expenses() {
       else if (/^check\b|check #|check no/i.test(desc)) method = "check";
       else if (/cash/i.test(desc)) method = "cash";
 
-      entries.push({ date, desc: title, amount: String(absAmt), method });
+      entries.push({ date, desc: title, amount: amount ? String(absAmt) : "", method });
       i++;
     }
 
@@ -927,6 +927,11 @@ export default function Expenses() {
                         Total: {formatCurrency(bulkRows.reduce((s, r) => s + Math.abs(Number(r.amount) || 0), 0))}
                       </span>
                     </div>
+                    {bulkRows.some((r) => !r.amount) && (
+                      <div className="mt-1 text-xs font-medium text-amber-600">
+                        {bulkRows.filter((r) => !r.amount).length} row{bulkRows.filter((r) => !r.amount).length === 1 ? "" : "s"} missing a dollar amount (your paste probably cut it off) — type the amount to include it.
+                      </div>
+                    )}
                     <div className="mt-2 max-h-64 overflow-auto rounded-lg border border-stone-200">
                       <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-stone-50">
@@ -976,8 +981,12 @@ export default function Expenses() {
                                     next[i] = { ...next[i], amount: e.target.value };
                                     setBulkRows(next);
                                   }}
-                                  className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs text-right"
+                                  placeholder="0.00"
+                                  className={`w-full rounded border px-1 py-0.5 text-xs text-right ${row.amount === "" ? "border-amber-400 bg-amber-50" : "border-stone-200"}`}
                                 />
+                                {row.amount === "" && (
+                                  <div className="mt-0.5 text-[10px] font-medium text-amber-600">Missing — type amount to import</div>
+                                )}
                               </td>
                               <td className="px-2 py-1">
                                 <select
@@ -1021,7 +1030,10 @@ export default function Expenses() {
                         Cancel
                       </Button>
                       <Button onClick={handleBulkImport} disabled={bulkSaving}>
-                        {bulkSaving ? <>Importing…</> : <>Import {bulkRows.length} expense{bulkRows.length === 1 ? "" : "s"}</>}
+                        {bulkSaving ? <>Importing…</> : (() => {
+                          const importable = bulkRows.filter((r) => r.description && r.amount && !isNaN(Number(r.amount)) && Number(r.amount) !== 0).length;
+                          return <>Import {importable} of {bulkRows.length} expense{bulkRows.length === 1 ? "" : "s"}</>;
+                        })()}
                       </Button>
                     </div>
                   </>
