@@ -604,7 +604,7 @@ export default function Donations() {
     }
     setBulkSaving(false);
     const msg = imported > 0 ? `Imported ${imported} online donation${imported === 1 ? "" : "s"}${failed > 0 ? ` (${failed} failed)` : ""}.` : `Import failed for all ${failed} rows.`;
-    if (imported > 0 && failed === 0) { setBulkOpen(false); setBulkRaw(""); setBulkRows([]); reloadDonations(); toast(msg, "success"); }
+    if (imported > 0) { reloadDonations(); setBulkOpen(false); setBulkRaw(""); setBulkRows([]); toast(msg, failed > 0 ? "error" : "success"); }
     else setBulkError(msg);
   };
 
