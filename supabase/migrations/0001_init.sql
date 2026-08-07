@@ -12,7 +12,7 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type donation_kind as enum ('tithe', 'offering', 'building', 'missions', 'other');
+  create type donation_kind as enum ('tithe', 'offering', 'building', 'missions', 'other', 'book_room');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
