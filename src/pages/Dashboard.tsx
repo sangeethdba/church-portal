@@ -133,6 +133,7 @@ export default function Dashboard() {
   const [pendingDepositTotal, setPendingDepositTotal] = useState(0);
   const [ytdExpenses, setYtdExpenses] = useState(0);
   const [ytdNet, setYtdNet] = useState(0);
+  const [bookRoomTotal, setBookRoomTotal] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [myPendingExpenses, setMyPendingExpenses] = useState(0);
   const [myPendingTotal, setMyPendingTotal] = useState(0);
@@ -272,6 +273,13 @@ export default function Dashboard() {
           setPendingDepositTotal(Number(d.pendingDepositTotal ?? 0));
           const giving = (d.recentGiving as Array<{ id: string; date: string; name: string; meta: string; amount: number }>) ?? [];
           setRecentItems(giving);
+          // Book room income (separate from member giving)
+          const { data: bookRoom } = await supabase
+            .from("donations")
+            .select("amount")
+            .eq("donation_type", "book_room")
+            .gte("donation_date", yearStart);
+          if (bookRoom) setBookRoomTotal((bookRoom as { amount: number }[]).reduce((s, r) => s + Number(r.amount ?? 0), 0));
           // Fetch current user's own pending expenses for "My reimbursements" KPI
           if (profile?.id) {
             supabase
@@ -431,20 +439,22 @@ export default function Dashboard() {
         </motion.button>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-7">
         {loading ? (
           <>
-            <KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton />
+            <KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton />
           </>
         ) : (
           <>
-            <MotionTile label="YTD Giving" value={formatCurrency(kpis.ytdGiving)} accent="indigo" icon={<HandCoins className="h-5 w-5" />} index={0} />
+            <MotionTile label="YTD Giving" value={formatCurrency(kpis.ytdGiving - bookRoomTotal)} accent="indigo" icon={<HandCoins className="h-5 w-5" />} index={0} />
             <MotionTile label="YTD Expenses" value={formatCurrency(ytdExpenses)} accent={ytdExpenses > 0 ? "rose" : "emerald"} icon={<Receipt className="h-5 w-5" />} index={1} />
-            <MotionTile label="Net position" value={formatCurrency(ytdNet)} accent={ytdNet >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />} delta={ytdNet >= 0 ? "Surplus" : "Deficit"} deltaPositive={ytdNet >= 0} index={2} />
+            <MotionTile label="Net position" value={formatCurrency(ytdNet - bookRoomTotal)} accent={ytdNet - bookRoomTotal >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />} delta={ytdNet - bookRoomTotal >= 0 ? "Surplus" : "Deficit"} deltaPositive={ytdNet - bookRoomTotal >= 0} index={2} />
+            <MotionTile label="Book room" value={bookRoomTotal > 0 ? formatCurrency(bookRoomTotal) : "0"} accent="emerald" icon={<CircleDollarSign className="h-5 w-5" />}
+              onClick={bookRoomTotal > 0 ? () => navigate("/donations") : undefined} index={3} />
             <MotionTile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}
-              onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} index={3} />
+              onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} index={4} />
             <MotionTile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}
-              onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} index={4} />
+              onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} index={5} />
             {isAdmin && (
               <MotionTile
                 label="My reimbursements"
@@ -452,7 +462,7 @@ export default function Dashboard() {
                 accent={myPendingExpenses > 0 ? "amber" : "emerald"}
                 icon={<Banknote className="h-5 w-5" />}
                 onClick={() => navigate("/expenses")}
-                index={5}
+                index={6}
               />
             )}
           </>
