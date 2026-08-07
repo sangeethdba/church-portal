@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Search, X, Users, HandCoins, Receipt, ArrowRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { donationTypeLabel } from "@/lib/accounting";
 
 type SearchResult = {
   id: string;
@@ -81,7 +82,7 @@ export default function SearchModal({
           id: d.id as string,
           type: "donation",
           title: d.donor_name as string,
-          subtitle: `${formatDate(d.donation_date as string)} · ${d.donation_type} · ${d.payment_method}`,
+          subtitle: `${formatDate(d.donation_date as string)} · ${donationTypeLabel(d.donation_type as string)} · ${d.payment_method}`,
           amount: Number(d.amount ?? 0),
           route: "/donations",
         }),

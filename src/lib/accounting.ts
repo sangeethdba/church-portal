@@ -7,6 +7,26 @@ export function normName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/**
+ * Human-readable label for a donation type. Book room sales are a separate
+ * income source, not a charitable gift, so they get their own friendly label.
+ */
+export function donationTypeLabel(type: string | null | undefined): string {
+  if (!type) return "—";
+  if (type === "book_room") return "Book room";
+  return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, " ");
+}
+
+/**
+ * True when a donation counts as charitable member giving. Book room sales
+ * (books/bibles/calendars purchased from the church) are NOT charitable
+ * contributions and must be excluded from donor totals, tax statements,
+ * and member giving — they show only as church income.
+ */
+export function isCharitableGift(type: string | null | undefined): boolean {
+  return type !== "book_room";
+}
+
 /** Sum cash from denomination counts: { 100: "2", 50: "0", 1: "5" } → 205. */
 export function computeCashFromDenoms(dc: Record<number, string>): number {
   return Object.entries(dc).reduce(

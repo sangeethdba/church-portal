@@ -12,6 +12,7 @@ import { MemberOverview } from "@/pages/MyOverview";
 import { supabase, isAdminRole, isPastorRole } from "@/lib/supabase";
 import type { Profile, Donation, Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { donationTypeLabel } from "@/lib/accounting";
 
 interface DashboardKpis {
   ytdGiving: number;
@@ -272,7 +273,12 @@ export default function Dashboard() {
           setPendingDeposits(Number(d.pendingDeposits ?? 0));
           setPendingDepositTotal(Number(d.pendingDepositTotal ?? 0));
           const giving = (d.recentGiving as Array<{ id: string; date: string; name: string; meta: string; amount: number }>) ?? [];
-          setRecentItems(giving);
+          setRecentItems(
+            giving.map((g) => ({
+              ...g,
+              meta: g.meta.split(" · ").map((p, i) => (i === 0 ? donationTypeLabel(p) : p)).join(" · "),
+            })),
+          );
           // Book room income (separate from member giving)
           const { data: bookRoom } = await supabase
             .from("donations")

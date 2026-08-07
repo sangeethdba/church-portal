@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import { formatCurrency, formatDateLong } from "./utils";
 import type { Donor, Donation } from "./supabase";
+import { donationTypeLabel } from "./accounting";
 
 /** Official Atlanta Little Flock Church details used on every generated document. */
 export const ALF_DOCUMENT_BRANDING = {
@@ -734,7 +735,7 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   drawTableHeader();
 
   // Helper: build a readable type label (always the gift category)
-  const typeLabel = (d: Donation) => capitalizeWords(d.donation_type);
+  const typeLabel = (d: Donation) => donationTypeLabel(d.donation_type);
 
   // Helper: build the memo (check number, notes, or empty)
   const memoLabel = (d: Donation) => {
@@ -928,7 +929,7 @@ export function generateMemberReport(m: MemberReportData): jsPDF {
       }
       doc.setTextColor(28, 25, 23);
       doc.text(formatDateLong(d.donation_date), margin + 8, y);
-      doc.text(d.donation_type, margin + 110, y);
+      doc.text(donationTypeLabel(d.donation_type), margin + 110, y);
       doc.text(d.payment_method, margin + 200, y);
       doc.text((d.notes ?? d.check_number ?? "").slice(0, 32), margin + 290, y);
       doc.text(formatCurrency(d.amount), pageWidth - margin - 8, y, { align: "right" });

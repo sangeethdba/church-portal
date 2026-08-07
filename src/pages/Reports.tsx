@@ -8,7 +8,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import { supabase, isOversightRole, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { buildIncomeMethodDisplay, buildWeeklyLedgerDetail, type WeeklyLedgerDetail } from "@/lib/accounting";
+import { buildIncomeMethodDisplay, buildWeeklyLedgerDetail, donationTypeLabel, type WeeklyLedgerDetail } from "@/lib/accounting";
 import { notifyWeeklySummary } from "@/lib/notify";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
@@ -474,7 +474,7 @@ export default function Reports() {
                     <tbody>
                       {incomeByType.map(([type, amt]) => (
                         <tr key={type} className="border-t border-stone-50 hover:bg-stone-50/50">
-                          <td className="px-6 py-2 capitalize text-stone-800">{type === "offering" ? "Online offering" : type}</td>
+                          <td className="px-6 py-2 capitalize text-stone-800">{type === "offering" ? "Online offering" : donationTypeLabel(type)}</td>
                           <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
                         </tr>
                       ))}

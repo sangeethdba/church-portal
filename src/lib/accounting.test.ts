@@ -8,9 +8,37 @@ import {
   buildIncomeByMethod,
   buildIncomeMethodDisplay,
   sundayWeekKey,
+  donationTypeLabel,
+  isCharitableGift,
 } from "./accounting";
 import { isAdminRole, normalizeLineItems, buildReceiptPath } from "./supabase";
 import { formatCurrency, formatDate } from "./utils";
+
+// ── donationTypeLabel / isCharitableGift ────────────────────────────────────
+describe("donationTypeLabel", () => {
+  it("labels book_room as Book room", () => {
+    expect(donationTypeLabel("book_room")).toBe("Book room");
+  });
+  it("title-cases plain types", () => {
+    expect(donationTypeLabel("tithe")).toBe("Tithe");
+    expect(donationTypeLabel("offering")).toBe("Offering");
+  });
+  it("handles empty values", () => {
+    expect(donationTypeLabel("")).toBe("—");
+    expect(donationTypeLabel(null)).toBe("—");
+    expect(donationTypeLabel(undefined)).toBe("—");
+  });
+});
+
+describe("isCharitableGift", () => {
+  it("treats book room sales as non-charitable", () => {
+    expect(isCharitableGift("book_room")).toBe(false);
+  });
+  it("treats offerings and tithes as charitable", () => {
+    expect(isCharitableGift("offering")).toBe(true);
+    expect(isCharitableGift("tithe")).toBe(true);
+  });
+});
 
 // ── normName ───────────────────────────────────────────────────────────────
 describe("normName", () => {

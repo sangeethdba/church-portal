@@ -9,6 +9,7 @@ import ReceiptThumbs from "@/components/ReceiptThumbs";
 import { normalizeLineItems, supabase } from "@/lib/supabase";
 import type { Donation, Expense, Profile } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { donationTypeLabel } from "@/lib/accounting";
 
 const statusTone = (s: string) =>
   s === "paid" || s === "auto_paid" ? "emerald" : s === "rejected" ? "rose" : s === "approved" ? "indigo" : "amber";
@@ -58,18 +59,19 @@ export function MemberOverview() {
       const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
 
       // Build donation queries: by donor_id + fallback by name for offering-created
-      // gifts where donor_id was never resolved.
+      // gifts where donor_id was never resolved. Book room sales are purchases,
+      // not charitable giving, so they stay out of a member's giving record.
       const donQuery = myDonorId
-        ? supabase.from("donations").select("*").eq("donor_id", myDonorId).gte("donation_date", range.start).order("donation_date", { ascending: false })
+        ? supabase.from("donations").select("*").eq("donor_id", myDonorId).gte("donation_date", range.start).neq("donation_type", "book_room").order("donation_date", { ascending: false })
         : Promise.resolve({ data: null as Donation[] | null });
       const donByNameQuery = myDonorId && myName
-        ? supabase.from("donations").select("*").is("donor_id", null).ilike("donor_name", myName).gte("donation_date", range.start).order("donation_date", { ascending: false })
+        ? supabase.from("donations").select("*").is("donor_id", null).ilike("donor_name", myName).gte("donation_date", range.start).neq("donation_type", "book_room").order("donation_date", { ascending: false })
         : Promise.resolve({ data: null as Donation[] | null });
       const ytdQuery = myDonorId
-        ? supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart)
+        ? supabase.from("donations").select("amount").eq("donor_id", myDonorId).gte("donation_date", yearStart).neq("donation_type", "book_room")
         : Promise.resolve({ data: null as { amount: number }[] | null });
       const ytdByNameQuery = myDonorId && myName
-        ? supabase.from("donations").select("amount").is("donor_id", null).ilike("donor_name", myName).gte("donation_date", yearStart)
+        ? supabase.from("donations").select("amount").is("donor_id", null).ilike("donor_name", myName).gte("donation_date", yearStart).neq("donation_type", "book_room")
         : Promise.resolve({ data: null as { amount: number }[] | null });
 
       const [donRes, donByNameRes, ytdRes, ytdByNameRes, expRes] = await Promise.all([
@@ -331,7 +333,7 @@ export function MemberOverview() {
               <div key={d.id} className="flex items-center justify-between rounded-lg border border-stone-100 px-4 py-3 transition hover:border-purple-200 hover:bg-purple-50/30">
                 <div>
                   <div className="font-medium text-stone-900">{d.donor_name}</div>
-                  <div className="text-xs text-stone-500">{formatDate(d.donation_date)} · {d.donation_type} · {d.payment_method}{d.check_number ? ` · #${d.check_number}` : ""}</div>
+                  <div className="text-xs text-stone-500">{formatDate(d.donation_date)} · {donationTypeLabel(d.donation_type)} · {d.payment_method}{d.check_number ? ` · #${d.check_number}` : ""}</div>
                 </div>
                 <div className="font-serif text-lg font-semibold text-stone-900">{formatCurrency(d.amount)}</div>
               </div>

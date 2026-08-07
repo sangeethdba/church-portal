@@ -8,7 +8,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import { supabase, isAdminRole, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency } from "@/lib/utils";
-import { buildIncomeByMethod, buildIncomeMethodDisplay, buildWeeklyLedgerDetail } from "@/lib/accounting";
+import { buildIncomeByMethod, buildIncomeMethodDisplay, buildWeeklyLedgerDetail, donationTypeLabel } from "@/lib/accounting";
 import { downloadAnnualReport, type AnnualReportData } from "@/lib/pdf";
 import { ALF_DOCUMENT_BRANDING } from "@/lib/pdf";
 
@@ -230,7 +230,7 @@ export default function AnnualReport() {
       net,
       offeringCount: filteredOff.length,
       expenseCount: filteredExp.length,
-      incomeByType: incomeByType.map(([label, amount]) => ({ label, amount })),
+      incomeByType: incomeByType.map(([label, amount]) => ({ label: donationTypeLabel(label), amount })),
       incomeByMethod: incomeByMethod.map(({ method, amount }) => ({ label: method, amount })),
       expensesByCategory: expByCategory.map(([label, amount]) => ({ label: catLabel(label), amount })),
       expensesByMethod: expByMethod.map(([label, amount]) => ({ label, amount })),
@@ -366,7 +366,7 @@ export default function AnnualReport() {
                   <tbody>
                     {incomeByType.map(([type, amt]) => (
                       <tr key={type} className="border-t border-stone-50 hover:bg-stone-50/50">
-                        <td className="px-6 py-2 capitalize text-stone-800">{type === "offering" ? "Online offering" : type}</td>
+                        <td className="px-6 py-2 capitalize text-stone-800">{type === "offering" ? "Online offering" : donationTypeLabel(type)}</td>
                         <td className="px-6 py-2 text-right font-mono text-stone-700">{formatCurrency(amt)}</td>
                       </tr>
                     ))}

@@ -21,6 +21,7 @@ import { supabase, isAdminRole } from "@/lib/supabase";
 import type { Donor, Donation } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { downloadStatement, type AnnualStatement } from "@/lib/pdf";
+import { donationTypeLabel } from "@/lib/accounting";
 
 const sampleDonors: Pick<Donor, "id" | "first_name" | "last_name" | "address" | "city" | "state" | "zip_code" | "email">[] = [
   {
@@ -57,7 +58,9 @@ export default function TaxReport() {
     if (!supabase) return;
     Promise.all([
       supabase.from("donors").select("id, first_name, last_name, address, city, state, zip_code, email"),
-      supabase.from("donations").select("*"),
+      // Book room sales are purchases, not tax-deductible contributions — they
+      // must never appear on (or inflate) a member's annual tax statement.
+      supabase.from("donations").select("*").neq("donation_type", "book_room"),
     ]).then(([{ data: dData }, { data: donData }]) => {
       if (dData) setDonors(dData as typeof sampleDonors);
       if (donData) setDonations(donData as Donation[]);
@@ -299,7 +302,7 @@ export default function TaxReport() {
                   <Tr key={d.id}>
                     <Td>{formatDate(d.donation_date)}</Td>
                     <Td>
-                      <Badge tone="indigo">{d.donation_type}</Badge>
+                      <Badge tone="indigo">{donationTypeLabel(d.donation_type)}</Badge>
                     </Td>
                     <Td className="capitalize text-stone-600">{d.payment_method}</Td>
                     <Td className="text-stone-600">

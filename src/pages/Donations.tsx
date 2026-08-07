@@ -30,6 +30,7 @@ import { supabase, isAdminRole, isOversightRole } from "@/lib/supabase";
 import type { Donation, Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { downloadStatement, type AnnualStatement } from "@/lib/pdf";
+import { donationTypeLabel } from "@/lib/accounting";
 
 const sampleDonations: Donation[] = [
   {
@@ -1173,7 +1174,7 @@ export default function Donations() {
                   {d.notes && <div className="text-xs text-stone-500">{d.notes}</div>}
                 </Td>
                 <Td>
-                  <Badge tone="indigo">{d.donation_type}</Badge>
+                  <Badge tone="indigo">{donationTypeLabel(d.donation_type)}</Badge>
                 </Td>
                 <Td>
                   <span className="capitalize text-stone-600">{d.payment_method}</span>

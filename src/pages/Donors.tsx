@@ -155,7 +155,10 @@ export default function Donors() {
       supabase
         .from("donations")
         .select("donor_id, donor_name, amount, donation_date")
-        .not("amount", "is", null),
+        .not("amount", "is", null)
+        // Book room sales are purchases, not charitable giving — keep them out
+        // of donor totals and the directory's live giving stats.
+        .neq("donation_type", "book_room"),
     ]).then(([donorsRes, donationsRes]) => {
       if (!donorsRes.error && donorsRes.data) setDonors(donorsRes.data as Donor[]);
       if (!donationsRes.error && donationsRes.data)
@@ -480,13 +483,15 @@ export default function Donors() {
           .from("donations")
           .select("amount, donation_date")
           .eq("donor_id", donor.id)
-          .gte("donation_date", yearStart),
+          .gte("donation_date", yearStart)
+          .neq("donation_type", "book_room"),
         supabase
           .from("donations")
           .select("amount, donation_date")
           .is("donor_id", null)
           .ilike("donor_name", `%${fullName.replace(/'/g, "''")}%`)
-          .gte("donation_date", yearStart),
+          .gte("donation_date", yearStart)
+          .neq("donation_type", "book_room"),
       ]);
       const allRows = [
         ...(res1.data ?? []),
