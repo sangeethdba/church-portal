@@ -275,6 +275,7 @@ function QuickOnlineEntry({
               <option value="offering">Offering</option>
               <option value="building">Building fund</option>
               <option value="missions">Missions</option>
+              <option value="book_room">Book room</option>
               <option value="other">Other</option>
             </Select>
           </div>
@@ -549,7 +550,7 @@ export default function Donations() {
       donorName: e.donorName || (e.desc.includes("Online gift from") ? e.desc.replace("Online gift from ", "") : ""),
       amount: e.amount,
       paymentMethod: "online",
-      donationType: "offering",
+      donationType: /calendar|bible|book|song\b|hindi|telugu/i.test(e.desc) ? "book_room" : "offering",
       notes: e.desc.includes("Online gift from") ? "" : e.desc.slice(0, 200),
     }));
   };
@@ -861,6 +862,7 @@ export default function Donations() {
                                 <option value="offering">Offering</option>
                                 <option value="building">Building</option>
                                 <option value="missions">Missions</option>
+                                <option value="book_room">Book room</option>
                                 <option value="other">Other</option>
                               </select>
                             </td>
@@ -956,6 +958,7 @@ export default function Donations() {
                     <option value="offering">Offering</option>
                     <option value="building">Building fund</option>
                     <option value="missions">Missions</option>
+                    <option value="book_room">Book room</option>
                     <option value="other">Other</option>
                   </Select>
                 </div>
@@ -1031,6 +1034,7 @@ export default function Donations() {
               <option value="offering">Offering</option>
               <option value="building">Building</option>
               <option value="missions">Missions</option>
+              <option value="book_room">Book room</option>
               <option value="other">Other</option>
             </Select>
           </div>

@@ -16,7 +16,7 @@ export const isPastorRole = (role: string | null | undefined): boolean => role =
 export const isOversightRole = (role: string | null | undefined): boolean =>
   isAdminRole(role) || isPastorRole(role);
 
-export type DonationKind = "tithe" | "offering" | "building" | "missions" | "other";
+export type DonationKind = "tithe" | "offering" | "building" | "missions" | "book_room" | "other";
 export type PaymentMethod = "cash" | "check" | "online" | "card";
 
 export type ExpenseSource = "member_submitted" | "church_direct";
