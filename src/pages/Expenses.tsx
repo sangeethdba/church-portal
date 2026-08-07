@@ -480,7 +480,10 @@ export default function Expenses() {
   // ── Bulk import: detect bank columns from header row ─────────────────
   // ── BOA / plain-text statement parser (Zelle, card, check, transfers) ─
   const parseBoaStatement = (raw: string): BulkRow[] => {
-    const lines = raw.split(/\n/);
+    // Normalize: insert newlines before dates that appear mid-text
+    // e.g. "800.0001/02/26" → "800.00\n01/02/26"
+    const normalized = raw.replace(/(\d)(\d{1,2}\/\d{1,2}\/\d{2,4})\b/g, "$1\n$2");
+    const lines = normalized.split(/\n/);
     const entries: { date: string; desc: string; amount: string }[] = [];
     let i = 0;
     // Only parse the withdrawals/debits section — skip the deposits section
