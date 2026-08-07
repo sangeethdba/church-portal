@@ -17,6 +17,7 @@ import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { computeCashFromDenoms, normName } from "@/lib/accounting";
 import { downloadOfferingSummary, offeringSummaryDataUrl, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
+import Tesseract from "tesseract.js";
 
 // ── Denomination preset ───────────────────────────────────────────────────
 const DENOMS = [100, 50, 20, 10, 5, 2, 1] as const;
@@ -702,6 +703,104 @@ export default function Offerings() {
     }
   };
 
+  // ── Basic OCR (Tesseract.js — no API, no limits) ────────────────────
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const handleBasicOcr = async () => {
+    if (!scanFile) return;
+    setOcrLoading(true);
+    setScanError("");
+    try {
+      // Compress image
+      const compress = (file: File): Promise<string> => new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 1600;
+          let w = img.width, h = img.height;
+          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+          const c = document.createElement("canvas");
+          c.width = w; c.height = h;
+          c.getContext("2d")!.drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+      const dataUrl = await compress(scanFile);
+
+      const { data: { text } } = await Tesseract.recognize(dataUrl, "eng", {
+        logger: () => {},
+      });
+
+      // Parse the raw OCR text
+      const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+      const checks: Array<{ donorName: string; checkNumber: string; amount: number }> = [];
+      const cashGifts: Array<{ donorName: string; amount: number }> = [];
+      const denoms: Record<string, number> = {};
+      let svcDate = new Date().toISOString().slice(0, 10);
+      let pastorDeduction = 0;
+
+      for (const line of lines) {
+        // Try date patterns: MM/DD/YYYY or MM-DD-YYYY or YYYY-MM-DD
+        const dateMatch = line.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|(\d{4}[\-]\d{2}[\-]\d{2})/);
+        if (dateMatch) {
+          const d = new Date(dateMatch[0]);
+          if (!isNaN(d.getTime())) svcDate = d.toISOString().slice(0, 10);
+          continue;
+        }
+
+        // Pastor gift: "pastor" + amount
+        const pastorMatch = line.match(/pastor.*?\$?(\d+\.?\d*)/i);
+        if (pastorMatch) { pastorDeduction = parseFloat(pastorMatch[1]) || 0; continue; }
+
+        // Denomination patterns: $100 x 5 or 100s: 3 or $100: 2
+        const denomMatch = line.match(/(\d{2,3})\s*[x:×]\s*(\d+)/i);
+        if (denomMatch) {
+          const val = parseInt(denomMatch[1]);
+          const cnt = parseInt(denomMatch[2]);
+          if ([100, 50, 20, 10, 5, 2, 1].includes(val)) denoms[String(val)] = cnt;
+          continue;
+        }
+
+        // Check/cash entry: Name [optional check#] amount
+        // Match lines with a dollar amount and optional check number
+        const entryMatch = line.match(/^(.+?)\s+(?:(\d{3,5})\s+)?\$?(\d+\.?\d{0,2})\s*$/);
+        if (entryMatch) {
+          const name = entryMatch[1].trim();
+          const checkNum = entryMatch[2] || "";
+          const amt = parseFloat(entryMatch[3]);
+          if (!isNaN(amt) && amt > 0 && name.length > 1) {
+            if (checkNum) {
+              checks.push({ donorName: name, checkNumber: checkNum, amount: amt });
+            } else {
+              cashGifts.push({ donorName: name, amount: amt });
+            }
+          }
+        }
+      }
+
+      // Pre-fill the form
+      setSvcDate(svcDate);
+      setSvcName("Sunday Service");
+      const nd = emptyDenoms();
+      for (const [k, v] of Object.entries(denoms)) if (k in nd) nd[Number(k)] = String(v);
+      setDenoms(nd);
+      setDeductions(pastorDeduction > 0 ? [{ reason: "Pastor gift", amount: String(pastorDeduction) }] : []);
+      const stamp = Date.now();
+      setDonations([
+        ...checks.map((c, i) => ({ key: `ocr-c-${stamp}-${i}`, donorName: c.donorName, donorId: "", method: "check" as const, checkNumber: c.checkNumber, amount: String(c.amount) })),
+        ...cashGifts.map((g, i) => ({ key: `ocr-g-${stamp}-${i}`, donorName: g.donorName, donorId: "", method: "cash" as const, checkNumber: "", amount: String(g.amount) })),
+      ]);
+      setCounter1Pin(""); setCounter2Id(""); setCounter2Pin(""); setSignOffError(""); setEditingOffering(null);
+      setScanOpen(false); setScanFile(null); setScanPreview(null); setOcrLoading(false);
+      setOpen(true);
+      toast(`OCR found ${checks.length + cashGifts.length} entries. Review carefully — OCR can miss-read handwriting.`, "success");
+    } catch (err) {
+      console.warn("Basic OCR failed:", err);
+      setScanError(`OCR failed — ${err instanceof Error ? err.message : "try a clearer photo"}`);
+      setOcrLoading(false);
+    }
+  };
+
   return (
     <div>
       {!canAccess && (
@@ -1342,8 +1441,10 @@ export default function Offerings() {
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => { setScanOpen(false); setScanFile(null); setScanPreview(null); setScanError(""); }}>Cancel</Button>
             <Button onClick={handleScanLedger} disabled={!scanFile || scanLoading}>
-              {scanLoading ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Scanning…</> : "Scan & fill form"}
+              {scanLoading ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Scanning</> : "AI Scan"}
             </Button>
+            <Button onClick={handleBasicOcr} disabled={!scanFile || ocrLoading} variant="outline">
+              {ocrLoading ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Reading</> : "OCR (no AI)"}</Button>
           </div>
         </DialogContent>
       </Dialog>
