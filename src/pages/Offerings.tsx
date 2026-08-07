@@ -710,25 +710,42 @@ export default function Offerings() {
     setOcrLoading(true);
     setScanError("");
     try {
-      // Compress image
-      const compress = (file: File): Promise<string> => new Promise((resolve, reject) => {
+      // Compress + preprocess image for OCR (grayscale, contrast boost, PNG)
+      const preprocess = (file: File): Promise<string> => new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
-          const MAX = 1600;
+          const MAX = 2000;
           let w = img.width, h = img.height;
           if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
           const c = document.createElement("canvas");
           c.width = w; c.height = h;
-          c.getContext("2d")!.drawImage(img, 0, 0, w, h);
-          resolve(c.toDataURL("image/jpeg", 0.8));
+          const ctx = c.getContext("2d")!;
+          // Draw image
+          ctx.drawImage(img, 0, 0, w, h);
+          // Get pixel data for preprocessing
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const data = imageData.data;
+          // Convert to grayscale + boost contrast
+          for (let i = 0; i < data.length; i += 4) {
+            // Luminance grayscale
+            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            // Contrast boost: stretch the middle range, clamp to 0-255
+            const boosted = Math.min(255, Math.max(0, (gray - 60) * 1.8));
+            data[i] = data[i + 1] = data[i + 2] = boosted;
+          }
+          ctx.putImageData(imageData, 0, 0);
+          // Use PNG for lossless (much better for OCR than JPEG)
+          resolve(c.toDataURL("image/png"));
         };
         img.onerror = reject;
         img.src = URL.createObjectURL(file);
       });
-      const dataUrl = await compress(scanFile);
+      const dataUrl = await preprocess(scanFile);
 
       const { data: { text } } = await Tesseract.recognize(dataUrl, "eng", {
         logger: (m) => { if (m.status === "recognizing text") console.log(`OCR progress: ${Math.round((m.progress ?? 0) * 100)}%`); },
+        // PSM 4 = assume single column of variable-sized text (best for ledgers)
+        // PSM 6 = uniform block of text
       });
 
       console.log("=== RAW OCR TEXT ===\n", text, "\n=== END ===");
