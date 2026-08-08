@@ -228,6 +228,14 @@ export default function Expenses() {
     notes: "",
   });
 
+  // Categories the expense_category enum actually accepts. Anything else falls
+  // back to "other" so a parsed row can ALWAYS import — the RPC casts the value
+  // to the enum and throws if it isn't a member (e.g. 'software' before the
+  // enum migration runs), which silently fails that row on import.
+  const VALID_CATEGORIES = new Set(EXPENSE_CATEGORIES.map((c) => c.value));
+  const safeCategory = (cat: string): string =>
+    VALID_CATEGORIES.has(cat as Expense["category"]) ? cat : "other";
+
   useEffect(() => {
     if (!supabase) {
       setLoading(false);
@@ -627,7 +635,7 @@ export default function Expenses() {
       recipient: e.recipient,
       cardLast4: e.cardLast4,
       checkNumber: e.checkNumber,
-      category: (() => {
+      category: safeCategory((() => {
         const t = e.desc.toLowerCase();
         if (/\bvbs\b|vacation bible/.test(t)) return "vbs";
         if (/sunday school/.test(t)) return "sunday_school";
@@ -648,7 +656,7 @@ export default function Expenses() {
         if (/kingswood|university|school|college/.test(t)) return "education";
         if (/rent|lease|mortgage/.test(t)) return "rent";
         return "other";
-      })(),
+      })()),
       method: e.method || "online",
     }));
   };
@@ -745,7 +753,7 @@ export default function Expenses() {
       else if (/software|subscription|hosting|domain|zoom|slack/.test(dLower)) cat = "software";
       else if (/bank fee|service charge|wire|transfer fee/.test(dLower)) cat = "bank_fees";
 
-      return { ...emptyBulkRow(), date, description: desc.slice(0, 200), amount: amt, category: cat, method: "online" };
+      return { ...emptyBulkRow(), date, description: desc.slice(0, 200), amount: amt, category: safeCategory(cat), method: "online" };
     }).filter((r) => r.description && !isNaN(Number(r.amount)) && Number(r.amount) !== 0);
   };
 
