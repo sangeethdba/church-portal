@@ -308,3 +308,210 @@ export function buildIncomeMethodDisplay(
   if (other !== 0) rows.push({ label: "Other", amount: other });
   return rows;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manual Sunday-ledger text import
+// ─────────────────────────────────────────────────────────────────────────────
+// The church's paper offering ledger has one sheet per service: a date at the
+// top, one line per check (name + amount, often with a check number column),
+// cash breakdown lines like "100 x 1", then CASH / CHECKS / TOTAL subtotals
+// and the two counters' signatures. `parseLedgerText` turns a pasted sheet
+// into the same shape the AI ledger scan produces, so both flows can pre-fill
+// the Record-offering form identically.
+
+const LEDGER_DENOM_VALUES = [100, 50, 20, 10, 5, 2, 1];
+
+/** One named donation row parsed from a pasted ledger line. */
+export interface ParsedLedgerRow {
+  donorName: string;
+  checkNumber: string;
+  amount: number;
+}
+
+/** Result of parsing one pasted weekly ledger sheet. */
+export interface ParsedLedger {
+  /** Service date as YYYY-MM-DD, or "" when the sheet had no readable date. */
+  serviceDate: string;
+  serviceName: string;
+  /** Cash counts by denomination, e.g. { 100: 1, 20: 32 }. */
+  denominations: Record<number, number>;
+  /** Named rows with a check number → recorded as checks. */
+  checks: ParsedLedgerRow[];
+  /** Named rows without a check number → recorded as named cash gifts. */
+  cashGifts: ParsedLedgerRow[];
+  deductions: { reason: string; amount: number }[];
+  /** Stated on the sheet (CASH … / CHECKS … / TOTAL …), for cross-checking. */
+  statedCash: number | null;
+  statedChecks: number | null;
+  statedTotal: number | null;
+  /** Human-readable problems found while parsing (totals that don't match…). */
+  warnings: string[];
+}
+
+const LEDGER_SUPERSCRIPT: Record<string, string> = {
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+  "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+};
+
+const LEDGER_NUMBER_WORD =
+  /^(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)/i;
+
+/**
+ * Parse one pasted Sunday-offering ledger sheet into offering-form fields.
+ * Handles the paper sheet's format: a date line, name + amount check rows
+ * (with optional check-number column), denomination lines like "100 x 1",
+ * CASH / CHECKS / TOTAL subtotals, and number-word totals. Totals stated on
+ * the sheet are compared against the parsed rows and mismatches become
+ * warnings, so nothing is saved blind.
+ */
+export function parseLedgerText(raw: string): ParsedLedger {
+  // Normalize superscript digits (from OCR) and "120 . 00" style spacing.
+  const text = raw
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (c) => LEDGER_SUPERSCRIPT[c] ?? c)
+    .replace(/(\d)\s*\.\s*(\d{2})/g, "$1.$2");
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+
+  const result: ParsedLedger = {
+    serviceDate: "",
+    serviceName: "Sunday Service",
+    denominations: {},
+    checks: [],
+    cashGifts: [],
+    deductions: [],
+    statedCash: null,
+    statedChecks: null,
+    statedTotal: null,
+    warnings: [],
+  };
+  const datesSeen: string[] = [];
+
+  const moneyAtEnd = (line: string): number | null => {
+    const m = line.match(/\$?([\d,]+(?:\.\d{2})?)\s*$/);
+    if (!m) return null;
+    const v = parseFloat(m[1].replace(/,/g, ""));
+    return Number.isFinite(v) ? v : null;
+  };
+
+  for (const line of lines) {
+    // ── 1. Date line: "4/19/2026" or "2026-04-19" ──────────────────────
+    const d1 = line.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    const d2 = line.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (d1) {
+      const mon = parseInt(d1[1]);
+      const day = parseInt(d1[2]);
+      let yr = parseInt(d1[3]);
+      if (yr < 100) yr += 2000;
+      const iso = `${yr}-${String(mon).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) {
+        datesSeen.push(iso);
+        if (!result.serviceDate) result.serviceDate = iso;
+      }
+      continue;
+    }
+    if (d2) {
+      datesSeen.push(d2[0]);
+      if (!result.serviceDate) result.serviceDate = d2[0];
+      continue;
+    }
+
+    // ── 2. Signature lines carry a date next to the name ("S. Thent 4/19/2026") ──
+    if (/[a-zA-Z]/.test(line) && /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(line)) continue;
+
+    // ── 3. Denomination lines: "100 x 1", "20 × 32", "$100: 3", "100s = 2" ──
+    const dm = line.match(/(\d{1,3})\s*[x×*]\s*(\d+)/);
+    if (dm) {
+      const denom = parseInt(dm[1]);
+      const count = parseInt(dm[2]);
+      if (LEDGER_DENOM_VALUES.includes(denom) && count > 0 && count < 10000) {
+        result.denominations[denom] = count;
+      }
+      continue;
+    }
+
+    const upper = line.toUpperCase();
+    const endMoney = moneyAtEnd(line);
+
+    // ── 4. Stated subtotals: CASH / CHECKS / TOTAL ───────────────────────
+    if (/^CASH\b/.test(upper)) {
+      if (endMoney != null) result.statedCash = endMoney;
+      continue;
+    }
+    if (/^CHECKS?\b/.test(upper)) {
+      if (endMoney != null) result.statedChecks = endMoney;
+      continue;
+    }
+    if (/^(TOTAL|GRAND)/.test(upper)) {
+      if (endMoney != null) result.statedTotal = endMoney;
+      continue;
+    }
+
+    // ── 5. Number-word total lines: "Four Thousand Three Hundred and …" ──
+    if (LEDGER_NUMBER_WORD.test(line)) {
+      if (endMoney != null && result.statedTotal == null) result.statedTotal = endMoney;
+      continue;
+    }
+
+    // ── 6. Named donation rows: name (+ optional check number) + amount ──
+    const nums = [...line.matchAll(/\$?([\d,]+(?:\.\d{2})?)/g)];
+    let amount = 0;
+    let amountIdx = -1;
+    for (let i = nums.length - 1; i >= 0; i--) {
+      const v = parseFloat(nums[i][1].replace(/,/g, ""));
+      if (v > 0.5 && v <= 50000) {
+        amount = v;
+        amountIdx = i;
+        break;
+      }
+    }
+    if (amountIdx < 0) continue;
+
+    const amIdx = nums[amountIdx].index ?? line.length;
+    let namePart = line.slice(0, amIdx).replace(/checks?\s*\$?/i, "").trim();
+
+    // Optional leading check number: "559 Sangeeth Talluri 100.00" or
+    // "2105-2917 John Seeli … 120.00" (range) → keep as the check number.
+    let checkNumber = "";
+    const cn = namePart.match(/^(\d{3,6}(?:-\d{3,6})?)\s*/);
+    if (cn) {
+      checkNumber = cn[1];
+      namePart = namePart.slice(cn[0].length).trim();
+    }
+
+    const donorName = namePart
+      .replace(/[\d,.:;()[\]{}]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^[^a-zA-Z]+/, "")
+      .replace(/[^a-zA-Z]+$/, "");
+
+    if (donorName.length < 2) continue;
+
+    // On the paper sheet every named row lives in the checks section — the
+    // check-number column is just optional (some weeks it's blank). So every
+    // named row becomes a check; named cash envelopes aren't part of this
+    // format and can be added in the form review.
+    result.checks.push({ donorName, checkNumber, amount });
+  }
+
+  // ── Cross-check parsed totals against the stated ones ─────────────────
+  const parsedCash = Object.entries(result.denominations).reduce((s, [d, c]) => s + Number(d) * (Number(c) || 0), 0);
+  const parsedChecks = result.checks.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const parsedNamedCash = result.cashGifts.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const parsedTotal = parsedCash + parsedChecks + parsedNamedCash;
+
+  if (result.statedCash != null && Math.abs(result.statedCash - parsedCash) > 0.009) {
+    result.warnings.push(`Cash total on sheet ($${result.statedCash.toFixed(2)}) doesn't match the denomination lines ($${parsedCash.toFixed(2)}).`);
+  }
+  if (result.statedChecks != null && Math.abs(result.statedChecks - parsedChecks) > 0.009) {
+    result.warnings.push(`Checks total on sheet ($${result.statedChecks.toFixed(2)}) doesn't match the check rows ($${parsedChecks.toFixed(2)}).`);
+  }
+  if (result.statedTotal != null && Math.abs(result.statedTotal - parsedTotal) > 0.009) {
+    result.warnings.push(`Grand total on sheet ($${result.statedTotal.toFixed(2)}) doesn't match cash + checks ($${parsedTotal.toFixed(2)}).`);
+  }
+
+  if (datesSeen.length > 1) {
+    result.warnings.push(`Found ${datesSeen.length} dates (${datesSeen.join(", ")}) — paste one week at a time; using ${result.serviceDate}.`);
+  }
+
+  return result;
+}

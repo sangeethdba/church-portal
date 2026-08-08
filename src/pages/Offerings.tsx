@@ -4,6 +4,7 @@ import {
   Plus, Church, Banknote, ScrollText, Filter, Trash2, MinusCircle,
   Shield, UserCheck, Key, AlertTriangle, Clock, FileDown, Upload, CheckCircle2,
   Download, Printer, Receipt, CalendarRange, Gift, Pencil, ScanLine, Loader2,
+  ClipboardPaste,
 } from "lucide-react";
 import {
   Button, Card, CardBody, CardHeader, Input, Label, Textarea, Select,
@@ -15,7 +16,7 @@ import { PageHeader } from "@/components/Layout";
 import { supabase, getReceiptUrl, isAdminRole, isOversightRole } from "@/lib/supabase";
 import type { Donor } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { computeCashFromDenoms, normName } from "@/lib/accounting";
+import { computeCashFromDenoms, normName, parseLedgerText, type ParsedLedger } from "@/lib/accounting";
 import { downloadOfferingSummary, offeringSummaryDataUrl, type OfferingSummary, type OfferingDenomEntry, type OfferingCheckEntry, type OfferingDeductionEntry } from "@/lib/pdf";
 import Tesseract from "tesseract.js";
 
@@ -112,6 +113,11 @@ export default function Offerings() {
   const [scanPreview, setScanPreview] = useState<string | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
+  // ── Paste ledger state ───────────────────────────────────────────────
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteParsed, setPasteParsed] = useState<ParsedLedger | null>(null);
+  const [pasteError, setPasteError] = useState("");
   const [filterYear, setFilterYear] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -905,6 +911,52 @@ export default function Offerings() {
     }
   };
 
+  // ── Paste paper ledger text (manual entry for backfill) ────────────
+  const handleParsePaste = () => {
+    if (!pasteText.trim()) {
+      setPasteError("Paste a ledger sheet first.");
+      setPasteParsed(null);
+      return;
+    }
+    const parsed = parseLedgerText(pasteText);
+    setPasteParsed(parsed);
+    if (parsed.checks.length === 0 && Object.keys(parsed.denominations).length === 0) {
+      setPasteError("No checks or cash denominations found. Check the format — one line per donor (name + amount), and denomination lines like '100 x 1'.");
+    } else {
+      setPasteError("");
+    }
+  };
+
+  // Push the parsed sheet into the Record-offering form (same path as scan).
+  // PIN sign-off still applies — nothing is saved until both counters sign.
+  const loadParsedIntoForm = () => {
+    if (!pasteParsed) return;
+    const stamp = Date.now();
+    setSvcDate(pasteParsed.serviceDate || new Date().toISOString().slice(0, 10));
+    setSvcName(pasteParsed.serviceName || "Sunday Service");
+    const nd = emptyDenoms();
+    for (const [k, v] of Object.entries(pasteParsed.denominations)) {
+      if (k in nd) nd[Number(k)] = String(Math.min(Number(v) || 0, 999));
+    }
+    setDenoms(nd);
+    setDeductions(pasteParsed.deductions.map((d) => ({ reason: d.reason, amount: String(Math.max(0, Number(d.amount) || 0)) })));
+    setDonations(
+      pasteParsed.checks.map((c, i) => ({
+        key: `paste-c-${stamp}-${i}`,
+        donorName: c.donorName || "",
+        donorId: "",
+        method: "check" as const,
+        checkNumber: c.checkNumber ? String(c.checkNumber) : "",
+        amount: String(Math.max(0, Number(c.amount) || 0)),
+      })),
+    );
+    setNotes(pasteParsed.warnings.length > 0 ? `Ledger import warnings: ${pasteParsed.warnings.join(" ")}` : "Imported from pasted ledger.");
+    setCounter1Pin(""); setCounter2Id(""); setCounter2Pin(""); setSignOffError(""); setEditingOffering(null);
+    setPasteOpen(false); setPasteText(""); setPasteParsed(null); setPasteError("");
+    setOpen(true);
+    toast("Ledger parsed! Review every entry, correct anything, then sign and save.", "success");
+  };
+
   return (
     <div>
       {!canAccess && (
@@ -928,6 +980,9 @@ export default function Offerings() {
           <div className="flex items-center gap-2">
             <Button iconLeft={<ScanLine className="h-4 w-4" />} variant="outline" onClick={() => { setScanFile(null); setScanPreview(null); setScanError(""); setScanOpen(true); }}>
               Scan ledger
+            </Button>
+            <Button iconLeft={<ClipboardPaste className="h-4 w-4" />} variant="outline" onClick={() => { setPasteText(""); setPasteParsed(null); setPasteError(""); setPasteOpen(true); }}>
+              Paste ledger
             </Button>
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
@@ -1549,6 +1604,123 @@ export default function Offerings() {
             </Button>
             <Button onClick={handleBasicOcr} disabled={!scanFile || ocrLoading} variant="outline">
               {ocrLoading ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Reading</> : "OCR (no AI)"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
+      {/* ── Paste ledger dialog ────────────────────────────────────────── */}
+      <Dialog open={pasteOpen} onOpenChange={(v) => { setPasteOpen(v); if (!v) { setPasteText(""); setPasteParsed(null); setPasteError(""); } }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Paste Sunday ledger</DialogTitle>
+            <DialogDescription>
+              Paste one week's paper ledger text — the importer reads the date, donor check lines, and cash denominations (like "100 x 1"), then pre-fills the offering form for review. You still sign off with both counter PINs before saving.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Paste area */}
+            <div>
+              <Label htmlFor="ledger-paste">Ledger text</Label>
+              <Textarea
+                id="ledger-paste"
+                rows={12}
+                value={pasteText}
+                onChange={(e) => { setPasteText(e.target.value); setPasteParsed(null); setPasteError(""); }}
+                placeholder={"4/19/2026\nJohn Seeli 120.00\nSangeeth Talluri 100.00\n…\nChecks $ 3,307.00\n100 x 1 100.00\n20 x 32 640.00\n…\nCASH 1037.00\nCHECKS 3,307.00\nTotal 4,344.00"}
+                className="mt-1.5 font-mono text-xs"
+              />
+            </div>
+
+            {/* Format tips */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <strong>Ledger format:</strong>
+              <ul className="mt-1 list-inside list-disc space-y-0.5">
+                <li>First line: the service date (e.g. <code>4/19/2026</code>)</li>
+                <li>Each donor on its own line: <code>Name Amount</code> (or <code>check# Name Amount</code>)</li>
+                <li>Cash breakdown lines like <code>100 x 1</code>, <code>20 x 32</code></li>
+                <li>Totals lines (<code>CASH</code>, <code>CHECKS</code>, <code>TOTAL</code>) are cross-checked against what you typed</li>
+              </ul>
+            </div>
+
+            {/* Parse result review */}
+            {pasteParsed && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-stone-700">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Parsed {pasteParsed.serviceDate || "(no date)"}
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="rounded-md bg-white p-2">
+                    <div className="text-xs text-stone-500">Checks</div>
+                    <div className="font-serif text-lg font-semibold text-amber-700">
+                      {formatCurrency(pasteParsed.checks.reduce((s, c) => s + Number(c.amount || 0), 0))}
+                      <span className="ml-1 text-xs font-normal text-stone-400">({pasteParsed.checks.length})</span>
+                    </div>
+                    <div className="max-h-28 overflow-y-auto">
+                      {pasteParsed.checks.length === 0 && <div className="text-xs text-stone-400">No check rows</div>}
+                      {pasteParsed.checks.slice(0, 30).map((c, i) => (
+                        <div key={i} className="flex justify-between gap-2 text-xs text-stone-600">
+                          <span className="truncate">{c.donorName}{c.checkNumber ? ` · #${c.checkNumber}` : ""}</span>
+                          <span>{formatCurrency(c.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-md bg-white p-2">
+                    <div className="text-xs text-stone-500">Cash (by denomination)</div>
+                    <div className="font-serif text-lg font-semibold text-green-700">
+                      {formatCurrency(
+                        Object.entries(pasteParsed.denominations).reduce((s, [d, c]) => s + Number(d) * (Number(c) || 0), 0),
+                      )}
+                    </div>
+                    <div className="max-h-28 overflow-y-auto text-xs text-stone-600">
+                      {Object.entries(pasteParsed.denominations).length === 0 && <div className="text-stone-400">No denominations</div>}
+                      {Object.entries(pasteParsed.denominations)
+                        .sort(([a], [b]) => Number(b) - Number(a))
+                        .map(([d, c]) => (
+                          <div key={d} className="flex justify-between gap-2">
+                            <span>${d} × {c}</span>
+                            <span>{formatCurrency(Number(d) * (Number(c) || 0))}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                  <div className="rounded-md bg-white p-2">
+                    <div className="text-xs text-stone-500">Stated on sheet</div>
+                    <div className="space-y-0.5 text-xs text-stone-600">
+                      <div>Cash: <span className="font-medium">{pasteParsed.statedCash != null ? formatCurrency(pasteParsed.statedCash) : "—"}</span></div>
+                      <div>Checks: <span className="font-medium">{pasteParsed.statedChecks != null ? formatCurrency(pasteParsed.statedChecks) : "—"}</span></div>
+                      <div>Total: <span className="font-medium">{pasteParsed.statedTotal != null ? formatCurrency(pasteParsed.statedTotal) : "—"}</span></div>
+                    </div>
+                  </div>
+                </div>
+                {pasteParsed.warnings.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {pasteParsed.warnings.map((w, i) => (
+                      <div key={i} className="flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {pasteError && (
+              <div className="flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                <AlertTriangle className="h-4 w-4" /> {pasteError}
+              </div>
+            )}
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setPasteOpen(false); setPasteText(""); setPasteParsed(null); setPasteError(""); }}>Cancel</Button>
+            <Button variant="outline" onClick={handleParsePaste} disabled={!pasteText.trim()}>
+              Parse ledger
+            </Button>
+            <Button onClick={loadParsedIntoForm} disabled={!pasteParsed || (pasteParsed.checks.length === 0 && Object.keys(pasteParsed.denominations).length === 0)}>
+              Load into offering form
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -10,6 +10,7 @@ import {
   sundayWeekKey,
   donationTypeLabel,
   isCharitableGift,
+  parseLedgerText,
 } from "./accounting";
 import { isAdminRole, normalizeLineItems, buildReceiptPath } from "./supabase";
 import { formatCurrency, formatDate } from "./utils";
@@ -305,6 +306,93 @@ describe("end-to-end: full-year data flow reconciles every report total", () => 
     );
     expect(byId.get("d1")).toEqual({ total: 450, last: "2026-08-03" }); // 100+100+100+150
     expect(byId.get("d2")).toEqual({ total: 200, last: "2026-08-02" }); // 100+100
+  });
+});
+
+// ── parseLedgerText (manual Sunday ledger import) ─────────────────────────
+describe("parseLedgerText", () => {
+  it("parses the church's paper ledger sheet: date, check rows, denomination lines, stated totals", () => {
+    const ledger = `4/19/2026
+2105-2917 John Seeli 20,50,50 120.00
+559 Sangeeth Talluri 100.00
+128 Soumya Nalli 300.00
+492 Sarah Talluri 150.00
+119 Umasankara Rao Rakkam 637.00
+125 Immanuel Sattenapalli 2000.00
+Checks $ 3,307.00
+100 x 1 100.00
+20 x 32 640.00
+10 x 11 110.00
+5 x 24 120.00
+2 x 3 6.00
+1 x 61 61.00
+CASH 1037.00
+CHECKS 3,307.00
+Four Thousand Three Hundred and Forty Four 4,344.00
+S. Thent 4/19/2026
+J. Counter 4/19/2026`;
+    const parsed = parseLedgerText(ledger);
+    expect(parsed.serviceDate).toBe("2026-04-19");
+    expect(parsed.denominations).toEqual({ 100: 1, 20: 32, 10: 11, 5: 24, 2: 3, 1: 61 });
+    expect(parsed.checks).toHaveLength(6);
+    expect(parsed.checks[0]).toEqual({ donorName: "John Seeli", checkNumber: "2105-2917", amount: 120 });
+    expect(parsed.checks[1]).toEqual({ donorName: "Sangeeth Talluri", checkNumber: "559", amount: 100 });
+    expect(parsed.checks[5]).toEqual({ donorName: "Immanuel Sattenapalli", checkNumber: "125", amount: 2000 });
+    expect(parsed.statedCash).toBe(1037);
+    expect(parsed.statedChecks).toBe(3307);
+    expect(parsed.statedTotal).toBe(4344);
+    expect(parsed.warnings).toEqual([]); // every stated total reconciles
+  });
+
+  it("treats named rows without check numbers as checks (they live in the checks section)", () => {
+    const parsed = parseLedgerText(`4/19/2026
+John Seeli 120.00
+Sangeeth Talluri 100.00
+Checks $ 220.00
+100 x 1
+20 x 6
+CASH 220.00
+TOTAL 440.00`);
+    expect(parsed.checks).toHaveLength(2);
+    expect(parsed.checks[0].checkNumber).toBe("");
+    expect(parsed.checks[0].donorName).toBe("John Seeli");
+    expect(parsed.warnings).toEqual([]);
+  });
+
+  it("flags a mismatch between the stated checks total and the parsed check rows", () => {
+    const parsed = parseLedgerText(`4/19/2026
+John Seeli 120.00
+Checks $ 220.00
+100 x 1
+CASH 100.00
+TOTAL 220.00`);
+    expect(parsed.checks).toHaveLength(1);
+    expect(parsed.warnings.some((w) => w.includes("Checks total"))).toBe(true);
+  });
+
+  it("normalizes superscript digits and '120 . 00' style spacing from OCR", () => {
+    const parsed = parseLedgerText(`4/19/2026
+John Seeli 120 . ⁰⁰
+100 x 1
+CASH 100 . ⁰⁰`);
+    expect(parsed.checks[0].amount).toBe(120);
+    expect(parsed.statedCash).toBe(100);
+  });
+
+  it("warns when the paste contains more than one week's date", () => {
+    const parsed = parseLedgerText(`4/19/2026
+John Seeli 10.00
+4/26/2026
+Sarah Talluri 20.00`);
+    expect(parsed.serviceDate).toBe("2026-04-19");
+    expect(parsed.warnings.some((w) => w.includes("one week at a time"))).toBe(true);
+  });
+
+  it("returns empty fields for garbage input", () => {
+    const parsed = parseLedgerText("hello world\nno numbers here");
+    expect(parsed.checks).toEqual([]);
+    expect(parsed.denominations).toEqual({});
+    expect(parsed.serviceDate).toBe("");
   });
 });
 
