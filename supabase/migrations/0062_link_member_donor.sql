@@ -64,8 +64,8 @@ begin
                 and string_to_array(qname, ' ')
                     <@ string_to_array(lower(regexp_replace(d.first_name || ' ' || d.last_name, '\s+', ' ', 'g')), ' ') then 2.5
            when qname <> '' and cardinality(string_to_array(qname, ' ')) >= 2
-                and string_to_array(qname, ' ')[1] = lower(d.first_name)
-                and string_to_array(qname, ' ')[cardinality(string_to_array(qname, ' '))] = lower(d.last_name) then 2
+                and (string_to_array(qname, ' '))[1] = lower(d.first_name)
+                and (string_to_array(qname, ' '))[cardinality(string_to_array(qname, ' '))] = lower(d.last_name) then 2
            when qname <> '' and cardinality(string_to_array(qname, ' ')) = 1
                 and (qname = lower(d.first_name) or qname = lower(d.last_name)) then 2
            else 0
