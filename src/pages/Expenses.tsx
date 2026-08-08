@@ -206,6 +206,10 @@ export default function Expenses() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
+  // "Delete expense" dialog state
+  const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+
   // ── Bulk import state ────────────────────────────────────────────────
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkTab, setBulkTab] = useState<"csv" | "paste" | "boa">("paste");
@@ -388,6 +392,26 @@ export default function Expenses() {
     setEditSaving(false);
     setEditExpense(null);
     toast("Expense updated — description, category, and totals refreshed.", "success");
+  };
+
+  const handleDeleteExpense = async () => {
+    if (!deleteTarget) return;
+    setDeleteSaving(true);
+    setExpenses((rows) => rows.filter((r) => r.id !== deleteTarget.id));
+    if (supabase) {
+      const { error } = await supabase.rpc("admin_delete_expense", { p_expense_id: deleteTarget.id });
+      if (error) {
+        console.warn("Delete expense failed:", error);
+        setExpenses((rows) => (rows.some((r) => r.id === deleteTarget.id) ? rows : [deleteTarget, ...rows]));
+        toast("Could not delete this expense — please try again.", "error");
+      } else {
+        toast("Expense deleted — totals and reports updated.", "success");
+      }
+    } else {
+      toast("Expense deleted (demo).", "success");
+    }
+    setDeleteSaving(false);
+    setDeleteTarget(null);
   };
 
   const handleMarkPaid = async () => {
@@ -1901,6 +1925,24 @@ export default function Expenses() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete expense confirm dialog */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete this expense?</DialogTitle>
+            <DialogDescription>
+              This permanently removes <strong>{deleteTarget?.title ?? "this expense"}</strong>{deleteTarget ? ` (${formatCurrency(deleteTarget.amount)})` : ""} from the ledger, reports, and any linked member records. This can't be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="danger" onClick={handleDeleteExpense} disabled={deleteSaving}>
+              {deleteSaving ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Deleting</> : "Delete expense"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Expense audit viewer */}
       <ReceiptViewer
         expense={viewExpense}
@@ -1980,6 +2022,8 @@ export default function Expenses() {
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
             onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
+            onEdit={openEdit}
+            onDelete={setDeleteTarget}
             statusTone={statusTone}
             hideSource={!canSeeAll}
           />
@@ -1995,6 +2039,7 @@ export default function Expenses() {
               onView={setViewExpense}
               onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
               onEdit={openEdit}
+              onDelete={setDeleteTarget}
               statusTone={statusTone}
               hideSource
             />
@@ -2009,6 +2054,8 @@ export default function Expenses() {
             onMarkPaid={openPayDialog}
             onView={setViewExpense}
             onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
+            onEdit={openEdit}
+            onDelete={setDeleteTarget}
             statusTone={statusTone}
             hideSource
           />
@@ -2024,6 +2071,7 @@ export default function Expenses() {
               onView={setViewExpense}
               onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
               onEdit={openEdit}
+              onDelete={setDeleteTarget}
               statusTone={statusTone}
               hideSource
             />
@@ -2049,6 +2097,7 @@ function ExpenseList({
   onView,
   onClarify,
   onEdit,
+  onDelete,
   statusTone,
   hideSource,
 }: {
@@ -2062,6 +2111,7 @@ function ExpenseList({
   onView: (e: Expense) => void;
   onClarify: (e: Expense) => void;
   onEdit?: (e: Expense) => void;
+  onDelete?: (e: Expense) => void;
   statusTone: (s: ExpenseStatus) => "neutral" | "indigo" | "amber" | "emerald" | "rose";
   hideSource?: boolean;
 }) {
@@ -2167,6 +2217,17 @@ function ExpenseList({
                         iconLeft={<Pencil className="h-3.5 w-3.5" />}
                       >
                         Edit
+                      </Button>
+                    )}
+                    {onDelete && canAct && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onDelete(e)}
+                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        iconLeft={<Trash2 className="h-3.5 w-3.5" />}
+                      >
+                        Delete
                       </Button>
                     )}
                     {canAct && e.status === "pending" && (
