@@ -5,7 +5,7 @@ import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
   Shield, UserCheck, Lock, Banknote, UserPlus,
 } from "lucide-react";
-import { Button, Card, CardBody, CardHeader, Tile, MotionTile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent, Skeleton, KpiSkeleton } from "@/components/ui";
+import { Button, Card, CardBody, CardHeader, Tile, MotionTile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent, Skeleton, KpiSkeleton, toast } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { MemberOverview } from "@/pages/MyOverview";
@@ -224,12 +224,20 @@ export default function Dashboard() {
     setSavingAll(true);
     setSaveMessage("");
     let anyError = false;
+    const autoLinked: string[] = [];
     for (const dp of draftProfiles) {
       const orig = allProfiles.find((op) => op.id === dp.id);
       if (!orig) continue;
       if (dp.portal_access !== orig.portal_access) {
-        const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: dp.id, action: "toggle_portal", new_val: dp.portal_access });
-        if (error) anyError = true;
+        const { data, error } = await supabase.rpc("admin_manage_profile", { target_user_id: dp.id, action: "toggle_portal", new_val: dp.portal_access });
+        if (error) { anyError = true; continue; }
+        const res = data as { ok?: boolean; donor_link?: { ok?: boolean; already?: boolean; linked_donor_id?: string | null; donor_name?: string | null } | null } | null;
+        const dl = res?.donor_link;
+        if (dp.portal_access && dl?.ok && dl.linked_donor_id) {
+          if (!dl.already) autoLinked.push(`${dp.full_name || dp.email} → ${dl.donor_name ?? "donor record"}`);
+          // Reflect the auto-linked donor in the list immediately
+          setDraftProfiles((prev) => prev.map((p) => (p.id === dp.id ? { ...p, linked_donor_id: dl.linked_donor_id ?? p.linked_donor_id } : p)));
+        }
       }
       if (dp.is_counter !== orig.is_counter) {
         const { error } = await supabase.rpc("admin_manage_profile", { target_user_id: dp.id, action: "toggle_counter", new_val: dp.is_counter });
@@ -241,8 +249,11 @@ export default function Dashboard() {
       }
     }
     if (!anyError) {
-      setAllProfiles(draftProfiles.map((p) => ({ ...p })));
+      await loadProfiles();
       setSaveMessage("saved");
+      if (autoLinked.length > 0) {
+        toast(`Auto-linked ${autoLinked.join("; ")} — their giving history is now visible.`, "success");
+      }
     } else {
       setSaveMessage("error");
     }
@@ -441,7 +452,7 @@ export default function Dashboard() {
           whileHover={{ scale: 1.005 }}
           className="mb-6 flex w-full items-center gap-3 rounded-xl border border-[#EDE4D8] bg-[#FDF2E9] px-4 py-3 text-left text-sm text-[#9A3412] transition hover:bg-[#FDF2E9]">
           <UserCheck className="h-5 w-5 shrink-0 text-[#C67B5C]" />
-          <span><strong>{pendingApprovals} member{pendingApprovals > 1 ? "s" : ""} waiting for approval</strong> — someone signed in with Google. Click here to review, grant access, link their donor record, or make them a counter.</span>
+          <span><strong>{pendingApprovals} member{pendingApprovals > 1 ? "s" : ""} waiting for approval</strong> — someone signed in with Google. Click here to review and grant access; approving a member auto-links them to their donor record by name.</span>
         </motion.button>
       )}
 
