@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange, AlertTriangle, MessageSquare, UploadCloud, FileSpreadsheet, Pencil, ChevronDown } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange, AlertTriangle, MessageSquare, UploadCloud, FileSpreadsheet, Pencil, ChevronDown, Loader2 } from "lucide-react";
 import {
   Button,
   Card,
@@ -188,6 +188,23 @@ export default function Expenses() {
   const [payMethod, setPayMethod] = useState("online");
   const transferInputRef = useRef<HTMLInputElement>(null);
 
+  // "Edit expense" dialog state — fix description, category, amount, date, etc.
+  const [editExpense, setEditExpense] = useState<Expense | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    amount: "",
+    category: "other" as Expense["category"],
+    date: "",
+    paymentMethod: "",
+    checkNumber: "",
+    cardLast4: "",
+    eventName: "",
+    notes: "",
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
   // ── Bulk import state ────────────────────────────────────────────────
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkTab, setBulkTab] = useState<"csv" | "paste" | "boa">("paste");
@@ -290,6 +307,76 @@ export default function Expenses() {
       });
       if (error) console.warn("Update expense failed:", error);
     }
+  };
+
+  // ── Edit an expense record (description, category, amount, date, …) ──
+  const openEdit = (e: Expense) => {
+    setEditForm({
+      title: e.title ?? "",
+      description: e.description ?? "",
+      amount: String(e.amount ?? ""),
+      category: e.category || "other",
+      date: (e.submitted_at ?? "").slice(0, 10),
+      paymentMethod: e.payment_method ?? "",
+      checkNumber: e.check_number ?? "",
+      cardLast4: e.card_last4 ?? "",
+      eventName: e.event_name ?? "",
+      notes: e.notes ?? "",
+    });
+    setEditError("");
+    setEditExpense(e);
+  };
+
+  const saveEdit = async () => {
+    if (!editExpense) return;
+    const amount = Number(editForm.amount);
+    if (!editForm.title.trim() && !editForm.description.trim()) {
+      setEditError("Add a title or description.");
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      setEditError("Enter a valid amount greater than zero.");
+      return;
+    }
+    setEditSaving(true);
+    setEditError("");
+    const patch: Partial<Expense> = {
+      title: editForm.title.trim() || null,
+      description: editForm.description.trim() || null,
+      amount,
+      category: editForm.category,
+      payment_method: editForm.paymentMethod || null,
+      check_number: editForm.checkNumber || null,
+      card_last4: editForm.cardLast4 || null,
+      event_name: editForm.eventName || null,
+      notes: editForm.notes.trim() || null,
+      submitted_at: editForm.date ? new Date(editForm.date + "T12:00:00").toISOString() : editExpense.submitted_at,
+    };
+    setExpenses((rows) => rows.map((r) => (r.id === editExpense.id ? { ...r, ...patch } : r)));
+    if (supabase) {
+      const { error } = await supabase.rpc("admin_update_expense", {
+        p_expense_id: editExpense.id,
+        p_title: patch.title ?? null,
+        p_description: patch.description ?? null,
+        p_amount: amount,
+        p_category: editForm.category,
+        p_payment_method: patch.payment_method ?? null,
+        p_check_number: patch.check_number ?? null,
+        p_card_last4: patch.card_last4 ?? null,
+        p_event_name: patch.event_name ?? null,
+        p_notes: patch.notes ?? null,
+        p_submitted_at: patch.submitted_at,
+      });
+      if (error) {
+        console.warn("Edit expense failed:", error);
+        setEditError(error.message || "Could not save changes — please try again.");
+        setEditSaving(false);
+        return;
+      }
+    }
+    setEditSaving(false);
+    setEditExpense(null);
+    toast("Expense updated — description, category, and totals refreshed.", "success");
   };
 
   const handleMarkPaid = async () => {
@@ -822,6 +909,9 @@ export default function Expenses() {
             p_card_last4: row.cardLast4 || null,
           };
           if (row.memberId) rpcParams.p_user_id = row.memberId;
+          // Use the date printed on the bank statement (posted date), not today —
+          // so reports and member YTD figures land in the right month/year.
+          if (row.date) rpcParams.p_submitted_at = new Date(row.date + "T12:00:00").toISOString();
           const { data, error } = await supabase.rpc("admin_insert_expense", rpcParams);
           if (!error && data) {
             const { data: inserted } = await supabase.from("expenses").select().eq("id", data as string).maybeSingle();
@@ -846,8 +936,8 @@ export default function Expenses() {
             card_last4: row.cardLast4 || null,
             submitted_at: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
             approved_by: null,
-            approved_at: new Date().toISOString(),
-            paid_at: new Date().toISOString(),
+            approved_at: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
+            paid_at: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
             paid_by: null,
             notes: row.memberId
               ? [row.notes, "Imported from bank statement — no receipt on file"].filter(Boolean).join(" — ")
@@ -1589,6 +1679,155 @@ export default function Expenses() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit expense record dialog */}
+      <Dialog open={editExpense !== null} onOpenChange={(v) => { if (!v) setEditExpense(null); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Edit expense record</DialogTitle>
+            <DialogDescription>
+              Correct the details of this record — description, category, amount, or the statement date. Changes flow into the ledger, reports, and member statements.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {editError && (
+              <div className="flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                <AlertTriangle className="h-4 w-4" /> {editError}
+              </div>
+            )}
+            <div>
+              <Label htmlFor="edit-title">Title / payee</Label>
+              <Input
+                id="edit-title"
+                value={editForm.title}
+                onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. PURCHASE ZOOM.COM"
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-desc">Description</Label>
+              <Input
+                id="edit-desc"
+                value={editForm.description}
+                onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Full description from the statement"
+                className="mt-1.5"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label htmlFor="edit-amount">Amount</Label>
+                <Input
+                  id="edit-amount"
+                  type="number" min="0.01" step="0.01"
+                  value={editForm.amount}
+                  onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))}
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-date">Statement date</Label>
+                <Input
+                  id="edit-date"
+                  type="date"
+                  value={editForm.date}
+                  onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-method">Method</Label>
+                <Select
+                  id="edit-method"
+                  value={editForm.paymentMethod}
+                  onChange={(e) => setEditForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                  className="mt-1.5"
+                >
+                  <option value="">—</option>
+                  <option value="online">Online / Zelle</option>
+                  <option value="card">Card</option>
+                  <option value="check">Check</option>
+                  <option value="cash">Cash</option>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="edit-category">Category</Label>
+                <Select
+                  id="edit-category"
+                  value={editForm.category}
+                  onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value as Expense["category"] }))}
+                  className="mt-1.5"
+                >
+                  {EXPENSE_CATEGORIES.reduce<{ group: string; items: typeof EXPENSE_CATEGORIES }[]>((acc, c) => {
+                    const g = acc.find((x) => x.group === c.group);
+                    if (g) g.items.push(c); else acc.push({ group: c.group, items: [c] });
+                    return acc;
+                  }, []).map((g) => (
+                    <optgroup key={g.group} label={g.group}>
+                      {g.items.map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                {editForm.paymentMethod === "check" ? (
+                  <>
+                    <Label htmlFor="edit-check">Check #</Label>
+                    <Input
+                      id="edit-check"
+                      value={editForm.checkNumber}
+                      onChange={(e) => setEditForm((f) => ({ ...f, checkNumber: e.target.value }))}
+                      className="mt-1.5"
+                    />
+                  </>
+                ) : editForm.paymentMethod === "card" ? (
+                  <>
+                    <Label htmlFor="edit-card">Card last 4</Label>
+                    <Input
+                      id="edit-card"
+                      value={editForm.cardLast4}
+                      maxLength={4}
+                      onChange={(e) => setEditForm((f) => ({ ...f, cardLast4: e.target.value.replace(/\D/g, "") }))}
+                      className="mt-1.5"
+                    />
+                  </>
+                ) : (
+                  <div>
+                    <Label>Event (optional)</Label>
+                    <Input
+                      value={editForm.eventName}
+                      onChange={(e) => setEditForm((f) => ({ ...f, eventName: e.target.value }))}
+                      placeholder="e.g. VBS, Sunday Snacks"
+                      className="mt-1.5"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                rows={2}
+                value={editForm.notes}
+                onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setEditExpense(null)}>Cancel</Button>
+            <Button onClick={saveEdit} disabled={editSaving}>
+              {editSaving ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Saving</> : "Save changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Expense audit viewer */}
       <ReceiptViewer
         expense={viewExpense}
@@ -1682,6 +1921,7 @@ export default function Expenses() {
               onMarkPaid={openPayDialog}
               onView={setViewExpense}
               onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
+              onEdit={openEdit}
               statusTone={statusTone}
               hideSource
             />
@@ -1710,6 +1950,7 @@ export default function Expenses() {
               onMarkPaid={openPayDialog}
               onView={setViewExpense}
               onClarify={(e) => { setClarifyExpense(e); setClarifyNote(""); }}
+              onEdit={openEdit}
               statusTone={statusTone}
               hideSource
             />
@@ -1734,6 +1975,7 @@ function ExpenseList({
   onMarkPaid,
   onView,
   onClarify,
+  onEdit,
   statusTone,
   hideSource,
 }: {
@@ -1746,6 +1988,7 @@ function ExpenseList({
   onMarkPaid: (id: string) => void;
   onView: (e: Expense) => void;
   onClarify: (e: Expense) => void;
+  onEdit?: (e: Expense) => void;
   statusTone: (s: ExpenseStatus) => "neutral" | "indigo" | "amber" | "emerald" | "rose";
   hideSource?: boolean;
 }) {
@@ -1843,6 +2086,16 @@ function ExpenseList({
                     >
                       View
                     </Button>
+                    {onEdit && canAct && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onEdit(e)}
+                        iconLeft={<Pencil className="h-3.5 w-3.5" />}
+                      >
+                        Edit
+                      </Button>
+                    )}
                     {canAct && e.status === "pending" && (
                       <>
                         <Button
