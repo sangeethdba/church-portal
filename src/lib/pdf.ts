@@ -1275,7 +1275,9 @@ export function generateAnnualReport(r: AnnualReportData): jsPDF {
     const rows = r.monthlyLedger.map((m) => {
       const net = m.income - m.expenses;
       return [
-        new Date(m.month + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+        // Noon-local parse: "2026-04-01" alone is UTC midnight and renders as
+        // Mar 31 in US timezones — the PDF would list April as March.
+        new Date(m.month + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" }),
         formatCurrency(m.income),
         formatCurrency(m.expenses),
         `${net >= 0 ? "+" : ""}${formatCurrency(net)}`,

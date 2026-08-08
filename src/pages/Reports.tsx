@@ -760,7 +760,7 @@ export default function Reports() {
                       const ledger = detailGrouping === "weekly" ? weeklyLedger : monthlyLedger;
                       const csv = [`${detailGrouping === "weekly" ? "Week" : "Month"},Plate cash (gross),Named cash,Checks,Pastor gifts,Online,Total`, ...ledger.map(([k, v]) => {
                         const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
-                        const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(k) : new Date(k + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                        const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(k) : new Date(k + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
                         return `${rowLabel},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total}`;
                       })].join("\n");
                       const blob = new Blob([csv], { type: "text/csv" });
@@ -791,7 +791,7 @@ export default function Reports() {
                   <tbody>
                     {(detailGrouping === "weekly" ? weeklyLedger : monthlyLedger).map(([key, v]) => {
                       const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
-                      const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(key) : new Date(key + "-01").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                      const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(key) : new Date(key + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
                       return (
                         <Tr key={key}>
                           <Td className="font-medium">{rowLabel}</Td>
@@ -1045,7 +1045,9 @@ function ExpenseTrendChart({ data }: { data: readonly (readonly [string, { reimb
           const y = pad.top + chartH - barH;
           const reimbH = total > 0 ? (v.reimbursed / total) * barH : 0;
           const directH = total > 0 ? (v.direct / total) * barH : 0;
-          const label = new Date(month + "-01").toLocaleDateString("en-US", { month: "short" });
+          // Noon-local parse: "2026-04-01" alone is UTC midnight and renders as
+          // Mar 31 in US timezones — the chart would label April as "Mar".
+          const label = new Date(month + "-01T12:00:00").toLocaleDateString("en-US", { month: "short" });
           return (
             <g key={month} className="group">
               <title>{`${label}: Reimbursed ${formatCurrency(v.reimbursed)} · Direct ${formatCurrency(v.direct)} · Total ${formatCurrency(total)}`}</title>
