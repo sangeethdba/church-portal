@@ -330,7 +330,9 @@ export default function Expenses() {
       cardLast4: e.card_last4 ?? "",
       eventName: e.event_name ?? "",
       notes: e.notes ?? "",
-      memberId: e.user_id ?? "",
+      // Only member_submitted rows show a member — church-direct rows must never
+      // look "linked" to whoever imported them.
+      memberId: e.source === "member_submitted" ? (e.user_id ?? "") : "",
     });
     setEditError("");
     setEditExpense(e);
@@ -350,7 +352,7 @@ export default function Expenses() {
     setEditSaving(true);
     setEditError("");
     const memberId = editForm.memberId || null;
-    const wasMember = editExpense.source === "member_submitted" && !!editExpense.user_id;
+    const currentlyLinked = !!editExpense.user_id;
     const patch: Partial<Expense> = {
       title: editForm.title.trim() || null,
       description: editForm.description.trim() || null,
@@ -364,7 +366,7 @@ export default function Expenses() {
       submitted_at: editForm.date ? new Date(editForm.date + "T12:00:00").toISOString() : editExpense.submitted_at,
     };
     if (memberId) { patch.source = "member_submitted"; patch.user_id = memberId; }
-    else if (wasMember) { patch.source = "church_direct"; patch.user_id = null; }
+    else if (currentlyLinked) { patch.source = "church_direct"; patch.user_id = null; }
     setExpenses((rows) => rows.map((r) => (r.id === editExpense.id ? { ...r, ...patch } : r)));
     if (supabase) {
       const { error } = await supabase.rpc("admin_update_expense", {
@@ -380,7 +382,7 @@ export default function Expenses() {
         p_notes: patch.notes ?? null,
         p_submitted_at: patch.submitted_at,
         p_user_id: memberId,
-        p_clear_member: !memberId && wasMember,
+        p_clear_member: !memberId && currentlyLinked,
       });
       if (error) {
         console.warn("Edit expense failed:", error);
@@ -1235,6 +1237,16 @@ export default function Expenses() {
                                         <option key={m.id} value={m.id}>{m.name}</option>
                                       ))}
                                     </select>
+                                    {!row.memberId && memberOptions.length > 0 && (
+                                      <div className="mt-0.5 text-[10px] text-stone-400">
+                                        No registered member with this name — will import as church-direct.
+                                      </div>
+                                    )}
+                                    {!row.memberId && memberOptions.length === 0 && (
+                                      <div className="mt-0.5 text-[10px] text-stone-400">
+                                        No members registered yet — will import as church-direct.
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </td>
