@@ -146,16 +146,17 @@ function drawDocumentFooter(doc: jsPDF) {
   doc.setLineWidth(0.5);
   doc.line(margin, 720, pageWidth - margin, 720);
 
-  // All footer text centered — church name + page on same line
   doc.setFont("helvetica", "normal");
   doc.setTextColor(120, 113, 108);
 
+  // Church name centered; page number anchored to the far-left margin
   doc.setFontSize(8);
+  doc.text(ALF_DOCUMENT_BRANDING.name, center, 738, { align: "center" });
   doc.text(
-    `${ALF_DOCUMENT_BRANDING.name}  ·  Page ${doc.getCurrentPageInfo().pageNumber} of ${TOTAL_PAGES_TOKEN}`,
-    center,
+    `Page ${doc.getCurrentPageInfo().pageNumber} of ${TOTAL_PAGES_TOKEN}`,
+    margin,
     738,
-    { align: "center" },
+    { align: "left" },
   );
 
   doc.setFontSize(7);
