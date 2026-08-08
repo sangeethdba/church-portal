@@ -201,6 +201,7 @@ export default function Expenses() {
     cardLast4: "",
     eventName: "",
     notes: "",
+    memberId: "",
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
@@ -212,6 +213,8 @@ export default function Expenses() {
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkError, setBulkError] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
+  // Member profiles for linking Zelle-to-member rows as reimbursements
+  const [memberOptions, setMemberOptions] = useState<{ id: string; name: string }[]>([]);
   interface BulkRow {
     key: string;
     date: string;
@@ -310,7 +313,8 @@ export default function Expenses() {
   };
 
   // ── Edit an expense record (description, category, amount, date, …) ──
-  const openEdit = (e: Expense) => {
+  const openEdit = async (e: Expense) => {
+    if (memberOptions.length === 0) await loadMemberOptions();
     setEditForm({
       title: e.title ?? "",
       description: e.description ?? "",
@@ -322,6 +326,7 @@ export default function Expenses() {
       cardLast4: e.card_last4 ?? "",
       eventName: e.event_name ?? "",
       notes: e.notes ?? "",
+      memberId: e.user_id ?? "",
     });
     setEditError("");
     setEditExpense(e);
@@ -340,6 +345,8 @@ export default function Expenses() {
     }
     setEditSaving(true);
     setEditError("");
+    const memberId = editForm.memberId || null;
+    const wasMember = editExpense.source === "member_submitted" && !!editExpense.user_id;
     const patch: Partial<Expense> = {
       title: editForm.title.trim() || null,
       description: editForm.description.trim() || null,
@@ -352,6 +359,8 @@ export default function Expenses() {
       notes: editForm.notes.trim() || null,
       submitted_at: editForm.date ? new Date(editForm.date + "T12:00:00").toISOString() : editExpense.submitted_at,
     };
+    if (memberId) { patch.source = "member_submitted"; patch.user_id = memberId; }
+    else if (wasMember) { patch.source = "church_direct"; patch.user_id = null; }
     setExpenses((rows) => rows.map((r) => (r.id === editExpense.id ? { ...r, ...patch } : r)));
     if (supabase) {
       const { error } = await supabase.rpc("admin_update_expense", {
@@ -366,6 +375,8 @@ export default function Expenses() {
         p_event_name: patch.event_name ?? null,
         p_notes: patch.notes ?? null,
         p_submitted_at: patch.submitted_at,
+        p_user_id: memberId,
+        p_clear_member: !memberId && wasMember,
       });
       if (error) {
         console.warn("Edit expense failed:", error);
@@ -729,7 +740,8 @@ export default function Expenses() {
         if (/book room|\bbooks\b/.test(t)) return "books";
         if (/adjustment|correction|reversal/.test(t)) return "bank_fees";
         if (/amazon/.test(t)) return "amazon_purchases";
-        if (/food|grocery|restaurant|catering|lunch|dinner|indifresh/.test(t)) return "food_expenses";
+        if (/sunday snacks/.test(t)) return "sunday_snacks";
+        if (/food|grocery|restaurant|catering|lunch|dinner|indifresh|water|yogurt|milk|juice|drinks|snacks/.test(t)) return "food_expenses";
         if (/phone|internet/.test(t)) return "internet_phone";
         if (/utility|electric|water|gas|power/.test(t)) return "utilities";
         if (/supply|office|staples|walmart|usps|postage/.test(t)) return "supplies";
@@ -749,30 +761,61 @@ export default function Expenses() {
   };
 
   /**
+   * Load member profiles (with linked-donor name fallback) for reimbursement linking.
+   */
+  const loadMemberOptions = async (): Promise<{ id: string; name: string }[]> => {
+    if (!supabase) return [];
+    const [profilesRes, donorsRes] = await Promise.all([
+      supabase.from("profiles").select("id, full_name, linked_donor_id"),
+      supabase.from("donors").select("id, first_name, last_name"),
+    ]);
+    const profiles = (profilesRes.data ?? []) as { id: string; full_name: string | null; linked_donor_id: string | null }[];
+    const donors = (donorsRes.data ?? []) as { id: string; first_name: string; last_name: string }[];
+    const list = profiles
+      .map((p) => {
+        const linked = p.linked_donor_id ? donors.find((d) => d.id === p.linked_donor_id) : null;
+        const name = p.full_name?.trim() || (linked ? `${linked.first_name} ${linked.last_name}`.trim() : "");
+        return { id: p.id, name };
+      })
+      .filter((m) => m.name.length > 0);
+    setMemberOptions(list);
+    return list;
+  };
+
+  /**
    * Link "Zelle payment to <NAME>" rows to the matching member profile so they
    * import as that member's reimbursement (shows under "My giving & bills").
+   * Matching is tolerant: exact, prefix, all-token (ignores middle names),
+   * same last name, or same first name — and falls back to the linked donor name.
    */
   const enrichMemberReimbursements = async (rows: BulkRow[]): Promise<BulkRow[]> => {
     if (!supabase || !rows.some((r) => r.recipient)) return rows;
-    const { data: profiles } = await supabase.from("profiles").select("id, full_name");
-    if (!profiles) return rows;
+    const list = await loadMemberOptions();
     const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-    const typed = profiles as { id: string; full_name: string | null }[];
-    const findProfile = (name: string) =>
-      typed.find((p) => {
-        const fn = norm(p.full_name ?? "");
-        const zn = norm(name);
-        if (!zn || !fn) return false;
-        if (fn === zn) return true;                       // exact
-        if (fn.startsWith(zn) || zn.startsWith(fn)) return true; // prefix / suffix
-        const f1 = zn.split(" ")[0];
-        const f2 = fn.split(" ")[0];
-        return f1 === f2 && f1.length >= 4;               // same first name (long enough)
+    const tok = (s: string) => norm(s).split(" ").filter(Boolean);
+    const findProfile = (name: string) => {
+      const qn = norm(name);
+      const qt = tok(name);
+      if (!qn || qt.length === 0) return undefined;
+      return list.find((m) => {
+        const cn = norm(m.name);
+        const ct = tok(m.name);
+        if (cn === qn) return true;                                     // exact
+        if (cn.startsWith(qn) || qn.startsWith(cn)) return true;        // prefix / suffix
+        if (qt.length >= 2 && qt.every((t) => ct.includes(t))) return true; // all tokens → ignores middle names / order
+        const qLast = qt[qt.length - 1] ?? "";
+        const cLast = ct[ct.length - 1] ?? "";
+        if (qLast.length >= 4 && cLast === qLast) return true;          // same last name
+        const qFirst = qt[0] ?? "";
+        const cFirst = ct[0] ?? "";
+        if (qFirst.length >= 4 && qFirst === cFirst) return true;       // same first name
+        return false;
       });
+    };
     return rows.map((r) => {
       if (!r.recipient) return r;
       const p = findProfile(r.recipient);
-      return p ? { ...r, memberId: p.id, memberName: p.full_name ?? r.recipient } : r;
+      return p ? { ...r, memberId: p.id, memberName: p.name } : r;
     });
   };
 
@@ -1150,9 +1193,24 @@ export default function Expenses() {
                                   }}
                                   className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
                                 />
-                                {row.memberId && row.memberName && (
-                                  <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
-                                    Reimbursement → {row.memberName}
+                                {row.recipient && (
+                                  <div className="mt-1">
+                                    <select
+                                      value={row.memberId ?? ""}
+                                      onChange={(e) => {
+                                        const next = [...bulkRows];
+                                        const id = e.target.value;
+                                        const m = id ? memberOptions.find((x) => x.id === id) : null;
+                                        next[i] = { ...next[i], memberId: id || null, memberName: m?.name ?? null };
+                                        setBulkRows(next);
+                                      }}
+                                      className={`w-full rounded border px-1 py-0.5 text-[10px] ${row.memberId ? "border-indigo-200 bg-indigo-50 font-medium text-indigo-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}
+                                    >
+                                      <option value="">Zelle to member — pick member…</option>
+                                      {memberOptions.map((m) => (
+                                        <option key={m.id} value={m.id}>{m.name}</option>
+                                      ))}
+                                    </select>
                                   </div>
                                 )}
                               </td>
@@ -1807,6 +1865,21 @@ export default function Expenses() {
                   </div>
                 )}
               </div>
+            </div>
+            <div>
+              <Label htmlFor="edit-member">Member (reimbursement)</Label>
+              <Select
+                id="edit-member"
+                value={editForm.memberId}
+                onChange={(e) => setEditForm((f) => ({ ...f, memberId: e.target.value }))}
+                className="mt-1.5"
+              >
+                <option value="">Church-direct — not a member reimbursement</option>
+                {memberOptions.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-stone-400">Link this expense to a member and it shows under their "My expenses" as a settled reimbursement.</p>
             </div>
             <div>
               <Label htmlFor="edit-notes">Notes</Label>
