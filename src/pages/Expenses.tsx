@@ -367,6 +367,12 @@ export default function Expenses() {
     };
     if (memberId) { patch.source = "member_submitted"; patch.user_id = memberId; }
     else if (currentlyLinked) { patch.source = "church_direct"; patch.user_id = null; }
+    // Back-dating an auto-settled import: submitted/approved/paid move together
+    // so the list's "settled" line matches the new statement date.
+    if (editExpense.status === "auto_paid") {
+      patch.approved_at = patch.submitted_at;
+      patch.paid_at = patch.submitted_at;
+    }
     setExpenses((rows) => rows.map((r) => (r.id === editExpense.id ? { ...r, ...patch } : r)));
     if (supabase) {
       const { error } = await supabase.rpc("admin_update_expense", {
@@ -815,7 +821,7 @@ export default function Expenses() {
    * same last name, or same first name — and falls back to the linked donor name.
    */
   const enrichMemberReimbursements = async (rows: BulkRow[]): Promise<BulkRow[]> => {
-    if (!supabase || !rows.some((r) => r.recipient)) return rows;
+    if (!supabase) return rows;
     const list = await loadMemberOptions();
     const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
     const tok = (s: string) => norm(s).split(" ").filter(Boolean);
@@ -838,10 +844,29 @@ export default function Expenses() {
         return false;
       });
     };
+    // Candidate names to try: the Zelle recipient plus any "for <Name>"
+    // fragment in check/misc rows (e.g. `Check #1183 "for Saritha Gummadi Food
+    // Expenses"`) so those can auto-link as member reimbursements too.
+    const candidatesFor = (desc: string): string[] => {
+      const out: string[] = [];
+      // "for <Name>" fragments (checks/memos) and Western Union "INDN:<Name>"
+      // recipients — both can be member reimbursements.
+      const re = /(?:for\s+["']?([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})|INDN:\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*))/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(desc))) out.push(m[1] ?? m[2]);
+      return out;
+    };
     return rows.map((r) => {
-      if (!r.recipient) return r;
-      const p = findProfile(r.recipient);
-      return p ? { ...r, memberId: p.id, memberName: p.name } : r;
+      if (r.memberId) return r; // reviewer already picked a member
+      const names = [
+        ...(r.recipient ? [r.recipient] : []),
+        ...candidatesFor(r.description),
+      ];
+      for (const name of names) {
+        const p = findProfile(name);
+        if (p) return { ...r, memberId: p.id, memberName: p.name };
+      }
+      return r;
     });
   };
 
@@ -893,7 +918,7 @@ export default function Expenses() {
       amt = amt.replace(/[$,\s()]/g, "");
       if (isNeg) amt = "-" + amt;
       const dateRaw = dateIdx >= 0 ? cells[dateIdx] : "";
-      const date = dateRaw ? normalizeDate(dateRaw) : new Date().toISOString().slice(0, 10);
+      const date = dateRaw ? normalizeDate(dateRaw) : "";
       // Auto-detect category from description keywords
       let cat = "other";
       const dLower = desc.toLowerCase();
@@ -913,9 +938,9 @@ export default function Expenses() {
     }).filter((r) => r.description && !isNaN(Number(r.amount)) && Number(r.amount) !== 0);
   };
 
-  const handleParseData = () => {
+  const handleParseData = async () => {
     setBulkError("");
-    const rows = parsePastedData(bulkRaw);
+    const rows = await enrichMemberReimbursements(parsePastedData(bulkRaw));
     if (rows.length === 0) {
       setBulkError("Could not detect columns. Paste a spreadsheet with headers like 'Date, Description, Amount' or upload a CSV file.");
       setBulkRows([]);
@@ -928,10 +953,10 @@ export default function Expenses() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const text = ev.target?.result as string;
       setBulkRaw(text);
-      const rows = parsePastedData(text);
+      const rows = await enrichMemberReimbursements(parsePastedData(text));
       if (rows.length === 0) {
         setBulkError("Could not parse CSV. Make sure it has a header row with Date, Description, and Amount columns.");
         setBulkRows([]);
@@ -1219,7 +1244,7 @@ export default function Expenses() {
                                   }}
                                   className="w-full rounded border border-stone-200 px-1 py-0.5 text-xs"
                                 />
-                                {row.recipient && (
+                                {memberOptions.length > 0 && (row.recipient || row.memberId || /for\s+["']?[A-Z]|reimburs|(?:payment|paid)\s+to\s+[A-Z]/i.test(row.description)) && (
                                   <div className="mt-1">
                                     <select
                                       value={row.memberId ?? ""}
@@ -1230,23 +1255,24 @@ export default function Expenses() {
                                         next[i] = { ...next[i], memberId: id || null, memberName: m?.name ?? null };
                                         setBulkRows(next);
                                       }}
-                                      className={`w-full rounded border px-1 py-0.5 text-[10px] ${row.memberId ? "border-indigo-200 bg-indigo-50 font-medium text-indigo-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}
+                                      className={`w-full rounded border px-1 py-0.5 text-[10px] ${row.memberId ? "border-indigo-200 bg-indigo-50 font-medium text-indigo-800" : row.recipient ? "border-amber-200 bg-amber-50 text-amber-800" : "border-stone-200 text-stone-600"}`}
                                     >
-                                      <option value="">Zelle to member — pick member…</option>
+                                      {row.recipient
+                                        ? <option value="">Zelle to member — pick member…</option>
+                                        : <option value="">Church-direct — not a member reimbursement</option>}
                                       {memberOptions.map((m) => (
                                         <option key={m.id} value={m.id}>{m.name}</option>
                                       ))}
                                     </select>
-                                    {!row.memberId && memberOptions.length > 0 && (
+                                    {row.memberId ? (
+                                      <div className="mt-0.5 text-[10px] font-medium text-indigo-600">
+                                        Reimbursement → {row.memberName} — shows under their "My giving & bills".
+                                      </div>
+                                    ) : row.recipient ? (
                                       <div className="mt-0.5 text-[10px] text-stone-400">
                                         No registered member with this name — will import as church-direct.
                                       </div>
-                                    )}
-                                    {!row.memberId && memberOptions.length === 0 && (
-                                      <div className="mt-0.5 text-[10px] text-stone-400">
-                                        No members registered yet — will import as church-direct.
-                                      </div>
-                                    )}
+                                    ) : null}
                                   </div>
                                 )}
                               </td>
