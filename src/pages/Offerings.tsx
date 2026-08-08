@@ -113,6 +113,10 @@ export default function Offerings() {
   const [scanPreview, setScanPreview] = useState<string | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
+  // Multi-page PDF ledgers — one week per page, so the user picks a page
+  const [scanPdfPages, setScanPdfPages] = useState(0);
+  const [scanPdfPage, setScanPdfPage] = useState(1);
+  const [scanPdfDoc, setScanPdfDoc] = useState<{ numPages: number; getPage: (n: number) => Promise<unknown> } | null>(null);
   // ── Paste ledger state ───────────────────────────────────────────────
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -642,31 +646,142 @@ export default function Offerings() {
     setDeleteTarget(null);
   };
 
+  // ── Scan ledger helpers (JPEG photo or PDF page → image data URL) ────
+  const loadImage = (src: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = src;
+  });
+
+  const compressPhoto = async (src: string, maxW = 1200, quality = 0.75): Promise<string> => {
+    const img = await loadImage(src);
+    let w = img.width, h = img.height;
+    if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", quality);
+  };
+
+  // Grayscale + contrast boost — much better for OCR than the raw photo
+  const preprocessForOcr = async (src: string): Promise<string> => {
+    const img = await loadImage(src);
+    const MAX = 2000;
+    let w = img.width, h = img.height;
+    if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d")!;
+    ctx.drawImage(img, 0, 0, w, h);
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      const boosted = Math.min(255, Math.max(0, (gray - 60) * 1.8));
+      data[i] = data[i + 1] = data[i + 2] = boosted;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return c.toDataURL("image/png");
+  };
+
+  // Render one page of a PDF to a JPEG data URL (pdfjs-dist, same worker pattern as bank-statement import)
+  type PdfPage = {
+    getViewport: (o: { scale: number }) => { width: number; height: number };
+    render: (p: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<unknown> };
+  };
+  const renderPdfPage = async (doc: { getPage: (n: number) => Promise<unknown> }, pageNum: number): Promise<string> => {
+    const page = (await doc.getPage(pageNum)) as PdfPage;
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d")!;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas.toDataURL("image/jpeg", 0.85);
+  };
+
+  // Handle the selected file — photos preview directly, PDFs render page 1
+  const openScanFile = async (file: File | null) => {
+    setScanFile(file);
+    setScanError("");
+    setScanPdfPages(0);
+    setScanPdfPage(1);
+    setScanPdfDoc(null);
+    if (!file) { setScanPreview(null); return; }
+    if (file.type === "application/pdf") {
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+        const doc = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+        setScanPdfDoc(doc as unknown as { numPages: number; getPage: (n: number) => Promise<unknown> });
+        setScanPdfPages((doc as unknown as { numPages: number }).numPages);
+        setScanPreview(await renderPdfPage(doc, 1));
+      } catch {
+        setScanError("Could not read this PDF — make sure it's a valid scanned ledger, then try again.");
+        setScanPreview(null);
+      }
+      return;
+    }
+    setScanPreview(URL.createObjectURL(file));
+  };
+
+  const changeScanPage = async (delta: number) => {
+    if (!scanPdfDoc) return;
+    const next = Math.min(scanPdfPages, Math.max(1, scanPdfPage + delta));
+    if (next === scanPdfPage) return;
+    try {
+      setScanPreview(await renderPdfPage(scanPdfDoc, next));
+      setScanPdfPage(next);
+      setScanError("");
+    } catch {
+      setScanError("Could not render that page.");
+    }
+  };
+
+  // The current scan source as a JPEG data URL (PDF page or compressed photo)
+  const currentScanImage = async (maxW = 1200, quality = 0.75): Promise<string> => {
+    if (!scanFile) throw new Error("No file selected");
+    if (scanFile.type === "application/pdf") {
+      if (!scanPreview) throw new Error("PDF page not rendered yet");
+      return scanPreview;
+    }
+    return compressPhoto(scanPreview ?? URL.createObjectURL(scanFile), maxW, quality);
+  };
+
+  // Fallback when the edge function has no key: call Gemini straight from the browser
+  // using VITE_GOOGLE_AI_KEY (set in the app's env/Keys tab).
+  const geminiFromBrowser = async (imageBase64: string): Promise<{ ok: true; data: Record<string, unknown> } | null> => {
+    const key = import.meta.env.VITE_GOOGLE_AI_KEY;
+    if (!key) return null;
+    const prompt = 'Extract this church offering ledger as JSON: {"serviceDate":"YYYY-MM-DD","serviceName":"Sunday Service","denominations":{"100":0,"50":0,"20":0,"10":0,"5":0,"2":0,"1":0},"deductions":[],"checks":[{"donorName":"","checkNumber":"","amount":0}],"cashGifts":[],"notes":""}. Amounts are numbers, no markdown.';
+    const clean = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    for (const model of ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]) {
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: clean } }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+          }),
+        });
+        if (!r.ok) continue;
+        const geminiJson = await r.json();
+        const raw = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        return { ok: true, data: JSON.parse(raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim()) };
+      } catch { /* try the next model */ }
+    }
+    return null;
+  };
+
   // ── Scan paper ledger via Gemini Vision ──────────────────────────────
   const handleScanLedger = async () => {
     if (!scanFile || !supabase) return;
     setScanLoading(true);
     setScanError("");
     try {
-      // Compress image before sending (Edge Functions have a 6 MB payload limit)
-      const compressImage = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => {
-            const MAX_W = 1200;
-            let w = img.width, h = img.height;
-            if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
-            const canvas = document.createElement("canvas");
-            canvas.width = w; canvas.height = h;
-            const ctx = canvas.getContext("2d")!;
-            ctx.drawImage(img, 0, 0, w, h);
-            resolve(canvas.toDataURL("image/jpeg", 0.75));
-          };
-          img.onerror = () => reject(new Error("Failed to load image"));
-          img.src = URL.createObjectURL(file);
-        });
-      };
-      const base64 = await compressImage(scanFile);
+      const base64 = await currentScanImage();
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
       const res = await fetch(
@@ -682,9 +797,20 @@ export default function Offerings() {
       }
 
       if (!json.ok) {
-        setScanError(json.error ?? `Scan failed (${res.status})`);
-        setScanLoading(false);
-        return;
+        // Edge function has no AI key configured — fall back to the browser key if present
+        if (json.error && /GOOGLE_AI_KEY|key/i.test(json.error) && import.meta.env.VITE_GOOGLE_AI_KEY) {
+          const direct = await geminiFromBrowser(base64);
+          if (direct) { json = direct; }
+          else {
+            setScanError(`${json.error} And the browser fallback (VITE_GOOGLE_AI_KEY) didn't work either — check that key in the app's Keys tab.`);
+            setScanLoading(false);
+            return;
+          }
+        } else {
+          setScanError(json.error ?? `Scan failed (${res.status})`);
+          setScanLoading(false);
+          return;
+        }
       }
       const d = json.data ?? {};
       const newDenoms = emptyDenoms();
@@ -716,37 +842,8 @@ export default function Offerings() {
     setOcrLoading(true);
     setScanError("");
     try {
-      // Compress + preprocess image for OCR (grayscale, contrast boost, PNG)
-      const preprocess = (file: File): Promise<string> => new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-          const MAX = 2000;
-          let w = img.width, h = img.height;
-          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-          const c = document.createElement("canvas");
-          c.width = w; c.height = h;
-          const ctx = c.getContext("2d")!;
-          // Draw image
-          ctx.drawImage(img, 0, 0, w, h);
-          // Get pixel data for preprocessing
-          const imageData = ctx.getImageData(0, 0, w, h);
-          const data = imageData.data;
-          // Convert to grayscale + boost contrast
-          for (let i = 0; i < data.length; i += 4) {
-            // Luminance grayscale
-            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-            // Contrast boost: stretch the middle range, clamp to 0-255
-            const boosted = Math.min(255, Math.max(0, (gray - 60) * 1.8));
-            data[i] = data[i + 1] = data[i + 2] = boosted;
-          }
-          ctx.putImageData(imageData, 0, 0);
-          // Use PNG for lossless (much better for OCR than JPEG)
-          resolve(c.toDataURL("image/png"));
-        };
-        img.onerror = reject;
-        img.src = URL.createObjectURL(file);
-      });
-      const dataUrl = await preprocess(scanFile);
+      // Preprocess the current image (photo or PDF page) for OCR
+      const dataUrl = await preprocessForOcr(await currentScanImage(2200, 0.9));
 
       const { data: { text } } = await Tesseract.recognize(dataUrl, "eng", {
         logger: (m) => { if (m.status === "recognizing text") console.log(`OCR progress: ${Math.round((m.progress ?? 0) * 100)}%`); },
@@ -906,7 +1003,7 @@ export default function Offerings() {
       }
     } catch (err) {
       console.warn("Basic OCR failed:", err);
-      setScanError(`OCR failed — ${err instanceof Error ? err.message : "try a clearer photo"}`);
+      setScanError(`OCR failed — ${err instanceof Error ? err.message : "try a clearer photo"}. Note: OCR downloads language data from the internet on first use and reads printed text best — for handwriting, use AI Scan.`);
       setOcrLoading(false);
     }
   };
@@ -978,7 +1075,7 @@ export default function Offerings() {
         actions={
           isAdmin && (
           <div className="flex items-center gap-2">
-            <Button iconLeft={<ScanLine className="h-4 w-4" />} variant="outline" onClick={() => { setScanFile(null); setScanPreview(null); setScanError(""); setScanOpen(true); }}>
+            <Button iconLeft={<ScanLine className="h-4 w-4" />} variant="outline" onClick={() => { setScanFile(null); setScanPreview(null); setScanError(""); setScanPdfPages(0); setScanPdfPage(1); setScanPdfDoc(null); setScanOpen(true); }}>
               Scan ledger
             </Button>
             <Button iconLeft={<ClipboardPaste className="h-4 w-4" />} variant="outline" onClick={() => { setPasteText(""); setPasteParsed(null); setPasteError(""); setPasteOpen(true); }}>
@@ -1548,29 +1645,24 @@ export default function Offerings() {
       )}
 
       {/* ── Scan ledger dialog ─────────────────────────────────────────── */}
-      <Dialog open={scanOpen} onOpenChange={(v) => { setScanOpen(v); if (!v) { setScanFile(null); setScanPreview(null); setScanError(""); } }}>
+      <Dialog open={scanOpen} onOpenChange={(v) => { setScanOpen(v); if (!v) { setScanFile(null); setScanPreview(null); setScanError(""); setScanPdfPages(0); setScanPdfPage(1); setScanPdfDoc(null); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Scan paper ledger</DialogTitle>
             <DialogDescription>
-              Take a clear photo of your paper Sunday offering ledger. AI will read the handwriting and pre-fill the offering form for review.
+              Upload a clear photo (JPEG) or scanned PDF of your paper Sunday offering ledger. AI reads the handwriting and pre-fills the offering form for review — you still sign off with both counter PINs before saving.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* File input */}
             <div>
-              <Label htmlFor="ledger-photo">Upload ledger photo</Label>
+              <Label htmlFor="ledger-photo">Upload ledger (JPEG photo or PDF)</Label>
               <input
                 id="ledger-photo"
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 capture="environment"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setScanFile(file);
-                  setScanPreview(file ? URL.createObjectURL(file) : null);
-                  setScanError("");
-                }}
+                onChange={(e) => { void openScanFile(e.target.files?.[0] ?? null); }}
                 className="mt-1.5 block w-full text-sm text-stone-600 file:mr-3 file:rounded-md file:border-0 file:bg-amber-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-amber-700 hover:file:bg-amber-100"
               />
             </div>
@@ -1578,6 +1670,18 @@ export default function Offerings() {
             {scanPreview && (
               <div className="overflow-hidden rounded-lg border border-stone-200">
                 <img src={scanPreview} alt="Ledger preview" className="max-h-64 w-full object-contain bg-stone-100" />
+              </div>
+            )}
+            {/* Multi-page PDF: one week per page */}
+            {scanPdfPages > 1 && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">
+                <Button size="sm" variant="outline" onClick={() => void changeScanPage(-1)} disabled={scanPdfPage <= 1}>
+                  ← Prev page
+                </Button>
+                <span>Page <strong>{scanPdfPage}</strong> of {scanPdfPages} <span className="hidden sm:inline">— scan one week per page</span></span>
+                <Button size="sm" variant="outline" onClick={() => void changeScanPage(1)} disabled={scanPdfPage >= scanPdfPages}>
+                  Next page →
+                </Button>
               </div>
             )}
             {/* Tips */}
@@ -1598,7 +1702,7 @@ export default function Offerings() {
             )}
           </div>
           <div className="mt-6 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setScanOpen(false); setScanFile(null); setScanPreview(null); setScanError(""); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setScanOpen(false); setScanFile(null); setScanPreview(null); setScanError(""); setScanPdfPages(0); setScanPdfPage(1); setScanPdfDoc(null); }}>Cancel</Button>
             <Button onClick={handleScanLedger} disabled={!scanFile || scanLoading}>
               {scanLoading ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Scanning</> : "AI Scan"}
             </Button>
