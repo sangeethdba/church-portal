@@ -43,6 +43,11 @@ export function MemberOverview() {
   const [myYtd, setMyYtd] = useState(0);
   const [loading, setLoading] = useState(true);
   const [viewExpense, setViewExpense] = useState<Expense | null>(null);
+  // Auto-link: if this profile isn't linked to a donor record yet, ask the
+  // server to match by name/email (covers newly-registered members whose
+  // existing donor record was never linked).
+  const [autoLink, setAutoLink] = useState<{ tried: boolean; donorId: string | null }>({ tried: false, donorId: null });
+  const linkedDonorId = autoLink.donorId ?? profile?.linked_donor_id ?? null;
   const [billFrom, setBillFrom] = useState("");
   const [billTo, setBillTo] = useState("");
   const [period, setPeriod] = useState<ReportPeriod>("this_year");
@@ -54,7 +59,18 @@ export function MemberOverview() {
     let cancelled = false;
     async function load() {
       if (!supabase) { setLoading(false); return; }
-      const myDonorId = profile?.linked_donor_id;
+      let myDonorId: string | null | undefined = linkedDonorId;
+      if (!myDonorId && profile?.id && !autoLink.tried) {
+        try {
+          const res = await supabase.rpc("link_donor_by_name");
+          const r = res.data as { ok?: boolean; linked_donor_id?: string | null } | null;
+          const matched = r?.ok ? (r.linked_donor_id ?? null) : null;
+          setAutoLink({ tried: true, donorId: matched });
+          if (matched) myDonorId = matched;
+        } catch {
+          setAutoLink({ tried: true, donorId: null });
+        }
+      }
       const myName = profile?.full_name;
       const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
 
@@ -113,7 +129,7 @@ export function MemberOverview() {
     }
     load();
     return () => { cancelled = true; };
-  }, [profile?.id, profile?.linked_donor_id, billFrom, billTo, range.start]);
+  }, [profile?.id, profile?.linked_donor_id, autoLink.tried, autoLink.donorId, billFrom, billTo, range.start]);
 
   const outstanding = expenses.filter((e) => e.status === "pending" || e.status === "approved").reduce((s, e) => s + Number(e.amount ?? 0), 0);
   const reimbursed = expenses.filter((e) => e.status === "paid" || e.status === "auto_paid").reduce((s, e) => s + Number(e.amount ?? 0), 0);
@@ -289,7 +305,7 @@ export function MemberOverview() {
                   <option value="this_year">This year</option>
                   <option value="all">All time</option>
                 </Select>
-                <Button size="sm" variant="ghost" onClick={handleDownloadReport} iconLeft={<FileDown className="h-3.5 w-3.5" />} disabled={!profile?.linked_donor_id}>Report PDF</Button>
+                <Button size="sm" variant="ghost" onClick={handleDownloadReport} iconLeft={<FileDown className="h-3.5 w-3.5" />} disabled={!linkedDonorId}>Report PDF</Button>
               </div>
             </div>
           </CardHeader>
@@ -325,8 +341,8 @@ export function MemberOverview() {
                 <Button size="sm" variant="ghost" onClick={() => { setDonFilterType("all"); setDonFilterMethod("all"); }}>Clear</Button>
               )}
             </div>
-            {!profile?.linked_donor_id ? (
-              <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="Not linked to a donor record yet" description="Ask your treasurer to link your account to your donor record so your giving history appears here." />
+            {!linkedDonorId ? (
+              <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No matching donor record found" description="We automatically searched the donor directory for a record matching your name, but couldn't find a confident match. Ask your treasurer to link your account on the Dashboard." />
             ) : filteredDonations.length === 0 && donations.length > 0 ? (
               <EmptyState icon={<CircleDollarSign className="h-6 w-6" />} title="No gifts match the filters" description="Try clearing the type or method filter above." />
             ) : donations.length === 0 ? (
