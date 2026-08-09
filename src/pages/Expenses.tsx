@@ -473,6 +473,9 @@ export default function Expenses() {
         p_status: "paid",
         p_payment_method: payMethod,
         p_transfer_receipt_path: transferPath,
+        // Persist the settled date too — without it the DB keeps paid_at NULL
+        // and the row shows "✓ settled —" after a refresh.
+        p_paid_at: new Date().toISOString(),
       });
       if (error) {
         console.warn("Mark paid failed:", error);
