@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange, AlertTriangle, MessageSquare, UploadCloud, FileSpreadsheet, Pencil, ChevronDown, Loader2 } from "lucide-react";
+import { Plus, CheckCircle2, XCircle, Receipt as ReceiptIcon, Sparkles, Upload, Paperclip, X, Banknote, Trash2, ListPlus, Eye, CalendarRange, AlertTriangle, MessageSquare, UploadCloud, FileSpreadsheet, Pencil, ChevronDown, Loader2, Search, Download, Flag, Hourglass, BadgeDollarSign, Layers } from "lucide-react";
 import {
   Button,
   Card,
@@ -275,22 +275,120 @@ export default function Expenses() {
 
   const [showOnlyDirection, setShowOnlyDirection] = useState<"all" | ExpenseSource>("all");
   const [filterMethod, setFilterMethod] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [listTab, setListTab] = useState("all");
+  const [onlyDuplicates, setOnlyDuplicates] = useState(false);
+
+  /** Stable key for duplicate detection: posted date + amount + normalized
+   *  description (first 48 chars). The same statement month pasted twice
+   *  produces identical keys. */
+  const normKey = (date: string, amount: string | number, desc: string) => {
+    const d = date.slice(0, 10);
+    if (!d) return "";
+    const a = Number(amount || 0);
+    if (!isFinite(a) || a === 0) return "";
+    const n = (desc || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 48);
+    if (n.length < 4) return "";
+    return `${d}|${a.toFixed(2)}|${n}`;
+  };
+
+  // Member profile name lookup — for search, row display, and CSV export.
+  const memberNameFor = useMemo(() => {
+    const m = new Map<string, string>();
+    memberOptions.forEach((x) => m.set(x.id, x.name));
+    return m;
+  }, [memberOptions]);
+
+  // Flag expenses that look like duplicates (same date + amount + description).
+  const dupInfo = useMemo(() => {
+    const ids = new Set<string>();
+    const byKey = new Map<string, string[]>();
+    for (const e of expenses) {
+      const k = normKey(e.submitted_at ?? "", e.amount, e.title ?? e.description ?? "");
+      if (!k) continue;
+      const arr = byKey.get(k) ?? [];
+      arr.push(e.id);
+      byKey.set(k, arr);
+    }
+    for (const arr of byKey.values()) if (arr.length > 1) arr.forEach((id) => ids.add(id));
+    return { ids, count: ids.size };
+  }, [expenses]);
+
+  // Keys of existing ledger rows — warn about possible re-imports in bulk dialog.
+  const existingKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of expenses) {
+      const k = normKey(e.submitted_at ?? "", e.amount, e.title ?? e.description ?? "");
+      if (k) s.add(k);
+    }
+    return s;
+  }, [expenses]);
 
   const filtered = useMemo(
     () => expenses.filter((e) => {
       if (showOnlyDirection !== "all" && e.source !== showOnlyDirection) return false;
       if (filterMethod !== "all" && e.payment_method !== filterMethod) return false;
+      if (filterCategory !== "all" && e.category !== filterCategory) return false;
+      if (filterStatus !== "all" && e.status !== filterStatus) return false;
       const d = (e.submitted_at ?? "").slice(0, 10);
       if (dateFrom && d < dateFrom) return false;
       if (dateTo && d > dateTo) return false;
+      const q = search.trim().toLowerCase();
+      if (q) {
+        const hay = [
+          e.title ?? "", e.description ?? "", e.notes ?? "", e.category,
+          e.payment_method ?? "", e.check_number ?? "", e.card_last4 ?? "",
+          e.user_id ? memberNameFor.get(e.user_id) ?? "" : "",
+        ].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
-    }),
-    [expenses, showOnlyDirection, filterMethod, dateFrom, dateTo],
+    }).filter((e) => (onlyDuplicates ? dupInfo.ids.has(e.id) : true)),
+    [expenses, showOnlyDirection, filterMethod, filterCategory, filterStatus, dateFrom, dateTo, search, onlyDuplicates, dupInfo.ids, memberNameFor],
   );
   const total = filtered.reduce((s, e) => s + Number(e.amount || 0), 0);
   const pending = expenses.filter((e) => e.status === "pending").length;
+
+  // ── KPI strip (respects the active date / search / method filters) ────
+  const pendingRows = filtered.filter((e) => e.status === "pending");
+  const pendingAmt = pendingRows.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const approvedRows = filtered.filter((e) => e.status === "approved");
+  const approvedAmt = approvedRows.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const settledRows = filtered.filter((e) => e.status === "paid" || e.status === "auto_paid");
+  const settledAmt = settledRows.reduce((s, e) => s + Number(e.amount || 0), 0);
+
+  // ── Export the currently filtered rows to CSV ─────────────────────────
+  const exportCsv = () => {
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ["Date", "Title", "Description", "Category", "Method", "Check #", "Card", "Source", "Status", "Amount", "Member"];
+    const lines = filtered.map((e) => [
+      esc((e.submitted_at ?? "").slice(0, 10)),
+      esc(e.title ?? ""),
+      esc(e.description ?? ""),
+      esc(e.category),
+      esc(e.payment_method ?? ""),
+      esc(e.check_number ?? ""),
+      esc(e.card_last4 ?? ""),
+      e.source === "member_submitted" ? "Reimbursement" : "Church-direct",
+      e.status,
+      Number(e.amount || 0).toFixed(2),
+      esc(e.user_id ? memberNameFor.get(e.user_id) ?? "" : ""),
+    ].join(","));
+    const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // ── My expenses (current user's submissions) ──────────────────────────
   const myExpenses = useMemo(
@@ -1311,6 +1409,11 @@ export default function Expenses() {
                                     ) : null}
                                   </div>
                                 )}
+                                {existingKeys.has(normKey(row.date, row.amount, row.description)) && (
+                                  <div className="mt-0.5 text-[10px] font-medium text-amber-600">
+                                    ⚠ Already in ledger — likely imported before
+                                  </div>
+                                )}
                               </td>
                               <td className="px-2 py-1">
                                 <input
@@ -1732,6 +1835,82 @@ export default function Expenses() {
         }
       />
 
+      {/* ── Expense overview KPIs ────────────────────────────────────── */}
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardBody className="flex items-center gap-3 py-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-600">
+              <Layers className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[11px] font-medium uppercase tracking-wider text-stone-500">In view · {filtered.length} rows</div>
+              <div className="truncate font-serif text-lg font-semibold text-stone-900">{formatCurrency(total)}</div>
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="flex items-center gap-3 py-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <Hourglass className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[11px] font-medium uppercase tracking-wider text-stone-500">Pending review · {pendingRows.length}</div>
+              <div className="truncate font-serif text-lg font-semibold text-amber-800">{formatCurrency(pendingAmt)}</div>
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="flex items-center gap-3 py-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[11px] font-medium uppercase tracking-wider text-stone-500">Approved · awaiting payment · {approvedRows.length}</div>
+              <div className="truncate font-serif text-lg font-semibold text-indigo-800">{formatCurrency(approvedAmt)}</div>
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody className="flex items-center gap-3 py-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+              <BadgeDollarSign className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[11px] font-medium uppercase tracking-wider text-stone-500">Settled · {settledRows.length}</div>
+              <div className="truncate font-serif text-lg font-semibold text-emerald-800">{formatCurrency(settledAmt)}</div>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* ── Action banners: pending review + possible duplicates ──────── */}
+      {isAdmin && (pending > 0 || dupInfo.count > 0) && (
+        <div className="mb-4 space-y-2">
+          {pending > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+              <Hourglass className="h-4 w-4 shrink-0" />
+              <span className="flex-1">
+                <strong>{pending}</strong> reimbursement{pending === 1 ? "" : "s"} waiting for review — approve, ask a question, or reject.
+              </span>
+              <Button size="sm" variant="outline" onClick={() => setListTab("member_submitted")}>
+                Review pending
+              </Button>
+            </div>
+          )}
+          {dupInfo.count > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">
+              <Flag className="h-4 w-4 shrink-0" />
+              <span className="flex-1">
+                <strong>{dupInfo.count}</strong> possible duplicate{dupInfo.count === 1 ? "" : "s"} — same posted date, amount, and payee. Usually the same statement month imported twice.
+              </span>
+              <Button size="sm" variant={onlyDuplicates ? "warm" : "outline"} onClick={() => setOnlyDuplicates((v) => !v)}>
+                {onlyDuplicates ? "Show all" : "Review duplicates"}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Ask clarification dialog */}
       <Dialog open={clarifyExpense !== null} onOpenChange={(v) => { if (!v) setClarifyExpense(null); }}>
         <DialogContent>
@@ -2024,16 +2203,25 @@ export default function Expenses() {
         onOpenChange={(v) => { if (!v) setViewExpense(null); }}
       />
 
-      {/* ── Date range & method filter ─────────────────────────────────── */}
+      {/* ── Search & filter ──────────────────────────────────────────── */}
       <Card className="mb-4">
         <CardHeader className="border-b border-stone-100">
           <div className="flex items-center gap-2 text-sm">
             <CalendarRange className="h-4 w-4 text-stone-400" />
-            <span className="text-stone-500">Filter by date range & method</span>
+            <span className="text-stone-500">Search & filter</span>
           </div>
         </CardHeader>
         <CardBody>
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+              placeholder="Search title, payee, description, member, check #, card…"
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
             <div>
               <Label htmlFor="exp-from">From</Label>
               <Input id="exp-from" type="date" value={dateFrom}
@@ -2056,16 +2244,52 @@ export default function Expenses() {
                 <option value="debit">Debit</option>
               </Select>
             </div>
-            {(dateFrom || dateTo || filterMethod !== "all") && (
-              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setFilterMethod("all"); }}>
-                Clear
+            <div>
+              <Label htmlFor="exp-status">Status</Label>
+              <Select id="exp-status" value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)} className="mt-1.5 w-40">
+                <option value="all">All statuses</option>
+                <option value="pending">Pending review</option>
+                <option value="approved">Approved — awaiting payment</option>
+                <option value="paid">Paid</option>
+                <option value="auto_paid">Auto-paid (imports)</option>
+                <option value="rejected">Rejected</option>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="exp-cat">Category</Label>
+              <Select id="exp-cat" value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)} className="mt-1.5 w-48">
+                <option value="all">All categories</option>
+                {EXPENSE_CATEGORIES.reduce<{ group: string; items: typeof EXPENSE_CATEGORIES }[]>((acc, c) => {
+                  const g = acc.find((x) => x.group === c.group);
+                  if (g) g.items.push(c); else acc.push({ group: c.group, items: [c] });
+                  return acc;
+                }, []).map((g) => (
+                  <optgroup key={g.group} label={g.group}>
+                    {g.items.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              {(dateFrom || dateTo || filterMethod !== "all" || filterCategory !== "all" || filterStatus !== "all" || search.trim() || onlyDuplicates) && (
+                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setFilterMethod("all"); setFilterCategory("all"); setFilterStatus("all"); setSearch(""); setOnlyDuplicates(false); }}>
+                  Clear
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}
+                iconLeft={<Download className="h-3.5 w-3.5" />}>
+                Export CSV ({filtered.length})
               </Button>
-            )}
+            </div>
           </div>
         </CardBody>
       </Card>
 
-      <Tabs defaultValue="all">
+      <Tabs value={listTab} onValueChange={(v) => setListTab(v)}>
         <TabsList>
           <TabsTrigger value="all">All</TabsTrigger>
           {canSeeAll && (
@@ -2099,6 +2323,8 @@ export default function Expenses() {
             onEdit={openEdit}
             onDelete={setDeleteTarget}
             statusTone={statusTone}
+            dupIds={dupInfo.ids}
+            memberNameFor={memberNameFor}
             hideSource={!canSeeAll}
           />
         </TabsContent>
@@ -2115,6 +2341,8 @@ export default function Expenses() {
               onEdit={openEdit}
               onDelete={setDeleteTarget}
               statusTone={statusTone}
+              dupIds={dupInfo.ids}
+              memberNameFor={memberNameFor}
               hideSource
             />
           </TabsContent>
@@ -2131,6 +2359,8 @@ export default function Expenses() {
             onEdit={openEdit}
             onDelete={setDeleteTarget}
             statusTone={statusTone}
+            dupIds={dupInfo.ids}
+            memberNameFor={memberNameFor}
             hideSource
           />
         </TabsContent>
@@ -2147,6 +2377,8 @@ export default function Expenses() {
               onEdit={openEdit}
               onDelete={setDeleteTarget}
               statusTone={statusTone}
+              dupIds={dupInfo.ids}
+              memberNameFor={memberNameFor}
               hideSource
             />
           </TabsContent>
@@ -2174,6 +2406,8 @@ function ExpenseList({
   onDelete,
   statusTone,
   hideSource,
+  dupIds,
+  memberNameFor,
 }: {
   rows: Expense[];
   /** Only the admin trio gets review actions (Ask/Approve/Reject/Clear).
@@ -2186,6 +2420,8 @@ function ExpenseList({
   onClarify: (e: Expense) => void;
   onEdit?: (e: Expense) => void;
   onDelete?: (e: Expense) => void;
+  dupIds?: Set<string>;
+  memberNameFor?: Map<string, string>;
   statusTone: (s: ExpenseStatus) => "neutral" | "indigo" | "amber" | "emerald" | "rose";
   hideSource?: boolean;
 }) {
@@ -2223,6 +2459,16 @@ function ExpenseList({
                   <div className="font-medium text-stone-900">
                     {e.title ?? e.description?.slice(0, 60) ?? "—"}
                   </div>
+                  {e.user_id && memberNameFor?.get(e.user_id) && (
+                    <div className="mt-0.5 text-xs text-stone-500">
+                      Reimbursement to <span className="font-medium text-stone-700">{memberNameFor.get(e.user_id)}</span>
+                    </div>
+                  )}
+                  {dupIds?.has(e.id) && (
+                    <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-700">
+                      <Flag className="h-3 w-3" /> Possible duplicate
+                    </div>
+                  )}
                   <div className="text-xs text-stone-500">Logged {formatDate(e.submitted_at)}</div>
                   {e.transfer_receipt_path && (
                     <div className="mt-1 text-xs text-emerald-700">✓ Transfer receipt attached</div>
