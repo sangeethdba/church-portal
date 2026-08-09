@@ -300,6 +300,14 @@ export default function Expenses() {
   const myPending = myExpenses.filter((e) => e.status === "pending").length;
   const myReimbursed = myExpenses.filter((e) => e.status === "paid").reduce((s, e) => s + Number(e.amount || 0), 0);
 
+  /** Re-fetch the truth from the DB after a transition so a failed RPC can
+   *  never leave the UI showing a status the database doesn't have. */
+  const resyncExpenses = async () => {
+    if (!supabase) return;
+    const { data } = await supabase.rpc("list_expenses");
+    if (data) setExpenses(data as Expense[]);
+  };
+
   const transition = async (id: string, status: ExpenseStatus) => {
     const patch: Partial<Expense> = { status };
     if (status === "approved") patch.approved_at = new Date().toISOString();
@@ -312,7 +320,18 @@ export default function Expenses() {
         p_expense_id: id,
         p_status: status,
       });
-      if (error) console.warn("Update expense failed:", error);
+      if (error) {
+        console.warn("Update expense failed:", error);
+        toast(`Could not ${status === "approved" ? "approve" : status === "rejected" ? "reject" : "update"} — ${error.message}`, "error");
+        await resyncExpenses();
+        return;
+      }
+      toast(
+        status === "approved" ? "Expense approved."
+          : status === "rejected" ? "Expense rejected."
+          : "Expense status updated.",
+        "success",
+      );
     }
   };
 
@@ -449,12 +468,23 @@ export default function Expenses() {
     );
 
     if (supabase) {
-      await supabase.rpc("admin_update_expense", {
+      const { error } = await supabase.rpc("admin_update_expense", {
         p_expense_id: payExpenseId,
         p_status: "paid",
         p_payment_method: payMethod,
         p_transfer_receipt_path: transferPath,
       });
+      if (error) {
+        console.warn("Mark paid failed:", error);
+        toast(`Could not mark paid — ${error.message}`, "error");
+        setPaySaving(false);
+        setPayOpen(false);
+        setPayExpenseId(null);
+        setTransferFile(null);
+        await resyncExpenses();
+        return;
+      }
+      toast("Expense marked as paid — receipt saved.", "success");
       // Best-effort email notification
       notifyMember(payExpenseId);
     }
