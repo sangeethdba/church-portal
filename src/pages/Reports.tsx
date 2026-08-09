@@ -8,7 +8,7 @@ import {
 import { PageHeader } from "@/components/Layout";
 import { supabase, isOversightRole, EXPENSE_CATEGORIES, type Donation, type Expense } from "@/lib/supabase";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { buildIncomeMethodDisplay, buildWeeklyLedgerDetail, donationTypeLabel, type WeeklyLedgerDetail } from "@/lib/accounting";
+import { buildIncomeMethodDisplay, buildWeeklyLedgerDetail, donationTypeLabel, sundayWeekKey, type WeeklyLedgerDetail } from "@/lib/accounting";
 import { notifyWeeklySummary } from "@/lib/notify";
 
 type Period = "this_week" | "this_month" | "this_year" | "all";
@@ -319,6 +319,56 @@ export default function Reports() {
     () => monthlyLedger.map(([month, v]) => [month, { cash: v.anonymous + v.named + v.pastor, check: v.checks, other: v.online + v.other }] as const),
     [monthlyLedger],
   );
+
+  // Expense buckets for the weekly/monthly ledger — money OUT per week/month,
+  // split into member reimbursements vs. church-direct outlays (same Sunday-start
+  // week keys the offering ledger uses, so in/out line up side by side).
+  const weeklyExpenses = useMemo(() => {
+    const weeks = new Map<string, { reimbursed: number; direct: number }>();
+    for (const e of filteredExp) {
+      const d = (e.submitted_at ?? "").slice(0, 10);
+      if (!d) continue;
+      const key = sundayWeekKey(d);
+      const cur = weeks.get(key) ?? { reimbursed: 0, direct: 0 };
+      if (e.source === "member_submitted") cur.reimbursed += Number(e.amount || 0);
+      else cur.direct += Number(e.amount || 0);
+      weeks.set(key, cur);
+    }
+    return weeks;
+  }, [filteredExp]);
+
+  const monthlyExpenses = useMemo(() => {
+    const months = new Map<string, { reimbursed: number; direct: number }>();
+    for (const e of filteredExp) {
+      const m = (e.submitted_at ?? "").slice(0, 7);
+      if (!m) continue;
+      const cur = months.get(m) ?? { reimbursed: 0, direct: 0 };
+      if (e.source === "member_submitted") cur.reimbursed += Number(e.amount || 0);
+      else cur.direct += Number(e.amount || 0);
+      months.set(m, cur);
+    }
+    return months;
+  }, [filteredExp]);
+
+  // Union of income + expense buckets so expense-only weeks still appear, and
+  // rows carry both sides for the in/out ledger.
+  const weeklyRows = useMemo(() => {
+    const zeroIncome = (): WeeklyLedgerDetail => ({ anonymous: 0, named: 0, checks: 0, pastor: 0, online: 0, other: 0 });
+    const byKey = new Map<string, { key: string; income: WeeklyLedgerDetail; expenses: { reimbursed: number; direct: number } }>();
+    for (const [week, v] of weeklyLedger) byKey.set(week, { key: week, income: v, expenses: weeklyExpenses.get(week) ?? { reimbursed: 0, direct: 0 } });
+    for (const [week, v] of weeklyExpenses) if (!byKey.has(week)) byKey.set(week, { key: week, income: zeroIncome(), expenses: v });
+    return Array.from(byKey.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [weeklyLedger, weeklyExpenses]);
+
+  const monthlyRows = useMemo(() => {
+    const zeroIncome = (): WeeklyLedgerDetail => ({ anonymous: 0, named: 0, checks: 0, pastor: 0, online: 0, other: 0 });
+    const byKey = new Map<string, { key: string; income: WeeklyLedgerDetail; expenses: { reimbursed: number; direct: number } }>();
+    for (const [month, v] of monthlyLedger) byKey.set(month, { key: month, income: v, expenses: monthlyExpenses.get(month) ?? { reimbursed: 0, direct: 0 } });
+    for (const [month, v] of monthlyExpenses) if (!byKey.has(month)) byKey.set(month, { key: month, income: zeroIncome(), expenses: v });
+    return Array.from(byKey.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [monthlyLedger, monthlyExpenses]);
+
+  const detailRows = detailGrouping === "weekly" ? weeklyRows : monthlyRows;
 
   // Expenses monthly trend
   const expMonthlyTrend = useMemo(() => {
@@ -737,7 +787,7 @@ export default function Reports() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="font-serif text-lg font-semibold text-stone-900">Weekly offering collections</h2>
-                  <p className="text-xs text-stone-500">Per-Sunday ledger: gross anonymous plate cash, named envelope gifts, checks, minus pastor-gift deductions — online gifts kept separate</p>
+                  <p className="text-xs text-stone-500">Per-Sunday ledger: gross anonymous plate cash, named envelope gifts, checks, minus pastor-gift deductions — online gifts kept separate. Each row also shows the week's expenses (member reimbursed vs. church-direct) and the net position.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 p-0.5">
@@ -758,11 +808,11 @@ export default function Reports() {
                   </div>
                   {weeklyOff.length > 0 && (
                     <Button size="sm" variant="outline" onClick={() => {
-                      const ledger = detailGrouping === "weekly" ? weeklyLedger : monthlyLedger;
-                      const csv = [`${detailGrouping === "weekly" ? "Week" : "Month"},Plate cash (gross),Named cash,Checks,Pastor gifts,Online,Total`, ...ledger.map(([k, v]) => {
+                      const csv = [`${detailGrouping === "weekly" ? "Week" : "Month"},Plate cash (gross),Named cash,Checks,Pastor gifts,Online,Total income,Reimbursed,Direct,Net`, ...detailRows.map(({ key, income: v, expenses: ex }) => {
                         const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
-                        const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(k) : new Date(k + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
-                        return `${rowLabel},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total}`;
+                        const out = ex.reimbursed + ex.direct;
+                        const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(key) : new Date(key + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                        return `${rowLabel},${v.anonymous},${v.named},${v.checks},${v.pastor},${v.online},${total},${ex.reimbursed},${ex.direct},${total - out}`;
                       })].join("\n");
                       const blob = new Blob([csv], { type: "text/csv" });
                       const url = URL.createObjectURL(blob);
@@ -774,10 +824,10 @@ export default function Reports() {
               </div>
             </CardHeader>
             <CardBody className="px-0 pb-0">
-              {(detailGrouping === "weekly" ? weeklyLedger : monthlyLedger).length === 0 ? (
+              {detailRows.length === 0 ? (
                 <div className="px-6 pb-5"><EmptyState icon={<BarChart3 className="h-6 w-6" />} title="No offerings in this period" /></div>
               ) : (
-                <TableWrap className="min-w-[760px] border-0 shadow-none">
+                <TableWrap className="min-w-[1000px] border-0 shadow-none">
                   <THead>
                     <Tr>
                       <Th>{detailGrouping === "weekly" ? "Week of" : "Month"}</Th>
@@ -786,12 +836,17 @@ export default function Reports() {
                       <Th className="text-right">Checks</Th>
                       <Th className="text-right">Pastor gifts</Th>
                       <Th className="text-right">Online</Th>
-                      <Th className="text-right">Total</Th>
+                      <Th className="text-right">Total income</Th>
+                      <Th className="text-right">Reimbursed</Th>
+                      <Th className="text-right">Direct</Th>
+                      <Th className="text-right">Net</Th>
                     </Tr>
                   </THead>
                   <tbody>
-                    {(detailGrouping === "weekly" ? weeklyLedger : monthlyLedger).map(([key, v]) => {
+                    {detailRows.map(({ key, income: v, expenses: ex }) => {
                       const total = v.anonymous + v.named + v.checks + v.online + v.other + v.pastor;
+                      const out = ex.reimbursed + ex.direct;
+                      const net = total - out;
                       const rowLabel = detailGrouping === "weekly" ? weekRangeLabel(key) : new Date(key + "-01T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
                       return (
                         <Tr key={key}>
@@ -802,6 +857,11 @@ export default function Reports() {
                           <Td className="text-right font-mono text-sm text-rose-700">{v.pastor < 0 ? formatCurrency(v.pastor) : "—"}</Td>
                           <Td className="text-right font-mono text-sm text-indigo-700">{v.online > 0 ? formatCurrency(v.online) : "—"}</Td>
                           <Td className="text-right font-serif font-semibold">{formatCurrency(total)}</Td>
+                          <Td className="text-right font-mono text-sm text-amber-700">{ex.reimbursed > 0 ? formatCurrency(ex.reimbursed) : "—"}</Td>
+                          <Td className="text-right font-mono text-sm text-indigo-700">{ex.direct > 0 ? formatCurrency(ex.direct) : "—"}</Td>
+                          <Td className={`text-right font-serif font-semibold ${net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                            {net >= 0 ? "+" : ""}{formatCurrency(net)}
+                          </Td>
                         </Tr>
                       );
                     })}
@@ -809,6 +869,15 @@ export default function Reports() {
                       <Td colSpan={6} className="border-t-2 border-stone-200 py-4 text-right font-semibold">Total</Td>
                       <Td className="border-t-2 border-stone-200 py-4 text-right font-serif text-lg font-semibold text-stone-900">
                         {formatCurrency(totalIncome)}
+                      </Td>
+                      <Td className="border-t-2 border-stone-200 py-4 text-right font-mono text-base font-semibold text-amber-700">
+                        {formatCurrency(reimbursedExp)}
+                      </Td>
+                      <Td className="border-t-2 border-stone-200 py-4 text-right font-mono text-base font-semibold text-indigo-700">
+                        {formatCurrency(accountExp)}
+                      </Td>
+                      <Td className={`border-t-2 border-stone-200 py-4 text-right font-serif text-lg font-semibold ${net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                        {net >= 0 ? "+" : ""}{formatCurrency(net)}
                       </Td>
                     </Tr>
                   </tbody>
