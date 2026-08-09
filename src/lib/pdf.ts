@@ -703,13 +703,15 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
     doc.setFontSize(10);
   };
 
-  // Helper: new page with letterhead + table header
-  const newPage = () => {
+  // Helper: new page with letterhead. The table header is only drawn when
+  // donation rows will follow — the Total/closing sections must NOT show an
+  // orphaned "Date | Type | Method | Memo | Amount" header with no rows.
+  const newPage = (withTableHeader = true) => {
     drawDocumentFooter(doc);
     doc.addPage();
     y = drawDocumentHeader(doc, s.churchName, `Annual Giving Statement · ${s.year}`);
     y += 10;
-    drawTableHeader();
+    if (withTableHeader) drawTableHeader();
   };
 
   // Page 1: Letterhead + letter body
@@ -766,7 +768,7 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   }
 
   // Total
-  if (y > 640) newPage();
+  if (y > 640) newPage(false);
   y += 6;
   doc.setDrawColor(79, 70, 229);
   doc.setLineWidth(1.2);
@@ -781,7 +783,7 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   y += 28;
 
   // Closing text
-  if (y > 620) newPage();
+  if (y > 620) newPage(false);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
@@ -794,7 +796,7 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   doc.text(thankYouLines, margin, y);
   y += thankYouLines.length * 13 + 16;
 
-  if (y > 630) newPage();
+  if (y > 630) newPage(false);
 
   const taxLanguage =
     `Your gift is a tax-deductible contribution through our nonprofit 501(c)(3) organization. ` +
@@ -803,7 +805,7 @@ export function generateAnnualStatement(s: AnnualStatement): jsPDF {
   doc.text(taxLines, margin, y);
   y += taxLines.length * 13 + 16;
 
-  if (y > 650) newPage();
+  if (y > 650) newPage(false);
 
   doc.setFont("times", "normal");
   doc.setFontSize(11);
