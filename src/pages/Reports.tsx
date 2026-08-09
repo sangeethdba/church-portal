@@ -167,6 +167,7 @@ export default function Reports() {
           id: r.id, source: r.source, title: r.title, amount: Number(r.amount ?? 0),
           category: r.category, description: r.description, receipt_paths: r.receipt_paths,
           transfer_receipt_path: r.transfer_receipt_path, user_id: r.user_id, status: r.status,
+          payment_method: r.payment_method,
           submitted_at: r.submitted_at, approved_by: r.approved_by, approved_at: r.approved_at,
           paid_at: r.paid_at, paid_by: r.paid_by, notes: r.notes, created_at: r.created_at,
         })) as Expense[]);
