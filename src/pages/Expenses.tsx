@@ -589,6 +589,9 @@ export default function Expenses() {
           p_description: baseRow.description ?? null,
           p_notes: baseRow.notes ?? null,
           p_event_name: baseRow.event_name ?? null,
+          // Members don't pick a payout method — reimbursements are paid by
+          // Zelle, so always store 'online' instead of NULL (which showed "—").
+          p_payment_method: "online",
           p_line_items: lineItemsData.length > 0 ? lineItemsData : null,
         });
         expenseId = rpcResult.data as string | null;
