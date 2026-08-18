@@ -627,7 +627,16 @@ export default function Expenses() {
     }
     // Use line item total if present, otherwise form amount
     const value = lineItems.length > 0 ? lineItemTotal : Number(form.amount);
-    if (!value || value <= 0) { setSaving(false); return; }
+    if (!value || value <= 0) {
+      // Show WHY the submit did nothing — a $0 total used to fail silently.
+      setFormError(
+        lineItems.length > 0
+          ? "Add an amount to each bill — the reimbursement total is $0.00, so there's nothing to submit."
+          : "Enter an amount greater than zero."
+      );
+      setSaving(false);
+      return;
+    }
 
     // Upload check image if present
     let checkImagePath: string | null = null;
@@ -712,7 +721,20 @@ export default function Expenses() {
         error = rpcResult.error;
       }
 
-      if (!error && expenseId) {
+      if (error) {
+        // Never masquerade a failed save as success — keep the dialog open
+        // and surface the real error so the member can fix it and resubmit.
+        console.warn("Insert expense failed:", error);
+        const errMsg =
+          typeof error === "object" && error !== null && "message" in error
+            ? String((error as { message: unknown }).message)
+            : "unknown database error";
+        setFormError(`Could not save the expense — ${errMsg}`);
+        setSaving(false);
+        return;
+      }
+
+      if (expenseId) {
         // Fetch the full expense record back (member expenses_self_read or admin can read)
         const { data: inserted } = await supabase
           .from("expenses")
@@ -739,13 +761,17 @@ export default function Expenses() {
             setUploading(false);
           }
           setExpenses((rows) => [expense, ...rows]);
+        } else {
+          // Inserted but the read-back came back empty (RLS edge case) —
+          // resync from the server so the new expense still shows up.
+          const { data: synced } = await supabase.rpc("list_expenses");
+          if (synced) setExpenses(synced as Expense[]);
+        }
+        // Notify admins that a member submitted a reimbursement request
+        if (form.source === "member_submitted") {
+          notifyPortal({ type: "expense_submitted", expense_id: expenseId });
         }
       }
-      // Notify admins that a member submitted a reimbursement request
-      if (form.source === "member_submitted" && expenseId) {
-        notifyPortal({ type: "expense_submitted", expense_id: expenseId });
-      }
-      if (error) console.warn("Insert expense failed:", error);
     } else {
       setExpenses((rows) => [baseRow, ...rows]);
     }
