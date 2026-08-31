@@ -195,7 +195,9 @@ export default function Reports() {
   const filteredExp = useMemo(
     () => expenses.filter((e) => {
       const d = e.submitted_at?.slice(0, 10) ?? "";
-      return d >= effectiveFrom && d <= effectiveTo;
+      // Rejected expenses never left the church — exclude them from every
+      // report total, breakdown, ledger row, and the CSV export.
+      return d >= effectiveFrom && d <= effectiveTo && e.status !== "rejected";
     }),
     [expenses, effectiveFrom, effectiveTo],
   );
