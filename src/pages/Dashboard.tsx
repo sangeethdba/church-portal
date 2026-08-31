@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import {
   HandCoins, Receipt, Users, TrendingUp, CircleDollarSign, Plus,
-  Shield, UserCheck, Lock, Banknote, UserPlus,
+  Shield, UserCheck, Lock, Banknote, UserPlus, Church,
 } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, Tile, MotionTile, Badge, EmptyState, Input, Label, Select, Tabs, TabsList, TabsTrigger, TabsContent, Skeleton, KpiSkeleton, toast } from "@/components/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui";
@@ -135,6 +135,7 @@ export default function Dashboard() {
   const [ytdExpenses, setYtdExpenses] = useState(0);
   const [ytdNet, setYtdNet] = useState(0);
   const [bookRoomTotal, setBookRoomTotal] = useState(0);
+  const [annualConferenceTotal, setAnnualConferenceTotal] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [myPendingExpenses, setMyPendingExpenses] = useState(0);
   const [myPendingTotal, setMyPendingTotal] = useState(0);
@@ -297,6 +298,13 @@ export default function Dashboard() {
             .eq("donation_type", "book_room")
             .gte("donation_date", yearStart);
           if (bookRoom) setBookRoomTotal((bookRoom as { amount: number }[]).reduce((s, r) => s + Number(r.amount ?? 0), 0));
+          // Annual Conference total (gifts given toward the conference)
+          const { data: acDonations } = await supabase
+            .from("donations")
+            .select("amount")
+            .eq("donation_type", "annual_conference")
+            .gte("donation_date", yearStart);
+          if (acDonations) setAnnualConferenceTotal((acDonations as { amount: number }[]).reduce((s, r) => s + Number(r.amount ?? 0), 0));
           // Fetch current user's own pending expenses for "My reimbursements" KPI
           if (profile?.id) {
             supabase
@@ -468,10 +476,12 @@ export default function Dashboard() {
             <MotionTile label="Net position" value={formatCurrency(ytdNet - bookRoomTotal)} accent={ytdNet - bookRoomTotal >= 0 ? "emerald" : "rose"} icon={<TrendingUp className="h-5 w-5" />} delta={ytdNet - bookRoomTotal >= 0 ? "Surplus" : "Deficit"} deltaPositive={ytdNet - bookRoomTotal >= 0} index={2} />
             <MotionTile label="Book room" value={bookRoomTotal > 0 ? formatCurrency(bookRoomTotal) : "0"} accent="emerald" icon={<CircleDollarSign className="h-5 w-5" />}
               onClick={bookRoomTotal > 0 ? () => navigate("/donations") : undefined} index={3} />
+            <MotionTile label="Annual Conference" value={annualConferenceTotal > 0 ? formatCurrency(annualConferenceTotal) : "0"} accent="emerald" icon={<Church className="h-5 w-5" />}
+              onClick={annualConferenceTotal > 0 ? () => navigate("/donations") : undefined} index={4} />
             <MotionTile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}
-              onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} index={4} />
+              onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} index={5} />
             <MotionTile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}
-              onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} index={5} />
+              onClick={kpis.pendingExpenses > 0 ? () => navigate("/expenses") : undefined} index={6} />
             {isAdmin && (
               <MotionTile
                 label="My reimbursements"
@@ -479,7 +489,7 @@ export default function Dashboard() {
                 accent={myPendingExpenses > 0 ? "amber" : "emerald"}
                 icon={<Banknote className="h-5 w-5" />}
                 onClick={() => navigate("/expenses")}
-                index={6}
+                index={7}
               />
             )}
           </>

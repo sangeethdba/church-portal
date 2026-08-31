@@ -311,6 +311,7 @@ function QuickOnlineEntry({
               <option value="building">Building fund</option>
               <option value="missions">Missions</option>
               <option value="book_room">Book room</option>
+              <option value="annual_conference">Annual Conference</option>
               <option value="other">Other</option>
             </Select>
           </div>
@@ -924,6 +925,7 @@ export default function Donations() {
                                 <option value="building">Building</option>
                                 <option value="missions">Missions</option>
                                 <option value="book_room">Book room</option>
+                                <option value="annual_conference">Annual Conference</option>
                                 <option value="other">Other</option>
                               </select>
                             </td>
@@ -1025,6 +1027,7 @@ export default function Donations() {
                     <option value="building">Building fund</option>
                     <option value="missions">Missions</option>
                     <option value="book_room">Book room</option>
+                    <option value="annual_conference">Annual Conference</option>
                     <option value="other">Other</option>
                   </Select>
                 </div>
@@ -1101,6 +1104,7 @@ export default function Donations() {
               <option value="building">Building</option>
               <option value="missions">Missions</option>
               <option value="book_room">Book room</option>
+              <option value="annual_conference">Annual Conference</option>
               <option value="other">Other</option>
             </Select>
           </div>

@@ -328,6 +328,7 @@ export function MemberOverview() {
                 <option value="offering">Offering</option>
                 <option value="building">Building</option>
                 <option value="missions">Missions</option>
+                <option value="annual_conference">Annual Conference</option>
                 <option value="other">Other</option>
               </Select>
               <Select value={donFilterMethod} onChange={(e) => setDonFilterMethod(e.target.value)} className="h-8 w-28 text-xs">
