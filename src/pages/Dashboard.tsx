@@ -477,7 +477,7 @@ export default function Dashboard() {
             <MotionTile label="Book room" value={bookRoomTotal > 0 ? formatCurrency(bookRoomTotal) : "0"} accent="emerald" icon={<CircleDollarSign className="h-5 w-5" />}
               onClick={bookRoomTotal > 0 ? () => navigate("/donations") : undefined} index={3} />
             <MotionTile label="Annual Conference" value={annualConferenceTotal > 0 ? formatCurrency(annualConferenceTotal) : "0"} accent="emerald" icon={<Church className="h-5 w-5" />}
-              onClick={annualConferenceTotal > 0 ? () => navigate("/donations") : undefined} index={4} />
+              onClick={annualConferenceTotal > 0 ? () => navigate("/annual-conference") : undefined} index={4} />
             <MotionTile label="Pending deposits" value={pendingDeposits > 0 ? `${pendingDeposits} · ${formatCurrency(pendingDepositTotal)}` : "0"} accent="amber" icon={<Banknote className="h-5 w-5" />}
               onClick={pendingDeposits > 0 ? () => navigate("/offerings") : undefined} index={5} />
             <MotionTile label="Pending expenses" value={kpis.pendingExpenses.toString()} accent="amber" icon={<Receipt className="h-5 w-5" />}

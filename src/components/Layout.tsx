@@ -34,6 +34,7 @@ const allItems = [
   { to: "/donors", label: "Donors", icon: Users, roles: ["admin"] as string[] },
   { to: "/tax-report", label: "Tax report", icon: FileText, roles: ["admin"] as string[] },
   { to: "/reports", label: "Reports", icon: BarChart3, roles: ["admin"] as string[] },
+  { to: "/annual-conference", label: "Annual Conference", icon: Church, roles: ["admin"] as string[] },
   { to: "/import", label: "Import", icon: Upload, roles: ["admin"] as string[] },
   { to: "/annual-report", label: "Annual report", icon: FileText, roles: ["admin"] as string[] },
   { to: "/reconciliation", label: "Reconciliation", icon: Calculator, roles: ["admin"] as string[] },

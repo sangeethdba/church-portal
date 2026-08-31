@@ -16,6 +16,7 @@ import Reports from "@/pages/Reports";
 import ImportStatements from "@/pages/ImportStatements";
 import AnnualReport from "@/pages/AnnualReport";
 import Reconciliation from "@/pages/Reconciliation";
+import AnnualConference from "@/pages/AnnualConference";
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/tax-report" element={<TaxReport />} />
           <Route path="/offerings" element={<Offerings />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/annual-conference" element={<AnnualConference />} />
           <Route path="/import" element={<ImportStatements />} />
           <Route path="/annual-report" element={<AnnualReport />} />
           <Route path="/reconciliation" element={<Reconciliation />} />

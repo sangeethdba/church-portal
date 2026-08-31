@@ -1116,6 +1116,7 @@ export default function Offerings() {
                     <option>New Year's Day (Jan 1)</option>
                     <option>Midweek Service</option>
                     <option>Wednesday Bible Study</option>
+                    <option>Annual Conference</option>
                     <option>Christmas Eve</option>
                     <option>Easter</option>
                     <option>Special Event</option>
