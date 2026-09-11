@@ -22,6 +22,16 @@ interface OfferingRow {
   online_amount?: number;
 }
 
+/// Individual check or cash gift row inside an offering.
+interface OfferingCheckRow {
+  id: string;
+  offering_id: string;
+  donor_name: string;
+  check_number?: string | null;
+  amount: number;
+  method: string;
+}
+
 const methodLabel = (m?: string | null) =>
   !m ? "—" : m === "check" ? "Check" : m === "cash" ? "Cash" : m === "online" ? "Online" : m === "card" ? "Card" : m.replace(/_/g, " ");
 
@@ -40,7 +50,9 @@ export default function AnnualConference() {
 
   const [donations, setDonations] = useState<Donation[]>([]);
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
+  const [offeringChecks, setOfferingChecks] = useState<Record<string, OfferingCheckRow[]>>({});
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [submitterNames, setSubmitterNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
@@ -67,9 +79,45 @@ export default function AnnualConference() {
           .or("event_name.ilike.%annual conference%,category.eq.conference")
           .order("submitted_at", { ascending: false }),
       ]);
-      setDonations((donRes.data as Donation[]) ?? []);
-      setOfferings((offRes.data as OfferingRow[]) ?? []);
-      setExpenses((expRes.data as Expense[]) ?? []);
+
+      const dons = (donRes.data as Donation[]) ?? [];
+      const offs = (offRes.data as OfferingRow[]) ?? [];
+      const exps = (expRes.data as Expense[]) ?? [];
+
+      setDonations(dons);
+      setOfferings(offs);
+      setExpenses(exps);
+
+      // Fetch individual check/cash-gift rows for each offering
+      if (offs.length > 0) {
+        const offeringIds = offs.map((o) => o.id);
+        const checksRes = await supabase
+          .from("offering_checks")
+          .select("*")
+          .in("offering_id", offeringIds)
+          .order("amount", { ascending: false });
+
+        const grouped: Record<string, OfferingCheckRow[]> = {};
+        for (const row of (checksRes.data ?? []) as OfferingCheckRow[]) {
+          (grouped[row.offering_id] ??= []).push(row);
+        }
+        setOfferingChecks(grouped);
+      }
+
+      // Resolve submitter names from profiles
+      const userIds = [...new Set(exps.map((e) => e.user_id).filter(Boolean) as string[])];
+      if (userIds.length > 0) {
+        const profilesRes = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", userIds);
+
+        const nameMap: Record<string, string> = {};
+        for (const p of (profilesRes.data ?? []) as { id: string; full_name: string | null }[]) {
+          nameMap[p.id] = p.full_name ?? "Unknown";
+        }
+        setSubmitterNames(nameMap);
+      }
     })().finally(() => setLoading(false));
   }, [isOversight]);
 
@@ -94,9 +142,9 @@ export default function AnnualConference() {
 
       const expenseRows: ConferenceExpenseRow[] = expenses.map((e) => ({
         date: e.submitted_at,
-        payee: e.title || e.description || "—",
+        payee: e.title || e.description || "\u2014",
         category: e.category.replace(/_/g, " "),
-        method: e.payment_method ? e.payment_method.replace(/_/g, " ") : "—",
+        method: e.payment_method ? e.payment_method.replace(/_/g, " ") : "\u2014",
         amount: Number(e.amount ?? 0),
       }));
 
@@ -139,7 +187,7 @@ export default function AnnualConference() {
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageHeader
         title="Annual Conference"
-        subtitle="Everything given toward and spent on the Annual Conference — donations, the conference-Sunday collection, and linked expenses."
+        subtitle="Everything given toward and spent on the Annual Conference \u2014 donations, the conference-Sunday collection, and linked expenses."
         badge="Report"
       />
 
@@ -224,7 +272,7 @@ export default function AnnualConference() {
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent/90 disabled:opacity-50"
             >
               <Download className="h-4 w-4" />
-              {generatingPdf ? "Generating…" : "Download PDF report"}
+              {generatingPdf ? "Generating\u2026" : "Download PDF report"}
             </button>
           </div>
 
@@ -236,7 +284,7 @@ export default function AnnualConference() {
                 <CardBody>
                   <p className="text-2xl font-semibold">{formatCurrency(donationTotal)}</p>
                   <p className="text-xs text-stone-500">
-                    {donations.length} donation{donations.length === 1 ? "" : "s"} tagged "Annual Conference" on the Donations page.
+                    {donations.length} donation{donations.length === 1 ? "" : "s"} tagged &ldquo;Annual Conference&rdquo; on the Donations page.
                   </p>
                 </CardBody>
               </Card>
@@ -245,7 +293,7 @@ export default function AnnualConference() {
                 <CardBody>
                   <p className="text-2xl font-semibold">{formatCurrency(offeringTotal)}</p>
                   <p className="text-xs text-stone-500">
-                    {offerings.length} offering{offerings.length === 1 ? "" : "s"} recorded with Service name "Annual Conference" on the Offerings page.
+                    {offerings.length} offering{offerings.length === 1 ? "" : "s"} recorded with Service name &ldquo;Annual Conference&rdquo; on the Offerings page.
                   </p>
                 </CardBody>
               </Card>
@@ -253,10 +301,10 @@ export default function AnnualConference() {
 
             {/* ── Income detail table ──────────────────────────────────── */}
             <Card>
-              <CardHeader>Income — donations & conference-Sunday collection</CardHeader>
+              <CardHeader>Income \u2014 donations &amp; conference-Sunday collection</CardHeader>
               <CardBody>
                 {donationTotal === 0 && offeringTotal === 0 ? (
-                  <EmptyState icon={<HandCoins className="h-6 w-6" />} title="No conference income yet" description={"Tag donations as “Annual Conference” on the Donations page, and record the conference Sunday with Service name “Annual Conference” on the Offerings page."} />
+                  <EmptyState icon={<HandCoins className="h-6 w-6" />} title="No conference income yet" description={'Tag donations as \u201cAnnual Conference\u201d on the Donations page, and record the conference Sunday with Service name \u201cAnnual Conference\u201d on the Offerings page.'} />
                 ) : (
                   <TableWrap>
                     <THead>
@@ -268,33 +316,62 @@ export default function AnnualConference() {
                       <Th className="text-right">Amount</Th>
                     </THead>
                     <tbody>
+                      {/* Individual named donations */}
                       {donations.map((d) => (
                         <Tr key={d.id}>
                           <Td>{formatDate(d.donation_date)}</Td>
                           <Td className="font-medium">{d.donor_name || "Anonymous"}</Td>
                           <Td><Badge tone="indigo">{methodLabel(d.payment_method)}</Badge></Td>
-                          <Td className="text-stone-500">{d.check_number || "—"}</Td>
-                          <Td className="max-w-[140px] truncate text-stone-500" title={d.notes || undefined}>{d.notes || "—"}</Td>
+                          <Td className="text-stone-500">{d.check_number || "\u2014"}</Td>
+                          <Td className="max-w-[140px] truncate text-stone-500" title={d.notes || undefined}>{d.notes || "\u2014"}</Td>
                           <Td className="text-right font-medium">{formatCurrency(Number(d.amount ?? 0))}</Td>
                         </Tr>
                       ))}
-                      {offerings.map((o) => (
-                        <Tr key={o.id}>
-                          <Td>{formatDate(o.service_date)}</Td>
-                          <Td className="font-medium">{o.service_name} offering</Td>
-                          <Td>
-                            <div className="flex flex-wrap gap-1">
-                              {Number(o.cash_amount ?? 0) > 0 && <Badge tone="amber">Cash {formatCurrency(o.cash_amount!)}</Badge>}
-                              {Number(o.check_amount ?? 0) > 0 && <Badge tone="indigo">Check {formatCurrency(o.check_amount!)}</Badge>}
-                              {Number(o.online_amount ?? 0) > 0 && <Badge tone="emerald">Online {formatCurrency(o.online_amount!)}</Badge>}
-                              {!o.cash_amount && !o.check_amount && !o.online_amount && <Badge tone="indigo">Offering plate</Badge>}
-                            </div>
-                          </Td>
-                          <Td className="text-stone-500">—</Td>
-                          <Td className="text-stone-500">—</Td>
-                          <Td className="text-right font-medium">{formatCurrency(Number(o.total_amount ?? 0))}</Td>
-                        </Tr>
-                      ))}
+
+                      {/* Conference-Sunday offering: individual check & cash-gift rows */}
+                      {offerings.map((o) => {
+                        const checks = offeringChecks[o.id] ?? [];
+                        if (checks.length === 0) {
+                          // No individual rows — show the aggregate
+                          return (
+                            <Tr key={o.id}>
+                              <Td>{formatDate(o.service_date)}</Td>
+                              <Td className="font-medium">{o.service_name} offering</Td>
+                              <Td>
+                                <div className="flex flex-wrap gap-1">
+                                  {Number(o.cash_amount ?? 0) > 0 && <Badge tone="amber">Cash {formatCurrency(o.cash_amount!)}</Badge>}
+                                  {Number(o.check_amount ?? 0) > 0 && <Badge tone="indigo">Check {formatCurrency(o.check_amount!)}</Badge>}
+                                  {Number(o.online_amount ?? 0) > 0 && <Badge tone="emerald">Online {formatCurrency(o.online_amount!)}</Badge>}
+                                  {!o.cash_amount && !o.check_amount && !o.online_amount && <Badge tone="indigo">Offering plate</Badge>}
+                                </div>
+                              </Td>
+                              <Td className="text-stone-500">{"\u2014"}</Td>
+                              <Td className="text-stone-500">{"\u2014"}</Td>
+                              <Td className="text-right font-medium">{formatCurrency(Number(o.total_amount ?? 0))}</Td>
+                            </Tr>
+                          );
+                        }
+
+                        // Render each individual check/cash gift as its own row
+                        return checks.map((ck, idx) => (
+                          <Tr key={`${o.id}-${ck.id}`}>
+                            <Td>{idx === 0 ? formatDate(o.service_date) : ""}</Td>
+                            <Td className="font-medium">
+                              {ck.donor_name || (ck.method === "cash" ? "Anonymous cash" : "\u2014")}
+                              {idx === 0 && <span className="ml-1 text-xs text-stone-400">{o.service_name}</span>}
+                            </Td>
+                            <Td>
+                              <Badge tone={ck.method === "cash" ? "amber" : "indigo"}>
+                                {ck.method === "cash" ? "Named cash" : "Check"}
+                              </Badge>
+                            </Td>
+                            <Td className="text-stone-500">{ck.check_number || "\u2014"}</Td>
+                            <Td className="text-stone-500">{"\u2014"}</Td>
+                            <Td className="text-right font-medium">{formatCurrency(Number(ck.amount ?? 0))}</Td>
+                          </Tr>
+                        ));
+                      })}
+
                       <Tr>
                         <Td className="font-semibold" colSpan={5}>Total conference income</Td>
                         <Td className="text-right font-semibold">{formatCurrency(incomeTotal)}</Td>
@@ -307,15 +384,16 @@ export default function AnnualConference() {
 
             {/* ── Expenses detail table ─────────────────────────────────── */}
             <Card>
-              <CardHeader>Expenses — linked to Annual Conference</CardHeader>
+              <CardHeader>Expenses \u2014 linked to Annual Conference</CardHeader>
               <CardBody>
                 {expenseTotal === 0 ? (
-                  <EmptyState icon={<Receipt className="h-6 w-6" />} title="No conference expenses yet" description={"Tag expenses with the event “Annual Conference”, or use the “Conference” category, on the Expenses page."} />
+                  <EmptyState icon={<Receipt className="h-6 w-6" />} title="No conference expenses yet" description={'Tag expenses with the event \u201cAnnual Conference\u201d, or use the \u201cConference\u201d category, on the Expenses page.'} />
                 ) : (
                   <TableWrap>
                     <THead>
                       <Th>Date</Th>
                       <Th>Payee / title</Th>
+                      <Th>Submitted by</Th>
                       <Th>Category</Th>
                       <Th>Method</Th>
                       <Th>Status</Th>
@@ -327,7 +405,10 @@ export default function AnnualConference() {
                         return (
                           <Tr key={e.id}>
                             <Td>{formatDate(e.submitted_at)}</Td>
-                            <Td className="font-medium">{e.title || e.description || "—"}</Td>
+                            <Td className="font-medium">{e.title || e.description || "\u2014"}</Td>
+                            <Td className="text-stone-500">
+                              {e.user_id ? (submitterNames[e.user_id] || "\u2014") : (e.source === "church_direct" ? "Church" : "\u2014")}
+                            </Td>
                             <Td>{e.category.replace(/_/g, " ")}</Td>
                             <Td>{methodLabel(e.payment_method)}</Td>
                             <Td><Badge tone={st.tone}>{st.text}</Badge></Td>
@@ -336,7 +417,7 @@ export default function AnnualConference() {
                         );
                       })}
                       <Tr>
-                        <Td className="font-semibold" colSpan={5}>Total conference expenses</Td>
+                        <Td className="font-semibold" colSpan={6}>Total conference expenses</Td>
                         <Td className="text-right font-semibold">{formatCurrency(expenseTotal)}</Td>
                       </Tr>
                     </tbody>
