@@ -126,6 +126,30 @@ export default function AnnualConference() {
     setGeneratingPdf(true);
     try {
       await initPdfLogo();
+      // Expand each offering into its individual check / cash-gift rows
+      const offeringIncomeRows: ConferenceIncomeRow[] = offerings.flatMap((o) => {
+        const checks = offeringChecks[o.id] ?? [];
+        if (checks.length === 0) {
+          // No individual rows recorded — show the aggregate
+          return [{
+            date: o.service_date,
+            from: `${o.service_name} offering`,
+            type: "Offering plate",
+            checkNumber: null,
+            note: null,
+            amount: Number(o.total_amount ?? 0),
+          }];
+        }
+        return checks.map((ck) => ({
+          date: o.service_date,
+          from: ck.donor_name || (ck.method === "cash" ? "Anonymous cash" : "\u2014"),
+          type: ck.method === "cash" ? "Named cash" : "Check",
+          checkNumber: ck.check_number || null,
+          note: null,
+          amount: Number(ck.amount ?? 0),
+        }));
+      });
+
       const incomeRows: ConferenceIncomeRow[] = [
         ...donations.map((d) => ({
           date: d.donation_date,
@@ -135,14 +159,7 @@ export default function AnnualConference() {
           note: d.notes || null,
           amount: Number(d.amount ?? 0),
         })),
-        ...offerings.map((o) => ({
-          date: o.service_date,
-          from: `${o.service_name} offering`,
-          type: "Offering plate",
-          checkNumber: null,
-          note: null,
-          amount: Number(o.total_amount ?? 0),
-        })),
+        ...offeringIncomeRows,
       ].sort((a, b) => a.date.localeCompare(b.date));
 
       const expenseRows: ConferenceExpenseRow[] = expenses.map((e) => ({
