@@ -92,15 +92,36 @@ export default function AnnualConference() {
       // Fetch individual check/cash-gift rows for each offering
       if (offs.length > 0) {
         const offeringIds = offs.map((o) => o.id);
+
+        // offering_checks = checks from the deposit slip
         const checksRes = await supabase
           .from("offering_checks")
           .select("*")
           .in("offering_id", offeringIds)
           .order("amount", { ascending: false });
 
+        // donations linked to offering = named cash gifts recorded separately
+        const giftsRes = await supabase
+          .from("donations")
+          .select("id, offering_id, donor_name, amount, payment_method")
+          .in("offering_id", offeringIds)
+          .eq("payment_method", "cash")
+          .order("amount", { ascending: false });
+
         const grouped: Record<string, OfferingCheckRow[]> = {};
         for (const row of (checksRes.data ?? []) as OfferingCheckRow[]) {
           (grouped[row.offering_id] ??= []).push(row);
+        }
+        // Merge named cash gifts from donations table
+        for (const row of (giftsRes.data ?? []) as { id: string; offering_id: string; donor_name: string; amount: number; payment_method: string }[]) {
+          (grouped[row.offering_id] ??= []).push({
+            id: row.id,
+            offering_id: row.offering_id,
+            donor_name: row.donor_name || "Anonymous cash",
+            check_number: null,
+            amount: Number(row.amount ?? 0),
+            method: "cash",
+          });
         }
         setOfferingChecks(grouped);
       }
