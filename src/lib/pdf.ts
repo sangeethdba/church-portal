@@ -1389,12 +1389,15 @@ export interface ConferenceIncomeRow {
   date: string;
   from: string;
   type: string; // e.g. "Annual Conference" or "Offering plate"
+  checkNumber?: string | null;
+  note?: string | null;
   amount: number;
 }
 
 export interface ConferenceExpenseRow {
   date: string;
   payee: string;
+  submittedBy?: string | null;
   category: string;
   method: string;
   amount: number;
@@ -1495,8 +1498,9 @@ export function generateAnnualConferenceReport(r: AnnualConferenceReportData): j
       doc.setFontSize(9);
       doc.setTextColor(120, 113, 108);
       doc.text("Date", margin + 8, y);
-      doc.text("From", margin + 120, y);
-      doc.text("Type", margin + 290, y);
+      doc.text("From", margin + 100, y);
+      doc.text("Type", margin + 230, y);
+      doc.text("Check #", margin + 320, y);
       doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
       y += 14;
       doc.setFont("helvetica", "normal");
@@ -1511,8 +1515,9 @@ export function generateAnnualConferenceReport(r: AnnualConferenceReportData): j
         incomeHeader();
       }
       doc.text(formatDateLong(row.date), margin + 8, y);
-      doc.text((row.from || "Anonymous").slice(0, 28), margin + 120, y);
-      doc.text(row.type, margin + 290, y);
+      doc.text((row.from || "Anonymous").slice(0, 24), margin + 100, y);
+      doc.text(row.type, margin + 230, y);
+      doc.text(row.checkNumber || "\u2014", margin + 320, y);
       doc.text(formatCurrency(row.amount), pageWidth - margin - 8, y, { align: "right" });
       y += 16;
     }
@@ -1546,9 +1551,9 @@ export function generateAnnualConferenceReport(r: AnnualConferenceReportData): j
       doc.setFontSize(9);
       doc.setTextColor(120, 113, 108);
       doc.text("Date", margin + 8, y);
-      doc.text("Payee / title", margin + 110, y);
-      doc.text("Category", margin + 280, y);
-      doc.text("Method", margin + 360, y);
+      doc.text("Payee / title", margin + 100, y);
+      doc.text("Submitted by", margin + 240, y);
+      doc.text("Status", margin + 340, y);
       doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
       y += 14;
       doc.setFont("helvetica", "normal");
@@ -1563,9 +1568,9 @@ export function generateAnnualConferenceReport(r: AnnualConferenceReportData): j
         expHeader();
       }
       doc.text(formatDateLong(row.date), margin + 8, y);
-      doc.text((row.payee || "\u2014").slice(0, 26), margin + 110, y);
-      doc.text(row.category, margin + 280, y);
-      doc.text(row.method || "\u2014", margin + 360, y);
+      doc.text((row.payee || "\u2014").slice(0, 22), margin + 100, y);
+      doc.text((row.submittedBy || "\u2014").slice(0, 18), margin + 240, y);
+      doc.text(row.method || "\u2014", margin + 340, y);
       doc.text(formatCurrency(row.amount), pageWidth - margin - 8, y, { align: "right" });
       y += 16;
     }

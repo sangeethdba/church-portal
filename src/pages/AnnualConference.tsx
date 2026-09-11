@@ -77,6 +77,7 @@ export default function AnnualConference() {
           .from("expenses")
           .select("*")
           .or("event_name.ilike.%annual conference%,category.eq.conference")
+          .neq("status", "rejected")
           .order("submitted_at", { ascending: false }),
       ]);
 
@@ -130,12 +131,16 @@ export default function AnnualConference() {
           date: d.donation_date,
           from: d.donor_name || "Anonymous",
           type: donationTypeLabel(d.donation_type),
+          checkNumber: d.check_number || null,
+          note: d.notes || null,
           amount: Number(d.amount ?? 0),
         })),
         ...offerings.map((o) => ({
           date: o.service_date,
           from: `${o.service_name} offering`,
           type: "Offering plate",
+          checkNumber: null,
+          note: null,
           amount: Number(o.total_amount ?? 0),
         })),
       ].sort((a, b) => a.date.localeCompare(b.date));
@@ -143,6 +148,7 @@ export default function AnnualConference() {
       const expenseRows: ConferenceExpenseRow[] = expenses.map((e) => ({
         date: e.submitted_at,
         payee: e.title || e.description || "\u2014",
+        submittedBy: e.user_id ? (submitterNames[e.user_id] || null) : (e.source === "church_direct" ? "Church" : null),
         category: e.category.replace(/_/g, " "),
         method: e.payment_method ? e.payment_method.replace(/_/g, " ") : "\u2014",
         amount: Number(e.amount ?? 0),
