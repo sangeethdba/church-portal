@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ALF_DOCUMENT_BRANDING,
+  generateAnnualConferenceReport,
   generateAnnualStatement,
   generateMemberReport,
   generateOfferingReceipt,
@@ -131,6 +132,36 @@ describe("Atlanta Little Flock PDF documents", () => {
     expect(report.getNumberOfPages()).toBe(1);
     expect(summary.output("datauristring")).toContain("data:application/pdf");
     expect(receipt.output("datauristring")).toContain("data:application/pdf");
+    expect(report.output("datauristring")).toContain("data:application/pdf");
+  });
+
+  it("generates a branded Annual Conference summary PDF with income, expenses, and net", () => {
+    const report = generateAnnualConferenceReport({
+      churchName: "Atlanta Little Flock Church",
+      year: 2026,
+      incomeRows: [
+        { date: "2026-07-01", from: "John Smith", type: "Annual Conference", amount: 2000 },
+        { date: "2026-07-15", from: "Anonymous", type: "Annual Conference", amount: 500 },
+        { date: "2026-08-03", from: "Annual Conference offering", type: "Offering plate", amount: 3200 },
+      ],
+      incomeTotal: 5700,
+      expenseRows: [
+        { date: "2026-07-20", payee: "Venue rental", category: "conference", method: "check", amount: 1500 },
+        { date: "2026-08-01", payee: "Catering", category: "conference", method: "card", amount: 800 },
+      ],
+      expenseTotal: 2300,
+      net: 3400,
+      generatedBy: "Sangeeth Talluri",
+    });
+
+    expect(report.getNumberOfPages()).toBeGreaterThan(0);
+    const pdfBytes = new TextDecoder().decode(new Uint8Array(report.output("arraybuffer")));
+    expect(pdfBytes).toContain("Annual Conference Report");
+    expect(pdfBytes).toContain("2026");
+    expect(pdfBytes).toContain("John Smith");
+    expect(pdfBytes).toContain("Venue rental");
+    expect(pdfBytes).toContain("Surplus");
+    expect(pdfBytes).toContain("Sangeeth Talluri");
     expect(report.output("datauristring")).toContain("data:application/pdf");
   });
 

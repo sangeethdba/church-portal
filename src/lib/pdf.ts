@@ -1383,6 +1383,267 @@ export function downloadAnnualReport(r: AnnualReportData) {
   pdf.save(`annual-report-${church}-${r.year}.pdf`);
 }
 
+// ── Annual Conference report ──────────────────────────────────────────
+
+export interface ConferenceIncomeRow {
+  date: string;
+  from: string;
+  type: string; // e.g. "Annual Conference" or "Offering plate"
+  amount: number;
+}
+
+export interface ConferenceExpenseRow {
+  date: string;
+  payee: string;
+  category: string;
+  method: string;
+  amount: number;
+}
+
+export interface AnnualConferenceReportData {
+  churchName: string;
+  year: number;
+  incomeRows: ConferenceIncomeRow[];
+  incomeTotal: number;
+  expenseRows: ConferenceExpenseRow[];
+  expenseTotal: number;
+  net: number;
+  generatedBy: string;
+}
+
+/** Generate a professional Annual Conference summary PDF. */
+export function generateAnnualConferenceReport(r: AnnualConferenceReportData): jsPDF {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 50;
+  const bodyWidth = pageWidth - margin * 2;
+  let y = margin;
+
+  const newPage = (sectionTitle?: string) => {
+    drawDocumentFooter(doc);
+    doc.addPage();
+    y = drawDocumentHeader(
+      doc,
+      r.churchName,
+      `Annual Conference Report \u00b7 ${r.year}`,
+      [sectionTitle ? `Section: ${sectionTitle}` : ""],
+    );
+  };
+
+  // ── Cover / KPI page ────────────────────────────────────────────────
+  y = drawDocumentHeader(doc, r.churchName, `Annual Conference Report \u00b7 ${r.year}`);
+
+  // Centered title block
+  y = 180;
+  doc.setFont("times", "bold");
+  doc.setFontSize(26);
+  doc.setTextColor(28, 25, 23);
+  doc.text("Annual Conference Report", pageWidth / 2, y, { align: "center" });
+  y += 32;
+  doc.setFontSize(18);
+  doc.text(String(r.year), pageWidth / 2, y, { align: "center" });
+  y += 28;
+  doc.setDrawColor(79, 70, 229);
+  doc.setLineWidth(1.5);
+  doc.line(pageWidth / 2 - 120, y, pageWidth / 2 + 120, y);
+  y += 36;
+
+  // KPI tiles
+  const kpi = (label: string, value: string, color: [number, number, number]) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(120, 113, 108);
+    doc.text(label, pageWidth / 2, y, { align: "center" });
+    y += 16;
+    doc.setFont("times", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(color[0], color[1], color[2]);
+    doc.text(value, pageWidth / 2, y, { align: "center" });
+    y += 32;
+  };
+
+  kpi("Conference income", formatCurrency(r.incomeTotal), [4, 120, 87]);
+  kpi("Conference expenses", formatCurrency(r.expenseTotal), [225, 29, 72]);
+  kpi("Net to conference", `${r.net >= 0 ? "+" : ""}${formatCurrency(r.net)}`, r.net >= 0 ? [79, 70, 229] : [225, 29, 72]);
+
+  y += 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(120, 113, 108);
+  doc.text(`Prepared by ${r.generatedBy} \u00b7 ${formatDateLong(new Date())}`, pageWidth / 2, y, { align: "center" });
+  y += 14;
+  doc.text(
+    `${r.incomeRows.length} income item${r.incomeRows.length === 1 ? "" : "s"} \u00b7 ${r.expenseRows.length} expense${r.expenseRows.length === 1 ? "" : "s"}`,
+    pageWidth / 2,
+    y,
+    { align: "center" },
+  );
+
+  // ── Section: Income detail ──────────────────────────────────────────
+  if (r.incomeRows.length > 0) {
+    newPage("Income detail");
+    doc.setFont("times", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(28, 25, 23);
+    doc.text("Income detail", margin, y);
+    y += 22;
+
+    const incomeHeader = () => {
+      doc.setFillColor(240, 253, 244);
+      doc.rect(margin, y - 14, bodyWidth, 22, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(120, 113, 108);
+      doc.text("Date", margin + 8, y);
+      doc.text("From", margin + 120, y);
+      doc.text("Type", margin + 290, y);
+      doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(28, 25, 23);
+      doc.setFontSize(10);
+    };
+
+    incomeHeader();
+    for (const row of r.incomeRows) {
+      if (y > 700) {
+        newPage("Income detail");
+        incomeHeader();
+      }
+      doc.text(formatDateLong(row.date), margin + 8, y);
+      doc.text((row.from || "Anonymous").slice(0, 28), margin + 120, y);
+      doc.text(row.type, margin + 290, y);
+      doc.text(formatCurrency(row.amount), pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+
+    y += 6;
+    doc.setDrawColor(79, 70, 229);
+    doc.setLineWidth(1);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 18;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(28, 25, 23);
+    doc.text("Total conference income", margin + 8, y);
+    doc.text(formatCurrency(r.incomeTotal), pageWidth - margin - 8, y, { align: "right" });
+    y += 28;
+  }
+
+  // ── Section: Expenses detail ────────────────────────────────────────
+  if (r.expenseRows.length > 0) {
+    if (y > 560) newPage("Expenses detail");
+    doc.setFont("times", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(28, 25, 23);
+    doc.text("Expenses detail", margin, y);
+    y += 22;
+
+    const expHeader = () => {
+      doc.setFillColor(254, 242, 242);
+      doc.rect(margin, y - 14, bodyWidth, 22, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(120, 113, 108);
+      doc.text("Date", margin + 8, y);
+      doc.text("Payee / title", margin + 110, y);
+      doc.text("Category", margin + 280, y);
+      doc.text("Method", margin + 360, y);
+      doc.text("Amount", pageWidth - margin - 8, y, { align: "right" });
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(28, 25, 23);
+      doc.setFontSize(10);
+    };
+
+    expHeader();
+    for (const row of r.expenseRows) {
+      if (y > 700) {
+        newPage("Expenses detail");
+        expHeader();
+      }
+      doc.text(formatDateLong(row.date), margin + 8, y);
+      doc.text((row.payee || "\u2014").slice(0, 26), margin + 110, y);
+      doc.text(row.category, margin + 280, y);
+      doc.text(row.method || "\u2014", margin + 360, y);
+      doc.text(formatCurrency(row.amount), pageWidth - margin - 8, y, { align: "right" });
+      y += 16;
+    }
+
+    y += 6;
+    doc.setDrawColor(190, 18, 60);
+    doc.setLineWidth(1);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 18;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(28, 25, 23);
+    doc.text("Total conference expenses", margin + 8, y);
+    doc.text(formatCurrency(r.expenseTotal), pageWidth - margin - 8, y, { align: "right" });
+    y += 28;
+  }
+
+  // ── Net position box ────────────────────────────────────────────────
+  if (y > 640) newPage();
+  y += 10;
+  doc.setFillColor(28, 25, 23);
+  doc.roundedRect(margin, y - 10, bodyWidth, 40, 4, 4, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(r.net >= 0 ? "Surplus" : "Deficit", margin + 12, y + 12);
+  doc.setFont("times", "bold");
+  doc.setFontSize(20);
+  const netLabel = `${r.net >= 0 ? "+" : ""}${formatCurrency(r.net)}`;
+  doc.text(netLabel, pageWidth - margin - 12, y + 14, { align: "right" });
+  y += 48;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(87, 83, 78);
+  doc.text(
+    `${formatCurrency(r.incomeTotal)} received \u2212 ${formatCurrency(r.expenseTotal)} spent`,
+    margin,
+    y,
+  );
+  y += 24;
+
+  // Closing
+  doc.setFont("times", "italic");
+  doc.setFontSize(11);
+  doc.setTextColor(28, 25, 23);
+  doc.text(
+    `This report summarizes all income and expenses related to the Annual Conference at ${displayChurchName(r.churchName)} for the year ${r.year}.`,
+    margin,
+    y,
+    { maxWidth: bodyWidth },
+  );
+  y += 28;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text("Respectfully submitted,", margin, y);
+  y += 18;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text(r.generatedBy, margin, y);
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(120, 113, 108);
+  doc.text(`Treasurer, ${displayChurchName(r.churchName)}`, margin, y);
+
+  // Footer
+  drawDocumentFooter(doc);
+  return finalizeDocument(doc);
+}
+
+export function downloadAnnualConferenceReport(r: AnnualConferenceReportData) {
+  const pdf = generateAnnualConferenceReport(r);
+  const church = r.churchName.replace(/\s+/g, "-").toLowerCase();
+  pdf.save(`annual-conference-${church}-${r.year}.pdf`);
+}
+
 /** Shared helper: draw a clean header + row table at the current y position.
  *  Advances y past the table. */
 function drawSimpleTable(

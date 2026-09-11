@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { HandCoins, Receipt, TrendingUp, Church } from "lucide-react";
+import { HandCoins, Receipt, TrendingUp, Church, Download } from "lucide-react";
 import {
   Card, CardBody, CardHeader, MotionTile, Badge, EmptyState,
   TableWrap, THead, Tr, Th, Td, Skeleton,
 } from "@/components/ui";
 import { PageHeader } from "@/components/Layout";
 import { supabase, isOversightRole, type Profile, type Donation, type Expense } from "@/lib/supabase";
+import { downloadAnnualConferenceReport, initPdfLogo, ALF_DOCUMENT_BRANDING, type ConferenceIncomeRow, type ConferenceExpenseRow } from "@/lib/pdf";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { donationTypeLabel } from "@/lib/accounting";
 
@@ -28,6 +29,7 @@ export default function AnnualConference() {
   const [offerings, setOfferings] = useState<OfferingRow[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     if (!isOversight) {
@@ -57,6 +59,48 @@ export default function AnnualConference() {
       setExpenses((expRes.data as Expense[]) ?? []);
     })().finally(() => setLoading(false));
   }, [isOversight]);
+
+  const handleDownloadPdf = async () => {
+    setGeneratingPdf(true);
+    try {
+      await initPdfLogo();
+      const incomeRows: ConferenceIncomeRow[] = [
+        ...donations.map((d) => ({
+          date: d.donation_date,
+          from: d.donor_name || "Anonymous",
+          type: donationTypeLabel(d.donation_type),
+          amount: Number(d.amount ?? 0),
+        })),
+        ...offerings.map((o) => ({
+          date: o.service_date,
+          from: `${o.service_name} offering`,
+          type: "Offering plate",
+          amount: Number(o.total_amount ?? 0),
+        })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+
+      const expenseRows: ConferenceExpenseRow[] = expenses.map((e) => ({
+        date: e.submitted_at,
+        payee: e.title || e.description || "\u2014",
+        category: e.category.replace(/_/g, " "),
+        method: e.payment_method ? e.payment_method.replace(/_/g, " ") : "\u2014",
+        amount: Number(e.amount ?? 0),
+      }));
+
+      downloadAnnualConferenceReport({
+        churchName: ALF_DOCUMENT_BRANDING.name,
+        year: new Date().getFullYear(),
+        incomeRows,
+        incomeTotal,
+        expenseRows,
+        expenseTotal,
+        net,
+        generatedBy: profile?.full_name || "Treasurer",
+      });
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   const donationTotal = donations.reduce((s, d) => s + Number(d.amount ?? 0), 0);
   const offeringTotal = offerings.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
@@ -109,6 +153,17 @@ export default function AnnualConference() {
               deltaPositive={net >= 0}
               index={2}
             />
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={handleDownloadPdf}
+              disabled={generatingPdf}
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-accent/90 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              {generatingPdf ? "Generating…" : "Download PDF report"}
+            </button>
           </div>
 
           <div className="mt-6 space-y-6">
