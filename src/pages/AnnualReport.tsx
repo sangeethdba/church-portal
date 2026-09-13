@@ -79,7 +79,7 @@ export default function AnnualReport() {
   const filteredExp = useMemo(
     () => expenses.filter((e) => {
       const d = e.submitted_at?.slice(0, 10) ?? "";
-      return d >= yStart && d <= yEnd;
+      return d >= yStart && d <= yEnd && e.status !== "rejected";
     }),
     [expenses, yStart, yEnd],
   );
