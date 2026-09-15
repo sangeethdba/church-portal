@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { HandCoins, Receipt, TrendingUp, Church, Download, CreditCard, Banknote, Globe } from "lucide-react";
+import { HandCoins, Receipt, TrendingUp, Church, Download, CreditCard, Banknote, Globe, User } from "lucide-react";
 import {
   Card, CardBody, CardHeader, MotionTile, Badge, EmptyState,
   TableWrap, THead, Tr, Th, Td, Skeleton,
@@ -214,7 +214,7 @@ export default function AnnualConference() {
   const net = incomeTotal - expenseTotal;
 
   // Payment method breakdown across all income
-  const cashTotal = donations
+  const rawCashTotal = donations
     .filter((d) => d.payment_method === "cash")
     .reduce((s, d) => s + Number(d.amount ?? 0), 0)
     + offerings.reduce((s, o) => s + Number(o.cash_amount ?? 0), 0);
@@ -226,6 +226,12 @@ export default function AnnualConference() {
     .filter((d) => d.payment_method === "online" || d.payment_method === "card")
     .reduce((s, d) => s + Number(d.amount ?? 0), 0)
     + offerings.reduce((s, o) => s + Number(o.online_amount ?? 0), 0);
+  // Named cash = individual cash gifts with donor names from conference Sunday offering
+  const namedCashTotal = Object.values(offeringChecks)
+    .flat()
+    .filter((ck) => ck.method === "cash")
+    .reduce((s, ck) => s + Number(ck.amount ?? 0), 0);
+  const cashTotal = rawCashTotal - namedCashTotal;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -242,8 +248,8 @@ export default function AnnualConference() {
           </CardBody>
         </Card>
       ) : loading ? (
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" />
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" />
           <Skeleton className="col-span-full h-48 w-full" />
         </div>
       ) : (
@@ -277,7 +283,7 @@ export default function AnnualConference() {
 
           {/* ── Payment method breakdown ─────────────────────────────────── */}
           {incomeTotal > 0 && (
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50">
                   <Banknote className="h-4 w-4 text-amber-600" />
@@ -285,6 +291,15 @@ export default function AnnualConference() {
                 <div>
                   <div className="text-[11px] font-medium uppercase tracking-wider text-stone-400">Cash</div>
                   <div className="font-serif text-lg font-semibold text-stone-800">{formatCurrency(cashTotal)}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-50">
+                  <User className="h-4 w-4 text-orange-600" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-stone-400">Named Cash</div>
+                  <div className="font-serif text-lg font-semibold text-stone-800">{formatCurrency(namedCashTotal)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 shadow-sm">

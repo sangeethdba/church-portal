@@ -415,7 +415,7 @@ export const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#EDE4D8] bg-[#FFFBF5] p-6 shadow-2xl",
+        "fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#EDE4D8] bg-[#FFFBF5] p-6 shadow-2xl",
         className,
       )}
       {...props}
