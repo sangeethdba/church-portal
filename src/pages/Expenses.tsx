@@ -1583,7 +1583,7 @@ export default function Expenses() {
                   )}
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex-1 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {isAdmin ? (
                   <div className="col-span-2">
@@ -1845,7 +1845,7 @@ export default function Expenses() {
                 )}
               </div>
               </div>
-              <div className="mt-4 flex shrink-0 justify-end gap-2 border-t border-stone-100 pt-4">
+              <div className="mt-3 flex shrink-0 justify-end gap-2 border-t border-stone-100 pt-3">
                 <Button variant="outline" onClick={() => { setOpen(false); setReceiptFiles([]); }}>
                   Cancel
                 </Button>
