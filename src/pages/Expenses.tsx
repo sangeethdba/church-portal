@@ -958,15 +958,15 @@ export default function Expenses() {
   const loadMemberOptions = async (): Promise<{ id: string; name: string }[]> => {
     if (!supabase) return [];
     const [profilesRes, donorsRes] = await Promise.all([
-      supabase.from("profiles").select("id, full_name, linked_donor_id"),
+      supabase.from("profiles").select("id, full_name, linked_donor_id, email"),
       supabase.from("donors").select("id, first_name, last_name"),
     ]);
-    const profiles = (profilesRes.data ?? []) as { id: string; full_name: string | null; linked_donor_id: string | null }[];
+    const profiles = (profilesRes.data ?? []) as { id: string; full_name: string | null; linked_donor_id: string | null; email?: string | null }[];
     const donors = (donorsRes.data ?? []) as { id: string; first_name: string; last_name: string }[];
     const list = profiles
       .map((p) => {
         const linked = p.linked_donor_id ? donors.find((d) => d.id === p.linked_donor_id) : null;
-        const name = p.full_name?.trim() || (linked ? `${linked.first_name} ${linked.last_name}`.trim() : "");
+        const name = p.full_name?.trim() || (linked ? `${linked.first_name} ${linked.last_name}`.trim() : "") || p.email?.trim() || "";
         return { id: p.id, name };
       })
       .filter((m) => m.name.length > 0);
@@ -2489,7 +2489,7 @@ function ExpenseList({
                   </div>
                   {e.user_id && memberNameFor?.get(e.user_id) && (
                     <div className="mt-0.5 text-xs text-stone-500">
-                      Reimbursement to <span className="font-medium text-stone-700">{memberNameFor.get(e.user_id)}</span>
+                      Submitted by <span className="font-medium text-stone-700">{memberNameFor.get(e.user_id)}</span>
                     </div>
                   )}
                   {dupIds?.has(e.id) && (
