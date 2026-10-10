@@ -98,6 +98,9 @@ const sampleExpenses: Expense[] = [
 
 const SUPABASE_FN_URL = "https://qjoxqfkdyugwmgzgjzir.supabase.co/functions/v1/send-reimbursement-email";
 
+/** Short human-friendly reference derived from the expense UUID. */
+const expenseRef = (id: string) => `EXP-${id.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+
 async function notifyMember(expenseId: string) {
   try {
     const { data: session } = await supabase.auth.getSession();
@@ -770,6 +773,9 @@ export default function Expenses() {
         // Notify admins that a member submitted a reimbursement request
         if (form.source === "member_submitted") {
           notifyPortal({ type: "expense_submitted", expense_id: expenseId });
+          toast(`Submitted! Reference ${expenseRef(expenseId)}`, "success");
+        } else {
+          toast("Expense saved.", "success");
         }
       }
     } else {
@@ -2487,6 +2493,7 @@ function ExpenseList({
                   <div className="font-medium text-stone-900">
                     {e.title ?? e.description?.slice(0, 60) ?? "—"}
                   </div>
+                  <div className="mt-0.5 text-[11px] font-mono text-stone-400">{expenseRef(e.id)}</div>
                   {e.user_id && memberNameFor?.get(e.user_id) && (
                     <div className="mt-0.5 text-xs text-stone-500">
                       Submitted by <span className="font-medium text-stone-700">{memberNameFor.get(e.user_id)}</span>
