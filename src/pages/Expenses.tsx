@@ -274,6 +274,9 @@ export default function Expenses() {
         if (!error && data) setExpenses(data as Expense[]);
         setLoading(false);
       });
+    // Load member names alongside expenses so the list can show who
+    // submitted each reimbursement (memberNameFor starts empty otherwise).
+    void loadMemberOptions();
   }, []);
 
   const [showOnlyDirection, setShowOnlyDirection] = useState<"all" | ExpenseSource>("all");
@@ -2474,12 +2477,13 @@ function ExpenseList({
         <h2 className="font-serif text-lg font-semibold text-stone-900">{title}</h2>
       </CardHeader>
       <CardBody className="px-0 py-2">
-        <TableWrap className="min-w-[640px] border-0 shadow-none">
+        <TableWrap className="min-w-[780px] border-0 shadow-none">
           <THead>
             <Tr>
               <Th>Title</Th>
               <Th>Category</Th>
               {!hideSource && <Th>Source</Th>}
+              <Th>Submitted by</Th>
               <Th>Method</Th>
               <Th>Status</Th>
               <Th className="text-right">Amount</Th>
@@ -2494,11 +2498,6 @@ function ExpenseList({
                     {e.title ?? e.description?.slice(0, 60) ?? "—"}
                   </div>
                   <div className="mt-0.5 text-[11px] font-mono text-stone-400">{expenseRef(e.id)}</div>
-                  {e.user_id && memberNameFor?.get(e.user_id) && (
-                    <div className="mt-0.5 text-xs text-stone-500">
-                      Submitted by <span className="font-medium text-stone-700">{memberNameFor.get(e.user_id)}</span>
-                    </div>
-                  )}
                   {dupIds?.has(e.id) && (
                     <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-700">
                       <Flag className="h-3 w-3" /> Possible duplicate
@@ -2541,6 +2540,16 @@ function ExpenseList({
                     </Badge>
                   </Td>
                 )}
+                <Td>
+                  {(() => {
+                    const submitter = e.user_id ? memberNameFor?.get(e.user_id) : undefined;
+                    if (submitter) {
+                      return <span className="text-xs text-stone-700">{submitter}</span>;
+                    }
+                    // Church-direct rows (and any unresolved member) show a plain dash
+                    return <span className="text-xs text-stone-400">{e.source === "church_direct" ? "—" : "Unknown"}</span>;
+                  })()}
+                </Td>
                 <Td>
                   <span className="text-xs text-stone-500 capitalize">
                     {e.payment_method || "—"}
